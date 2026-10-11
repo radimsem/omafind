@@ -11,15 +11,15 @@ Source research: [docs/research/2026-10-11-digup-embeddinggemma2-omarchy-content
 - The corpus is the XDG user dirs, other directories the user picks, and removable external drives.
 - Setup must scan the drive, count text, image, video and audio files, and propose candidate parent directories. The user edits that list before indexing.
 - All four modalities ship in v1: text and PDF, images with OCR, video frames, and audio.
-- The search surface is an Omarchy overlay.
+- The search surface is an Omarchy overlay laid out like DigUp's macOS window: a grouped result list on the left and a detail pane for the selected result on the right (7.1). The approved mockups are the design canvas https://claude.ai/artifact/VPwvi2kmd8oRpCqmdjUAXt.
+- Code search ships in v1, opt-in per repository, behind the `code:` prefix.
 - The repo is GitHub `radimsem/omafind`, private for now.
 
 **Assumptions** (confirmed in brainstorming or stated without objection)
-- The code index (DigUp's `code:` prefix and `code.sqlite`) is deferred past v1.
 - omafind is a separate plugin, not part of omaone, and shares no state or IPC with it.
 - The `search --json` CLI ships in v1 because it costs almost nothing and gives herdr agents content search.
 
-**Out of scope for v1**: code search, whole-disk filename search (plocate covers it), spreadsheets and presentations beyond their names, at-rest encryption beyond LUKS, a bar widget, an MCP wrapper, and any network access other than the model download and the runtime build.
+**Out of scope for v1**: whole-disk filename search (plocate covers it), spreadsheets and presentations beyond their names, at-rest encryption beyond LUKS, a bar widget, an MCP wrapper, and any network access other than the model download and the runtime build.
 
 ## 2. Architecture
 
@@ -63,7 +63,7 @@ Hyprland bind / omarchy-menu row
 | `omafindd.extractors.*` | Turn one file into segments (text chunks, page renders, frames, audio windows), plus FTS text and a thumbnail. Pure, run in a process pool. | pillow, pypdf, pypdfium2, python-docx, odfpy, ffmpeg, tesseract |
 | `omafindd.embedder` | Starts, stops and talks to llama-server. Validates vectors. Chooses GPU or CPU. | `runtime/llama-server`, `model/*.gguf`, `nvidia-smi` |
 | `omafindd.jobs` | Bounded queue, worker pool, resume journal, progress events. | `extractors`, `embedder`, `store` |
-| `omafindd.store` | One SQLite file per volume: schema, migrations, transactions, vector loading. | sqlite3 |
+| `omafindd.store` | One SQLite file per volume plus `code.sqlite`: schema, migrations, transactions, vector loading. | sqlite3 |
 | `omafindd.search` | Query parsing, both legs, fusion, grouping, jump targets. | `embedder`, `store` |
 | `omafindd.opener` | Turns a result into the right opener command for the jump target. | `xdg-mime` |
 | `bin/omafind` | `setup`, `status [--json]`, `discover --json`, `search --json`, `reindex`, `bindings check`, `build-runtime`. Stdlib only, imports daemon modules for shared logic. | daemon modules |
@@ -96,6 +96,7 @@ Everything lives under `~/.local/share/omafind/`, mode 0700:
 | `runtime/llama-server` | pinned build from `scripts/build-runtime.sh` |
 | `model/embeddinggemma-2-Q8_0.gguf`, `model/mmproj-embeddinggemma-2-Q8_0.gguf` | sha256-verified, mode 0600 |
 | `index/<volume-uuid>.sqlite` | one DB per volume, mode 0600 |
+| `index/code.sqlite` | the code index, mode 0600, only when a code repository is selected |
 | `thumbs/<volume-uuid>/` | 128 px JPEG thumbnails |
 | `journal` | in-flight file ids for crash recovery |
 
@@ -138,7 +139,8 @@ The setup view in the overlay, mirrored by `bin/omafind setup` and `bin/omafind 
 1. **Runtime and model.** Build llama-server if it is missing. Download both model files with progress. The view shows the disk cost: about 865 MB for the model and about 200 MB for the runtime.
 2. **Discovery scan.** A parallel `os.scandir` walk of `$HOME` and every mounted non-system volume. The walk does not `stat` files: kind comes from the extension, directory type from `d_type`. The global skip rules (4.3) apply during the walk. Each directory gets counts of `{text, pdf, image, video, audio}`, rolled up to its ancestors.
 3. **Candidate list.** A candidate is a directory whose subtree holds at least 20 content files and that is the highest ancestor still dense in content. Rule: walk up from each dense directory and stop before an ancestor where the dense subtree holds less than 60% of the ancestor's content files. `$HOME` and volume roots are never proposed. XDG user dirs that hold content are pre-checked. Other candidates start unchecked. Each row shows the path, per-kind counts, estimated index size and estimated time. Estimates use per-kind rates measured in the spike.
-4. **Edit.** The user checks or unchecks rows, adds any directory through a picker, and adds excludes per root. The view shows the total estimated time and size. **Start indexing** writes the roots to the plugin's `shell.json` entry and starts the crawl.
+4. **Code repositories.** A separate section lists git repositories found during the walk (a directory holding `.git`). All start unchecked. A checked repository goes to the code index (5.2), not the content index, and is searched only with the `code:` prefix.
+5. **Edit.** The user checks or unchecks rows, adds any directory through a picker, and adds excludes per root. The view shows the total estimated time and size. **Start indexing** writes the roots to the plugin's `shell.json` entry and starts the crawl.
 
 ### 4.2 Settings
 
@@ -149,6 +151,8 @@ Inline on the plugin's entry in `~/.config/omarchy/shell.json`, written only by 
 | `setupDone` | bool | `false` |
 | `roots` | `[{path, volume, excludes: [path]}]` | `[]` |
 | `maxResults` | int, 10..200 | `40` |
+| `codeRoots` | `[path]`, git repositories | `[]` |
+| `editor` | string, command used for text and code | `$EDITOR`, else `xdg-open` |
 | `warmMinutes` | int, 0..60 | `5` |
 | `gpu` | `"auto"`, `"never"` | `"auto"` |
 | `imageBudget` | 70, 140, 280 | `140` |
@@ -205,6 +209,7 @@ No GPL or AGPL library is linked. GPL or LGPL tools run only as subprocesses (`f
 | image | `pillow` | one vector per image, budget `imageBudget` (280 for screenshots) | 128 px JPEG thumbnail; OCR with `tesseract` into FTS5 only, for screenshot-like images (name pattern, or dimensions matching a common screen size) |
 | video | `ffmpeg` frame every 3 s, 8 × 8 average-hash dedup (keep when distance > 4 bits), at most 1200 frames | frame vectors at budget 70, `loc` = second | soundtrack goes through the audio path; thumbnail is the first kept frame |
 | audio | `ffmpeg` to 16 kHz mono PCM, RMS silence gate | 30 s windows, 25 s hop, `loc` = start second | none |
+| code | `git ls-files` per repository in `codeRoots`, minus secrets, generated and vendored files (DigUp's `CodeExtractor` rules) | stretches of whole lines up to 1800 characters, `loc` = first line, `loc_end` = last line, stored in `code.sqlite` | file text into that DB's FTS5; queried only with `code:` |
 
 Images sent to the server are pre-resized to the pixel area of their token budget. This guards against llama.cpp issue #30195, where the server ignores the configured vision budget.
 
@@ -248,7 +253,7 @@ CREATE VIRTUAL TABLE fts USING fts5(name, body, original UNINDEXED,
 
 ### 6.3 Query
 
-1. Normalize the query. Parse an optional prefix: `img:`, `pdf:`, `vid:`, `aud:`, `doc:`. A prefix sets the kind hint.
+1. Normalize the query. Parse an optional prefix: `img:`, `pdf:`, `vid:`, `aud:`, `doc:`, `code:`. A kind prefix filters to that kind. `code:` searches `code.sqlite` only; no other query touches it.
 2. Run both legs in parallel:
    - **meaning**: embed the query with the search prompt, score every loaded vector.
    - **words**: FTS5 match, up to 100 files, giving each file's coverage = share of query words it contains.
@@ -259,7 +264,7 @@ CREATE VIRTUAL TABLE fts USING fts5(name, body, original UNINDEXED,
    - a file is a candidate when its best z ≥ 2 or its coverage ≥ 0.5
    - a file's best segment gives its `loc`, which is the jump target
    - hits below 0.5 × the top score go into a "weaker matches" group
-4. Return the top `maxResults`, grouped by kind. Each result carries path, volume, online flag, kind, `loc`, an FTS snippet with match marks, and the thumbnail path.
+4. Return the top `maxResults`, grouped into sections by kind. The section holding the top hit comes first; the other sections follow in order of their best hit; inside a section, results keep score order. Each result carries path, volume, online flag, kind, `loc`, an FTS snippet with match marks, and the thumbnail path.
 
 ### 6.4 Search as you type
 
@@ -279,10 +284,26 @@ CREATE VIRTUAL TABLE fts USING fts5(name, body, original UNINDEXED,
 
 `Overlay.qml`, kind `overlay`, `keepLoaded: true`, modeled on Omarchy's first-party emojis and clipboard overlays. Colors and spacing come only from `qs.Commons` (`Color.menu.*`, `Style.*`). No hex values in QML.
 
-- A query field at the top. Results below, grouped by kind: Images, Video, Audio, PDFs, Docs.
-- Images and video show as a thumbnail grid. Docs, PDFs and audio show as rows with a snippet and a location such as "page 12" or "14:32".
-- Keys: arrows or `Ctrl J` / `Ctrl K` move, `Enter` opens at the location, `Ctrl Enter` reveals the file in Nautilus through `org.freedesktop.FileManager1.ShowItems`, `Ctrl C` copies the path, `Esc` closes.
-- A one-line footer shows indexing progress ("Indexing 1,204 of 3,880") and offline-volume notes.
+Layout, as on the design canvas (boards 1 to 9):
+
+- A query field at the top. `code:` swaps the search icon for a code icon.
+- **Left pane**: results in sections by kind (Images, Video, Audio, PDFs, Documents, Code), ordered as in 6.3. Each row has a 44 px thumbnail or kind icon, the file name, and the folder; a keyword hit shows its snippet with the words in bold instead of the folder. A badge shows the jump target (`14:32`, `p. 12`, `L41`, `L1–47`) or `offline`. Hits below half the top score fold into a "› N weaker matches" row. The top hit is selected on every new result set.
+- **Right pane**: the selected result, rendered by kind, then its name, folder, a meta line (kind, date, dimensions or duration or pages or lines, size), a "why it matched" line, and actions.
+
+  | Kind | Rendering | Why line | Primary action |
+  |---|---|---|---|
+  | image | the image, fitted | Matches the picture | Open |
+  | video | the matched frame, play button, timestamp chip, scrubber with match markers | Matches the frame at 0:42 (or the frame and speech) | Open at 0:42 |
+  | audio | player card: waveform, play button, progress bar with the matched 30 s window, "7:55 – 8:25 of 13:43" | Matches what's heard at 7:55 | Open at 7:55 |
+  | pdf | the matched page rendered, matched words highlighted, page chip | Has your words (with the snippet) or Matches page 12 | Open at page 12 |
+  | text | text excerpt with line numbers, hit lines highlighted, line-range chip | Matches lines 205–222 | Open in <editor> at line 212 |
+  | code | code excerpt with line numbers, hit lines and words highlighted, line-range chip | Matches lines 1–47 | Open in <editor> at line 8 |
+
+  Secondary action: Show in folder. Offline results show the cached thumbnail dimmed, the line "<label> is not connected. Connect it to open this file.", Open disabled and Copy path enabled.
+- `Ctrl Space` plays or pauses audio and video inside the preview from the matched second, through `mpv` with no window (audio) or a Quickshell video item (video); the spike confirms which.
+- Keys: arrows or `Ctrl J` / `Ctrl K` move across sections, `Enter` opens at the match, `Ctrl Enter` reveals the file in Nautilus through `org.freedesktop.FileManager1.ShowItems`, `Ctrl C` copies the path, `Esc` clears the query, then closes.
+- Footer: the result count ("17 results · 3 weaker", "4 results in your code · 5 weaker", "Matching words…" while only the words leg has answered), key hints, and, with no query, indexing progress, watched folders and offline volumes.
+- With no query the panes are replaced by a short explanation and prefix chips (board 8).
 - The setup view (4.1) is a second view in the same overlay, opened with `{"view":"setup"}` and shown automatically while `setupDone` is false.
 
 ### 7.2 Entry points
@@ -297,7 +318,7 @@ CREATE VIRTUAL TABLE fts USING fts5(name, body, original UNINDEXED,
 | pdf | the `xdg-mime` default for `application/pdf`: Firefox gets `file://…#page=N`, Evince gets `--page-index=N`, anything else opens without a page |
 | video, audio | `mpv --start=<seconds>` |
 | image | `xdg-open` |
-| text | `xdg-open`; when the chunk maps to a line and `$EDITOR` is set, `$EDITOR +<line>` in the default terminal |
+| text, code | the `editor` setting at the matched line (`<editor> +<line>` in the default terminal); without one, `xdg-open` |
 
 ## 8. Security, privacy, operations
 
@@ -357,5 +378,5 @@ Offline, in milliseconds, following omaone's rules: behavior at module boundarie
 | Corpus of ~90k images, first crawl takes hours | The plocate counts were whole-disk. The XDG dirs hold about 1.2k content files today. External drives are unmeasured. |
 | One `index.sqlite` | One DB per volume, so drives stay searchable when unplugged. |
 | `kinds: ["service","bar-widget","panel"]` | `["service","overlay"]`. |
-| Code index opt-in in v1 | Deferred past v1. |
+| Code index opt-in in v1 | Kept: opt-in per repository in setup, `code:` prefix only. |
 | Index plaintext is an open risk | Covered by LUKS on this host and stated in the README. |
