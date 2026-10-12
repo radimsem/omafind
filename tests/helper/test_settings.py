@@ -16,6 +16,7 @@ def write_settings(path, **fields):
 def test_example_has_exact_defaults():
     assert json.loads((ROOT / "settings.example.json").read_text()) == {
         "setupDone": False, "gpu": "auto", "audio": True,
+        "roots": [], "maxResults": 40, "warmMinutes": 5,
     }
 
 
@@ -122,3 +123,19 @@ def test_runtime_directory_requires_user_session(monkeypatch):
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
     with pytest.raises(ValueError, match="XDG_RUNTIME_DIR"):
         paths.runtime_dir()
+
+
+@pytest.mark.parametrize("key,value,expected", [("maxResults", 1, 10), ("maxResults", 999, 200),
+                                              ("maxResults", True, 40),
+                                              ("warmMinutes", -1, 0), ("warmMinutes", 80, 60),
+                                              ("warmMinutes", "9", 5)])
+def test_search_settings_clamp_without_coercion(tmp_path, key, value, expected):
+    path = tmp_path / "shell.json"
+    write_settings(path, **{key: value})
+    assert getattr(load(path), "max_results" if key == "maxResults" else "warm_minutes") == expected
+
+
+def test_roots_keep_valid_path_volume_and_excludes(tmp_path):
+    path = tmp_path / "shell.json"
+    write_settings(path, roots=[None, "bad", {"path": "/x", "volume": "v", "excludes": ["/x/no"]}])
+    assert load(path).roots == [{"path": "/x", "volume": "v", "excludes": ["/x/no"]}]

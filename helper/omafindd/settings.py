@@ -1,6 +1,6 @@
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,9 @@ class Settings:
     setup_done: bool = False
     gpu: str = "auto"
     audio: bool = True
+    roots: list[dict] = field(default_factory=list)
+    max_results: int = 40
+    warm_minutes: int = 5
 
 
 def find_entry(config: dict, plugin_id: str) -> dict | None:
@@ -31,6 +34,21 @@ def find_entry(config: dict, plugin_id: str) -> dict | None:
     return None
 
 
+def roots(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    return [{"path": root["path"], "volume": root["volume"], "excludes": root["excludes"][:]}
+            for root in value if isinstance(root, dict)
+            and isinstance(root.get("path"), str) and Path(root["path"]).is_absolute()
+            and isinstance(root.get("volume"), str) and isinstance(root.get("excludes"), list)
+            and all(isinstance(path, str) for path in root["excludes"])]
+
+
+def _integer(entry, key, default, minimum, maximum):
+    value = entry.get(key, default)
+    return max(minimum, min(maximum, value)) if type(value) is int else default
+
+
 def _load(path: Path) -> Settings:
     config = json.loads(path.read_text())
     entry = find_entry(config, "radimsem.omafind") if isinstance(config, dict) else None
@@ -43,6 +61,9 @@ def _load(path: Path) -> Settings:
         setup_done=setup_done if type(setup_done) is bool else False,
         gpu=gpu if gpu in ("auto", "never") else "auto",
         audio=audio if type(audio) is bool else True,
+        roots=roots(entry.get("roots")),
+        max_results=_integer(entry, "maxResults", 40, 10, 200),
+        warm_minutes=_integer(entry, "warmMinutes", 5, 0, 60),
     )
 
 

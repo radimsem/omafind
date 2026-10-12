@@ -1,5 +1,8 @@
 {
   "setupDone": false,
   "gpu": "auto",
-  "audio": true
+  "audio": true,
+  "roots": [],
+  "maxResults": 40,
+  "warmMinutes": 5
 }
