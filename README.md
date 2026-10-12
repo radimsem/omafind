@@ -52,11 +52,12 @@ node --test "tests/js/*.test.mjs"
 scripts/qmllint.sh
 ```
 
-Tests use fakes. The runtime parity test carries the `manual` marker and is excluded by default. It needs the built runtime, the model files and ImageMagick (`magick`), which pre-resizes images to their token budget:
+Tests use fakes. The runtime parity test carries the `manual` marker and is excluded by default. It needs the built runtime, the model files and ImageMagick (`magick`), which pre-resizes images to their token budget. Run it and the probe inside a memory cap with no swap (see AGENTS.md):
 
 ```bash
-uv run --project helper pytest -m manual tests/helper/test_parity.py
-uv run --project helper python scripts/probe.py --stage parity,audio,budget,rates
+cap="systemd-run --user --scope --quiet --collect -p MemoryMax=8G -p MemorySwapMax=0 --"
+$cap uv run --project helper pytest -m manual tests/helper/test_parity.py
+$cap uv run --project helper python scripts/probe.py --stage parity,audio,budget,rates
 ```
 
 `omarchy plugin validate .` rejects any symlink in the plugin folder, and uv puts one at `helper/.venv/bin/python`. Validate a clean clone, or remove `helper/.venv` first. The installed daemon uses `~/.local/share/omafind/venv` instead.
