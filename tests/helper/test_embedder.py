@@ -158,6 +158,33 @@ async def test_spawn_key_is_only_in_environment_and_authenticates(memory_runtime
     await embedder.stop()
 
 
+async def test_spawn_sets_parent_death_sigterm(memory_runtime, monkeypatch):
+    import ctypes
+    import os
+    import signal
+
+    embedder, spawner = memory_runtime
+    options = []
+    calls = []
+
+    async def spawn(*argv, **kwargs):
+        options.append(kwargs)
+        return await spawner(*argv, **kwargs)
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: SimpleNamespace(
+        prctl=lambda *args: calls.append(args) or 0
+    ))
+    monkeypatch.setattr(os, "getppid", os.getpid)
+    embedder.spawner = spawn
+    try:
+        await embedder.start("full")
+        options[0]["preexec_fn"]()
+        assert calls == [(1, signal.SIGTERM, 0, 0, 0)]
+        assert "--mmproj" in spawner.commands[0]
+    finally:
+        await embedder.stop()
+
+
 async def test_concurrent_mode_start_waits_for_health_before_replacing_server(memory_runtime):
     embedder, spawner = memory_runtime
     spawner.server_options['health_status'] = 503

@@ -1,10 +1,14 @@
 import asyncio
+import ctypes
 import os
 import secrets
+import signal
 import socket
 import subprocess
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -107,6 +111,13 @@ def document_text(title: str, chunk: str) -> str:
     return f"title: {title} | text: {chunk}"
 
 
+def _parent_death_signal(parent, sig=signal.SIGTERM):
+    if ctypes.CDLL(None, use_errno=True).prctl(1, sig, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "Could not set parent death signal")
+    if os.getppid() != parent:
+        os.kill(os.getpid(), sig)
+
+
 class Embedder:
     def __init__(self, *, binary=None, model_dir=None, runner=subprocess.run,
                  spawner=asyncio.create_subprocess_exec, startup_timeout=60.0,
@@ -146,6 +157,8 @@ class Embedder:
                         *build_command(binary, directory, mode, device, port),
                         env={**os.environ, "LLAMA_API_KEY": api_key},
                         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                        preexec_fn=partial(_parent_death_signal, os.getpid())
+                        if sys.platform == "linux" else None,
                     )
                     self._client = httpx.AsyncClient(
                         base_url=f"http://127.0.0.1:{port}",

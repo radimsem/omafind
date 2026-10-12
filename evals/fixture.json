@@ -1,0 +1,12 @@
+{
+  "base": "tests/fixtures/corpus",
+  "queries": [
+    {"q": "lunar eclipse telescope", "expect": ["notes.md"], "tag": "md"},
+    {"q": "sourdough bread recipe", "expect": ["recipe.txt"], "tag": "txt"},
+    {"q": "bronze sculpture archaeology", "expect": ["museum.html"], "tag": "html"},
+    {"q": "orchid garden watering", "expect": ["garden.docx"], "tag": "docx"},
+    {"q": "railway timetable tickets", "expect": ["travel.odt"], "tag": "odt"},
+    {"q": "invoice 4412", "expect": ["invoice.pdf"], "tag": "pdf"},
+    {"q": "pdf:scan", "expect": ["scan.pdf"], "tag": "pdf-name"}
+  ]
+}

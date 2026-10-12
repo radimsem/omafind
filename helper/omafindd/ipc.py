@@ -24,8 +24,11 @@ class AlreadyRunning(Exception):
 
 
 class IpcServer:
-    def __init__(self, path: Path, state: State | None = None, *, peer_uid=peer_uid) -> None:
+    def __init__(self, path: Path, state: State | None = None, *, peer_uid=peer_uid,
+                 service=None) -> None:
         self.path = path
+        self.service = service
+        self._results = {}
         self.state = state if state is not None else State.detect()
         self.state.on_change = self.broadcast
         self.peer_uid = peer_uid
@@ -80,6 +83,7 @@ class IpcServer:
         task.add_done_callback(self._tasks.discard)
 
     async def _client(self, reader, writer) -> None:
+        requests = set()
         try:
             if self.peer_uid(writer.get_extra_info("socket")) != os.getuid():
                 return
@@ -108,18 +112,45 @@ class IpcServer:
                         return
                     await self._send(writer, self.state.message())
                     self._ready.add(writer)
+                elif message.get("t") in ("search", "warm") and writer in self._ready:
+                    task = asyncio.create_task(self.dispatch(writer, message))
+                    requests.add(task)
+                    self._tasks.add(task)
+                    task.add_done_callback(requests.discard)
+                    task.add_done_callback(self._tasks.discard)
                 else:
                     logger.debug("Ignoring an unknown UI socket message type.")
         except (ConnectionError, OSError):
             pass
         finally:
+            for task in requests:
+                task.cancel()
+            await asyncio.gather(*requests, return_exceptions=True)
             self._clients.discard(writer)
             self._ready.discard(writer)
+            self._results.pop(writer, None)
             writer.close()
             try:
                 await writer.wait_closed()
             except (ConnectionError, OSError):
                 pass
+
+    async def dispatch(self, writer, message: dict) -> None:
+        if self.service is None:
+            return
+        try:
+            reply = await self.service.handle(message)
+        except Exception as error:
+            reply = {"t": "error", "seq": message.get("seq"), "reason": str(error)}
+        if reply["t"] == "results":
+            self._results[writer] = {item["id"]: item for item in reply["items"]}
+        try:
+            await self._send(writer, reply)
+        except (ConnectionError, OSError):
+            writer.close()
+
+    def resolve(self, writer, item_id):
+        return self._results.get(writer, {}).get(item_id)
 
     async def _send(self, writer, message: dict) -> None:
         line = json.dumps(message, separators=(",", ":"), ensure_ascii=False) + "\n"
