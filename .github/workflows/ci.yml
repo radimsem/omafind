@@ -27,7 +27,14 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --project helper --frozen
-      - run: uv run --project helper ruff check helper tests bin/omafind scripts
+      - run: uv run --project helper ruff check helper tests bin/omafind scripts evals
+      - run: |
+          sudo apt-get update && sudo apt-get install -y fd-find ripgrep poppler-utils imagemagick
+          sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+          if ! command -v magick >/dev/null; then
+            printf '#!/bin/sh\nif [ "$1" = identify ]; then shift; exec identify "$@"; fi\nexec convert "$@"\n' | sudo tee /usr/local/bin/magick >/dev/null
+            sudo chmod +x /usr/local/bin/magick
+          fi
       - run: uv run --project helper pytest
 
   js:
