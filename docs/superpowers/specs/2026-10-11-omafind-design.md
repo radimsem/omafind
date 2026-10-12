@@ -65,7 +65,7 @@ Hyprland bind / omarchy-menu row
 | `omafindd.jobs` | Bounded queue, worker pool, resume journal, progress events. | `extractors`, `embedder`, `store` |
 | `omafindd.store` | One SQLite file per volume plus `code.sqlite`: schema, migrations, transactions, vector loading. | sqlite3 |
 | `omafindd.search` | Query parsing, both legs, fusion, grouping, jump targets. | `embedder`, `store` |
-| `omafindd.opener` | Turns a result into the right opener command for the jump target. | `xdg-mime` |
+| `omafindd.opener` | Turns a result into the right opener command for the jump target. | `omarchy-launch-browser`, `xdg-open` |
 | `bin/omafind` | `setup`, `status [--json]`, `discover --json`, `search --json`, `reindex`, `bindings check`, `build-runtime`. Stdlib only, imports daemon modules for shared logic. | daemon modules |
 
 ### 2.2 Repo layout
@@ -141,6 +141,12 @@ The setup view in the overlay, mirrored by `bin/omafind setup` and `bin/omafind 
 3. **Candidate list.** A candidate is a directory whose subtree holds at least 20 content files and that is the highest ancestor still dense in content. Rule: walk up from each dense directory and stop before an ancestor where the dense subtree holds less than 60% of the ancestor's content files. `$HOME` and volume roots are never proposed. XDG user dirs that hold content are pre-checked. Other candidates start unchecked. Each row shows the path, per-kind counts, estimated index size and estimated time. Estimates use per-kind rates measured in the spike.
 4. **Code repositories.** A separate section lists git repositories found during the walk (a directory holding `.git`). All start unchecked. A checked repository goes to the code index (5.2), not the content index, and is searched only with the `code:` prefix.
 5. **Edit.** The user checks or unchecks rows, adds any directory through a picker, and adds excludes per root. The view shows the total estimated time and size. **Start indexing** writes the roots to the plugin's `shell.json` entry and starts the crawl.
+6. **Left out.** A root with excludes expands into a nested "left out" ledger in the same table (board 11). Each entry is a row with the per-kind counts it removes, shown as negative numbers, and no index size or time, since nothing is indexed. A header row sums the entries, and the root's own counts are net of them. Entry types, each with a tag:
+   - **you**: an exclude the user added. An X button includes it again.
+   - **proposed**: a subfolder that looks generated (machine-made names, below the dataset threshold in 4.3). Pre-applied; an X includes it again.
+   - **nothing to search**: a subfolder whose files are all of non-searchable types. It shows zeros in every column, so the user can see that leaving it out changes nothing.
+   - **built in**: the secrets rule (4.3) for this root, with its file counts. It has a lock instead of an X and cannot be removed.
+7. **Leave out a subfolder.** The filter button on a root, or the "Leave out a subfolder" row, opens a tree of that root's scanned subfolders (board 11b). Every node shows per-kind counts, a bar whose segments give the mix and whose length grows with the file count (log scale), index size and time. Unchecking a node leaves it out; a partly excluded parent shows a mixed checkbox. Quick picks select every "nothing to search" or "looks generated" folder at once. Ctrl Z undoes the last change. A footer ledger shows found, left out and kept files for the root.
 
 ### 4.2 Settings
 
@@ -157,7 +163,7 @@ Inline on the plugin's entry in `~/.config/omarchy/shell.json`, written only by 
 | `gpu` | `"auto"`, `"never"` | `"auto"` |
 | `imageBudget` | 70, 140, 280 | `140` |
 | `audio` | bool | `true` (forced off if the spike fails, see 5.3) |
-| `shortcut` | string | `"SUPER + SHIFT + SPACE"` |
+| `shortcut` | string | `"SUPER + E"` |
 
 ### 4.3 Global skip rules
 
@@ -308,14 +314,14 @@ Layout, as on the design canvas (boards 1 to 9):
 
 ### 7.2 Entry points
 
-- An owned block in the Hyprland bindings between `-- omafind-shortcut-start` and `-- omafind-shortcut-end`, written only when the user confirms in setup, default `SUPER + SHIFT + SPACE`. `bin/omafind bindings check` reads `hyprctl binds -j` and reports free, ours, or conflict, as omaone does.
+- An owned block in the Hyprland bindings between `-- omafind-shortcut-start` and `-- omafind-shortcut-end`, written only when the user confirms in setup, default `SUPER + E`. Omarchy 4 already binds `SUPER + SHIFT + SPACE` (toggle top bar), `SUPER + SPACE`, `SUPER + ALT + SPACE` and `SUPER + CTRL + SPACE`, so no Space chord is free. On this host `SUPER + E`, `SUPER + D` and `SUPER + U` are free; `SUPER + PERIOD` is free but the Omarchy bindings template suggests it for emojis. `bin/omafind bindings check` reads `hyprctl binds -j` and reports free, ours, or conflict, as omaone does. When the default is taken, setup offers the first free key from `SUPER + E`, `SUPER + D`, `SUPER + U`.
 - An optional "Find files" row in `~/.config/omarchy/extensions/omarchy-menu.jsonc`, added only when the user asks for it in setup.
 
 ### 7.3 Jump map
 
 | Kind | Opener |
 |---|---|
-| pdf | the `xdg-mime` default for `application/pdf`: Firefox gets `file://…#page=N`, Evince gets `--page-index=N`, anything else opens without a page |
+| pdf | the default web browser, through `omarchy-launch-browser file://…#page=N`, which resolves `xdg-settings get default-web-browser`. Without that helper, `xdg-open` on the file, without a page |
 | video, audio | `mpv --start=<seconds>` |
 | image | `xdg-open` |
 | text, code | the `editor` setting at the matched line (`<editor> +<line>` in the default terminal); without one, `xdg-open` |
