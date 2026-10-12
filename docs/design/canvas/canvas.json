@@ -1,0 +1,175 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Anatomy.dc.html": {
+      "h": 1080,
+      "title": "9 · Result states and keys",
+      "w": 1920,
+      "x": 4000,
+      "y": 1200
+    },
+    "Audio.dc.html": {
+      "h": 1080,
+      "title": "3 · Audio moment on top",
+      "w": 1920,
+      "x": 4000,
+      "y": 0
+    },
+    "Code.dc.html": {
+      "h": 1080,
+      "title": "6 · Code on top (code: prefix)",
+      "w": 1920,
+      "x": 10000,
+      "y": 0
+    },
+    "Degraded.dc.html": {
+      "h": 1080,
+      "title": "7 · Keyword-only and offline drive",
+      "w": 1920,
+      "x": 0,
+      "y": 1200
+    },
+    "Discover.dc.html": {
+      "h": 1080,
+      "title": "11 · Setup 2: pick folders, with what is left out",
+      "w": 1920,
+      "x": 2000,
+      "y": 2400
+    },
+    "Docs.dc.html": {
+      "h": 1080,
+      "title": "5 · Document on top",
+      "w": 1920,
+      "x": 8000,
+      "y": 0
+    },
+    "Empty.dc.html": {
+      "h": 1080,
+      "title": "8 · Opened, no query yet",
+      "w": 1920,
+      "x": 2000,
+      "y": 1200
+    },
+    "Exclusions.dc.html": {
+      "h": 1080,
+      "title": "11b · Setup 2: leave out subfolders",
+      "w": 1920,
+      "x": 4000,
+      "y": 2400
+    },
+    "Indexing.dc.html": {
+      "h": 1080,
+      "title": "12 · Setup 3: first index and shortcut",
+      "w": 1920,
+      "x": 6000,
+      "y": 2400
+    },
+    "Main.dc.html": {
+      "h": 1080,
+      "title": "1 · Image on top",
+      "w": 1920,
+      "x": 0,
+      "y": 0
+    },
+    "Moments.dc.html": {
+      "h": 1080,
+      "title": "2 · Video moment on top",
+      "w": 1920,
+      "x": 2000,
+      "y": 0
+    },
+    "MotionBrowse.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "title": "M2 · Motion: browse, preview and open moments",
+      "w": 1920,
+      "x": 2000,
+      "y": 3600
+    },
+    "MotionFresh.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "title": "M4 · Motion: new files and drives",
+      "w": 1920,
+      "x": 6000,
+      "y": 3600
+    },
+    "MotionSearch.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "title": "M1 · Motion: search as you type",
+      "w": 1920,
+      "x": 0,
+      "y": 3600
+    },
+    "MotionSetup.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "title": "M3 · Motion: first run",
+      "w": 1920,
+      "x": 4000,
+      "y": 3600
+    },
+    "NewDrive.dc.html": {
+      "h": 1080,
+      "title": "13 · New drive plugged in",
+      "w": 1920,
+      "x": 8000,
+      "y": 2400
+    },
+    "Setup.dc.html": {
+      "h": 1080,
+      "title": "10 · Setup 1: runtime and model",
+      "w": 1920,
+      "x": 0,
+      "y": 2400
+    },
+    "Typing.dc.html": {
+      "h": 1080,
+      "title": "4 · PDF page on top, while typing",
+      "w": 1920,
+      "x": 6000,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-10-11T12:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "t1": {
+      "kind": "title1",
+      "maxW": 11920,
+      "text": "omafind on Omarchy 4 · Catppuccin",
+      "x": 0,
+      "y": -300
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Moments.dc.html",
+    "Audio.dc.html",
+    "Typing.dc.html",
+    "Docs.dc.html",
+    "Code.dc.html",
+    "Degraded.dc.html",
+    "Empty.dc.html",
+    "Anatomy.dc.html",
+    "Setup.dc.html",
+    "Discover.dc.html",
+    "Exclusions.dc.html",
+    "Indexing.dc.html",
+    "NewDrive.dc.html",
+    "MotionSearch.dc.html",
+    "MotionBrowse.dc.html",
+    "MotionSetup.dc.html",
+    "MotionFresh.dc.html"
+  ],
+  "pages": [],
+  "title": "omafind desktop designs"
+}

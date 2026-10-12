@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>omafind search as you type</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./omaone.css">
+<link rel="stylesheet" href="./omafind.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{cursor:pointer}
+
+/* summon and dismiss */
+.scrim{opacity:0;transition:opacity 120ms cubic-bezier(0.33,1,0.68,1);pointer-events:none}
+.scrim.on{opacity:1;transition-duration:140ms}
+.sp{opacity:0;transform:translate(-50%,calc(-50% + 8px));pointer-events:none;transition:opacity 120ms cubic-bezier(0.33,1,0.68,1),transform 120ms cubic-bezier(0.33,1,0.68,1)}
+.sp.on{opacity:1;transform:translate(-50%,-50%);pointer-events:auto;transition-duration:160ms}
+.motion-live .caret{animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+@keyframes fin{from{opacity:0}to{opacity:1}}
+.fin{animation:fin 140ms ease both}
+
+/* shortcut hint chip */
+.hintchip{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:16px;padding:14px 18px;z-index:3;opacity:0;transition:opacity 140ms ease;pointer-events:none}
+.hintchip.on{opacity:1}
+.hintchip .hc-l{font-size:13px;color:var(--fg2)}
+.hintchip .hc-k{display:flex;gap:6px}
+.hintchip .kk{height:28px;min-width:28px;padding:0 10px;font-size:12px;color:var(--fg);transition:background-color 100ms ease,border-color 100ms ease,color 100ms ease}
+.hintchip .kk.press{background:var(--accent);border-color:var(--accent);color:var(--base)}
+
+/* main area: empty state and results share the frame */
+.sp-main{position:relative}
+.emp{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transition:opacity 140ms ease}
+.emp.gone{opacity:0;pointer-events:none}
+.rs{flex:1;min-width:0;display:flex;opacity:0;transition:opacity 140ms ease}
+.rs.on{opacity:1;transition-delay:30ms}
+
+/* re-rankable list: every element exists once and is moved by transform */
+.lst{position:relative;flex:1;min-height:0;margin-top:-8px}
+.rw,.sh{position:absolute;left:0;top:0;width:100%;transition-property:transform,opacity,background-color,box-shadow;transition-duration:220ms,160ms,100ms,100ms;transition-timing-function:cubic-bezier(0.33,1,0.68,1),ease,ease,ease}
+.sp-list .sec-h.sh{height:30px;box-sizing:border-box;padding:12px 10px 0}
+.it .dir .bw{color:var(--fg);font-weight:700}
+.it.on .dir .bw{color:#fff}
+.it .bdw{display:flex;align-items:center}
+
+/* preview layers cross-fade */
+.sp-pv{position:relative;padding:0}
+.pvl{position:absolute;inset:0;display:flex;flex-direction:column;gap:18px;padding:26px 32px 24px;opacity:0;pointer-events:none;transition:opacity 120ms ease}
+.pvl.on{opacity:1;pointer-events:auto}
+.pvl .pv-media{transform:translateY(6px);transition:transform 120ms cubic-bezier(0.33,1,0.68,1)}
+.pvl.on .pv-media{transform:none}
+
+.pv-img .play{position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;display:grid;place-items:center;border-radius:50%;background:rgba(17,17,27,0.78);border:2px solid var(--fg);color:var(--fg)}
+.pv-img .play .svg-i{width:24px;height:24px;stroke-width:0;fill:currentColor;color:var(--fg);margin-left:3px}
+.pv-img .chip-l{position:absolute;left:12px;bottom:34px;height:22px;padding:0 7px;display:flex;align-items:center;font-size:11px;font-weight:700;background:rgba(17,17,27,0.85);color:var(--fg);border-radius:var(--r)}
+.pv-img .what.top{top:12px;bottom:auto}
+.pv-img .scrub{position:absolute;left:12px;right:12px;bottom:16px}
+.pv-img .scrub .tl-track{background:rgba(205,214,244,0.22)}
+.pv-img .scrub .tl-track .pl{background:rgba(205,214,244,0.5)}
+.pcard{width:600px;height:340px;background:var(--surface0);border-radius:var(--r);padding:26px 28px 22px;display:flex;flex-direction:column;gap:22px}
+.pcard .wf{width:auto;height:150px;background:transparent;padding:0}
+.pcard .wf i{flex:none;width:5px}
+.pcard .ctl{display:flex;align-items:center;gap:18px}
+.pcard .pbtn{width:46px;height:46px;flex:none;border:0;padding:0;border-radius:50%;background:var(--accent);color:var(--base);display:grid;place-items:center}
+.pcard .pbtn .svg-i{width:20px;height:20px;stroke-width:0;fill:currentColor;color:var(--base);margin-left:3px}
+.pcard .trk{flex:1;position:relative;height:6px;background:var(--fill-hover)}
+.pcard .trk .pl{position:absolute;left:0;top:0;bottom:0;background:rgba(205,214,244,0.25)}
+.pcard .trk .wn{position:absolute;top:-3px;height:12px;background:var(--accent)}
+.pcard .capt{text-align:center;font-size:12px;color:var(--fg2)}
+.pv-page{position:relative}
+.pv-page .pg{position:absolute;left:12px;bottom:12px;height:22px;padding:0 8px;display:flex;align-items:center;font-size:11px;font-weight:700;background:rgba(17,17,27,0.85);color:var(--fg);border-radius:var(--r)}
+.pv-page .mkp{background:rgba(223,142,29,0.35);color:#1e1e2e}
+.pv-page .hd2{font-size:9px;font-weight:700;color:#1e1e2e;margin-top:6px}
+.pv-why .aa{font-weight:700;color:var(--accent);font-size:13px;width:15px;flex:none}
+.pv-why .s .bw{color:var(--fg);font-weight:700}
+.pv-why .stack{display:flex;flex-direction:column;gap:6px}
+.pv-text .mk2{background:rgba(249,226,175,0.18);color:var(--yellow)}
+.pv-text{position:relative}
+.pv-text .chip-r{position:absolute;right:12px;bottom:12px;height:22px;padding:0 8px;display:flex;align-items:center;font-size:11px;font-weight:700;background:var(--fill-hover);color:var(--fg);border-radius:var(--r)}
+
+/* toast, top right */
+.tst{position:absolute;right:10px;top:38px;z-index:7;opacity:0;transform:translate(12px,-12px);pointer-events:none;transition:opacity 180ms ease,transform 180ms cubic-bezier(0.33,1,0.68,1)}
+.tst.on{opacity:1;transform:none}
+
+/* board controls */
+.ctrl{position:absolute;left:24px;bottom:20px;height:40px;display:flex;align-items:center;gap:12px;padding:0 12px;z-index:8;font-size:11px;color:var(--fg2)}
+.ctrl .cstep{width:330px;white-space:nowrap;color:var(--fg)}
+.ctrl .csep{width:1px;height:18px;background:var(--sep)}
+.ctrl .mini{cursor:pointer}
+.ctrl .kb{height:26px;min-width:30px;padding:0 8px;background:transparent;font:inherit;font-size:11px;cursor:pointer;transition:background-color 100ms ease,border-color 100ms ease,color 100ms ease}
+.ctrl .kb.press{background:var(--accent);border-color:var(--accent);color:var(--base)}
+.ctrl .dis{opacity:0.4}
+</style>
+</helmet>
+<div class="desk corners-{{corners}} motion-live" style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #cdd6f4">
+  <img class="wall" src="/_blob/ceac48904c365f111f8aee8c1d9bc4a5" alt="">
+
+  <div class="bar">
+    <div class="bar-l">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16"/><path d="M4 10h16M10 10v10"/></svg></span>
+      <span class="ws-cur"></span><span class="ws">2</span><span class="ws">3</span><span class="ws empty">4</span><span class="ws empty">5</span>
+    </div>
+    <div class="bar-c"><span>Saturday 15:20</span></div>
+    <div class="bar-r">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="0.6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg></span>
+    </div>
+  </div>
+
+  <div class="hintchip surf {{chipCls}}">
+    <span class="hc-l">Open omafind</span>
+    <span class="hc-k"><span class="kbd kk {{chipPress}}">Super</span><span class="kbd kk {{chipPress}}">E</span></span>
+  </div>
+
+  <div class="scrim {{openCls}}"></div>
+
+  <div class="sp surf focus {{openCls}}">
+    <div class="sp-q">
+      <svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <label for="q" class="q {{qCls}}">
+        <sc-if value="{{showPh}}" hint-placeholder-val="{{false}}"><span class="caret" style="margin: 0 6px 0 0"></span>Describe what is in the file</sc-if>
+        <sc-if value="{{showTyped}}" hint-placeholder-val="{{true}}">{{typedText}}<span class="caret"></span></sc-if>
+      </label>
+      <input id="q" type="text" style="position: absolute; opacity: 0; width: 1px; height: 1px" aria-label="Search">
+      <span class="st">
+        <sc-if value="{{spin}}" hint-placeholder-val="{{false}}"><span class="spin"></span></sc-if>
+        {{stText}}
+      </span>
+    </div>
+    <div class="p-sep"></div>
+
+    <div class="sp-main">
+      <div class="emp {{empCls}}">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding-bottom: 40px">
+          <svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true" style="width: 36px; height: 36px; stroke-width: 1.2; color: var(--dim); margin-bottom: 8px"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+          <span style="font-size: 16px; color: var(--fg)">Search photos, screenshots, PDFs, notes, videos and recordings by what they contain.</span>
+          <span style="font-size: 12px; line-height: 18px; color: var(--dim); max-width: 640px">Type a description in any language. Start with a prefix to search one kind only.</span>
+          <div class="hints" style="padding-top: 10px">
+            <button class="hint" tabIndex="-1"><b>img:</b> images</button>
+            <button class="hint" tabIndex="-1"><b>pdf:</b> PDF pages</button>
+            <button class="hint" tabIndex="-1"><b>doc:</b> notes and documents</button>
+            <button class="hint" tabIndex="-1"><b>vid:</b> video moments</button>
+            <button class="hint" tabIndex="-1"><b>aud:</b> audio moments</button>
+            <button class="hint" tabIndex="-1"><b>code:</b> code</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rs {{resCls}}">
+        <div class="sp-list">
+          <div class="lst">
+            <sc-for list="{{hdrs}}" as="h" hint-placeholder-count="5">
+              <div class="sec-h sh" aria-hidden="{{h.hid}}" style="transform: translateY({{h.y}}px); opacity: {{h.op}}; transition-delay: {{h.td}}">{{h.label}} <span class="n">{{h.n}}</span></div>
+            </sc-for>
+            <sc-for list="{{rows}}" as="r" hint-placeholder-count="9">
+              <button class="it rw {{r.cls}}" tabIndex="-1" aria-hidden="{{r.hid}}" onClick="{{r.pick}}" style="transform: translateY({{r.y}}px); opacity: {{r.op}}; transition-delay: {{r.td}}; pointer-events: {{r.pe}}">
+                <span class="th {{r.tint}}">
+                  <sc-if value="{{r.isImg}}" hint-placeholder-val="{{false}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></sc-if>
+                  <sc-if value="{{r.isVid}}" hint-placeholder-val="{{false}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14"/><path d="M10 9l5 3-5 3z"/></svg></sc-if>
+                  <sc-if value="{{r.isAud}}" hint-placeholder-val="{{false}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg></sc-if>
+                  <sc-if value="{{r.isMd}}" hint-placeholder-val="{{false}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M9 12h7M9 16h7M9 8h3"/></svg></sc-if>
+                  <sc-if value="{{r.isPdf}}" hint-placeholder-val="{{false}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg></sc-if>
+                </span>
+                <span class="tx">
+                  <span class="nm">{{r.nm}}</span>
+                  <sc-if value="{{r.hasSnip}}" hint-placeholder-val="{{false}}"><span class="dir"><sc-for list="{{r.snip}}" as="g" hint-placeholder-count="3"><span class="{{g.cls}}">{{g.t}}</span></sc-for></span></sc-if>
+                  <sc-if value="{{r.noSnip}}" hint-placeholder-val="{{true}}"><span class="dir">{{r.dir}}</span></sc-if>
+                </span>
+                <span class="bdw"><sc-if value="{{r.hasBd}}" hint-placeholder-val="{{false}}"><span class="bd">{{r.bd}}</span></sc-if></span>
+              </button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div class="sp-pv">
+          <sc-for list="{{pvs}}" as="p" hint-placeholder-count="9">
+            <div class="pvl {{p.cls}}" aria-hidden="{{p.hid}}">
+              <div class="pv-media">
+                <sc-if value="{{p.isImg}}" hint-placeholder-val="{{false}}">
+                  <div class="pv-img" style="background: {{p.bg}}">
+                    <svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>
+                    <span class="what">{{p.what}}</span>
+                  </div>
+                </sc-if>
+                <sc-if value="{{p.isVid}}" hint-placeholder-val="{{false}}">
+                  <div class="pv-img" style="background: {{p.bg}}">
+                    <span class="what top">{{p.what}}</span>
+                    <span class="play"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg></span>
+                    <span class="chip-l">0:18</span>
+                    <div class="scrub tl" style="width: auto">
+                      <div class="tl-track"><span class="pl" style="width: 34.6%"></span><span class="mk" style="left: 11.5%"></span><span class="mk" style="left: 76%"></span><span class="mk best" style="left: 34.6%"></span></div>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{p.isAud}}" hint-placeholder-val="{{false}}">
+                  <div class="pcard">
+                    <div class="wf" aria-hidden="true"><sc-for list="{{bars}}" as="b" hint-placeholder-count="62"><i class="{{b.cls}}" style="height: {{b.h}}px"></i></sc-for></div>
+                    <div class="ctl">
+                      <button class="pbtn" tabIndex="-1" aria-label="Play"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg></button>
+                      <div class="trk"><span class="pl" style="width: 5.6%"></span><span class="wn" style="left: 5.6%; width: 24.2%"></span></div>
+                    </div>
+                    <div class="capt">0:07 &ndash; 0:37 of 2:04</div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{p.isMd}}" hint-placeholder-val="{{false}}">
+                  <div class="pv-text" aria-hidden="true">
+                    <sc-for list="{{p.lines}}" as="l" hint-placeholder-count="8">
+                      <div class="l {{l.cls}}"><span class="no">{{l.no}}</span><span><sc-for list="{{l.parts}}" as="x" hint-placeholder-count="1"><span class="{{x.cls}}">{{x.t}}</span></sc-for></span></div>
+                    </sc-for>
+                    <span class="chip-r">{{p.hitLabel}}</span>
+                  </div>
+                </sc-if>
+                <sc-if value="{{p.isPdf}}" hint-placeholder-val="{{false}}">
+                  <div class="pv-page" aria-hidden="true">
+                    <span class="h">City dog license</span>
+                    <span class="hd2">Who needs one</span>
+                    <span>Residents who keep a dog older than four months must hold a current license. Licenses run from January 1 to December 31.</span>
+                    <span class="hd2">Rules</span>
+                    <span>Any <span class="{{p.pdfCls}}">dog on</span> public land must wear a valid tag at all times. Tags are issued at the town office or online.</span>
+                    <span class="hd2">Renewal</span>
+                    <span>Renew before March 1 to avoid the late fee. Bring the previous tag and proof of rabies vaccination.</span>
+                    <span class="hd2">Fees</span>
+                    <span>$25 per dog, $12 for senior residents. Late renewals add $10.</span>
+                    <span class="pg">p. 2</span>
+                  </div>
+                </sc-if>
+              </div>
+              <div class="pv-info">
+                <span class="pv-name">{{p.nm}}</span>
+                <span class="pv-path">{{p.dir}}</span>
+                <span class="pv-meta">{{p.meta}}</span>
+              </div>
+              <sc-if value="{{p.isMatch}}" hint-placeholder-val="{{false}}">
+                <span class="pv-why"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/><path d="M8 11h6M11 8v6"/></svg><span class="fx"><sc-for list="{{p.whyf}}" as="f" hint-placeholder-count="4"><span class="f"><span class="k">{{f.k}}</span><span class="{{f.vc}}">{{f.v}}</span></span></sc-for></span></span>
+              </sc-if>
+              <sc-if value="{{p.isWord}}" hint-placeholder-val="{{false}}">
+                <div class="pv-why" style="align-items: flex-start"><span class="aa">Aa</span><span class="stack"><span class="fx"><sc-for list="{{p.whyf}}" as="f" hint-placeholder-count="4"><span class="f"><span class="k">{{f.k}}</span><span class="{{f.vc}}">{{f.v}}</span></span></sc-for></span><span class="s"><sc-for list="{{p.snip}}" as="g" hint-placeholder-count="3"><span class="{{g.cls}}">{{g.t}}</span></sc-for></span></span></div>
+              </sc-if>
+              <div class="pv-act">
+                <button class="btn-acc" tabIndex="-1">{{p.act}}</button>
+                <button class="btn-sec" tabIndex="-1">Show in folder</button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div class="sp-f">
+      <span>{{footL}}<sc-if value="{{offline}}" hint-placeholder-val="{{true}}"> · <span class="t-yel">Photos2024 offline</span></sc-if></span>
+      <span class="sp-r">
+        <sc-if value="{{showIdx}}" hint-placeholder-val="{{true}}">
+          <span>Indexing 1,204 of 1,209 <span class="prog"><i style="width: 99%"></i></span></span>
+          <span><span class="kbd">Esc</span> close</span>
+        </sc-if>
+        <sc-for list="{{fhints}}" as="h" hint-placeholder-count="5">
+          <span class="fin"><sc-for list="{{h.keys}}" as="k" hint-placeholder-count="1"><span class="kbd">{{k.k}}</span></sc-for> {{h.t}}</span>
+        </sc-for>
+      </span>
+    </div>
+  </div>
+
+  <div class="ntf-wrap">
+    <div class="toast surf tst {{toastCls}}" role="status">
+      <svg class="svg-i" viewBox="0 0 24 24" style="color: #a6e3a1" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>
+      <span>{{toastTxt}}</span>
+    </div>
+  </div>
+
+  <div class="ctrl surf">
+    <span class="cstep">{{stepLbl}}</span>
+    <span class="csep"></span>
+    <button class="mini" onClick="{{replay}}">Replay</button>
+    <button class="mini {{pauseCls}}" onClick="{{togglePause}}">{{pauseLbl}}</button>
+    <span class="csep"></span>
+    <button class="kbd kb {{pDown}}" onClick="{{kDown}}" aria-label="Press down arrow">&darr;</button>
+    <button class="kbd kb {{pUp}}" onClick="{{kUp}}" aria-label="Press up arrow">&uarr;</button>
+    <button class="kbd kb {{pEnter}}" onClick="{{kEnter}}" aria-label="Press Enter">Enter</button>
+    <button class="kbd kb {{pEsc}}" onClick="{{kEsc}}" aria-label="Press Escape">Esc</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"corners":{"editor":"enum","options":["square","rounded"],"default":"square"},"autoplay":{"editor":"boolean","default":true},"speed":{"editor":"enum","options":["1x","0.5x"],"default":"1x"},"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+constructor(props) {
+  super(props);
+  this.QUERY = "a dog on the beach";
+  this.SECS = {
+    img: { label: "Images", ids: ["i1", "i2", "i3", "i4"] },
+    vid: { label: "Video", ids: ["v1"] },
+    doc: { label: "Documents", ids: ["d1", "d2"] },
+    aud: { label: "Audio", ids: ["a1"] },
+    pdf: { label: "PDFs", ids: ["p1"] }
+  };
+  this.FINAL = ["img", "vid", "doc", "aud", "pdf"];
+  this.KW = ["doc", "pdf"];
+  this.NAV = ["i1", "i2", "i3", "i4", "v1", "d1", "d2", "a1", "p1"];
+  this.ITEMS = [
+    { id: "i1", sec: "img", kind: "img", nm: "IMG_4133.jpg", dir: "~/Pictures/2025/beach", tint: "t-c", bg: "#2f3f3d", what: "[photo: golden retriever running along the shoreline]", meta: "Image · Aug 14, 2025 · 4032 × 3024 · 3.4 MB", act: "Open", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"3.4"}], enter: "open", space: "preview" },
+    { id: "i2", sec: "img", kind: "img", nm: "DSC_0912.jpg", dir: "~/Pictures/2025/beach", tint: "t-a", bg: "#2c3a52", what: "[photo: dog digging in the sand beside a red bucket]", meta: "Image · Aug 14, 2025 · 6000 × 4000 · 5.8 MB", act: "Open", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"3.2"}], enter: "open", space: "preview" },
+    { id: "i3", sec: "img", kind: "img", nm: "IMG_4129.jpg", dir: "~/Pictures/2025/beach", tint: "t-e", bg: "#33364a", what: "[photo: small dog at the water's edge, child in the background]", meta: "Image · Aug 14, 2025 · 4032 × 3024 · 3.1 MB", act: "Open", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"2.9"}], enter: "open", space: "preview" },
+    { id: "i4", sec: "img", kind: "img", nm: "frisbee-dunes.jpg", dir: "~/Pictures/2024/holiday", tint: "t-d", bg: "#403a33", what: "[photo: dog leaping for a frisbee, dunes behind]", meta: "Image · Jul 6, 2024 · 3024 × 4032 · 2.7 MB", act: "Open", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"2.4"}], enter: "open", space: "preview" },
+    { id: "v1", sec: "vid", kind: "vid", nm: "dog-at-the-sea.mp4", dir: "~/Videos/2025", bd: "0:18", tint: "t-b", bg: "#3a3346", what: "[frame: dog chasing waves, camera low on the wet sand]", meta: "Video · Aug 14, 2025 · 0:52 · 1080p · 48 MB", act: "Open at 0:18", why: [{k:"leg",v:"meaning"}, {k:"part",v:"frame"}, {k:"at",v:"0:18"}, {k:"z",v:"3.1"}], enter: "open at 0:18", space: "play at 0:18" },
+    { id: "d1", why: [{k:"leg",v:"words"}, {k:"part",v:"text"}, {k:"at",v:"L11"}, {k:"hits",v:"dog on, beach",hit:true}], sec: "doc", kind: "md", nm: "dog-walking-schedule.md", dir: "~/Documents/pets", bd: "L11", hitLine: 11, meta: "Markdown · Oct 2, 2026 · 20 lines · 1.1 KB", act: "Open at line 11", enter: "open at line 11", space: "preview",
+      snip: [{ t: "…Take the " }, { t: "dog on", at: 8 }, { t: " the long lead until the " }, { t: "beach", at: 18 }, { t: " path ends…" }],
+      lines: [
+        { no: 3, parts: [{ t: "# Dog walking schedule" }] },
+        { no: 4, parts: [{ t: "\u00a0" }] },
+        { no: 5, parts: [{ t: "Two walks a day, never skip the evening one." }] },
+        { no: 6, parts: [{ t: "\u00a0" }] },
+        { no: 7, parts: [{ t: "## Weekdays" }] },
+        { no: 8, parts: [{ t: "Mornings: 20 minutes round the block." }] },
+        { no: 9, parts: [{ t: "Evenings: the park, off lead after 18:00." }] },
+        { no: 10, parts: [{ t: "Saturday: out by 7:30, before the sand gets hot." }] },
+        { no: 11, hit: true, parts: [{ t: "Take the " }, { t: "dog on", at: 8 }, { t: " the long lead until the " }, { t: "beach", at: 18 }, { t: " path ends." }] },
+        { no: 12, parts: [{ t: "Sunday: the park, 40 minutes, off lead." }] },
+        { no: 13, parts: [{ t: "\u00a0" }] },
+        { no: 14, parts: [{ t: "## Reminders" }] },
+        { no: 15, parts: [{ t: "- Water bottle and the folding bowl" }] },
+        { no: 16, parts: [{ t: "- Towel in the boot" }] },
+        { no: 17, parts: [{ t: "- Vet booster due in November" }] },
+        { no: 18, parts: [{ t: "\u00a0" }] },
+        { no: 19, parts: [{ t: "## Contacts" }] },
+        { no: 20, parts: [{ t: "- Neighbour Jana has the spare key" }] }
+      ] },
+    { id: "d2", why: [{k:"leg",v:"words"}, {k:"part",v:"text"}, {k:"at",v:"L23"}, {k:"hits",v:"dog on, beach",hit:true}], sec: "doc", kind: "md", nm: "beach-trip-2025.md", dir: "~/Documents/trips", bd: "L23", hitLine: 23, meta: "Markdown · Aug 9, 2025 · 31 lines · 1.6 KB", act: "Open at line 23", enter: "open at line 23", space: "preview",
+      snip: [{ t: "…Bring water for the " }, { t: "dog on", at: 8 }, { t: " the " }, { t: "beach", at: 18 }, { t: ", shade is scarce…" }],
+      lines: [
+        { no: 14, parts: [{ t: "# Beach trip 2025" }] },
+        { no: 15, parts: [{ t: "\u00a0" }] },
+        { no: 16, parts: [{ t: "Saturday 16 August, back Sunday evening." }] },
+        { no: 17, parts: [{ t: "\u00a0" }] },
+        { no: 18, parts: [{ t: "## Plan" }] },
+        { no: 19, parts: [{ t: "- Train to the coast at 8:12, change once" }] },
+        { no: 20, parts: [{ t: "- Dogs ride free before 9:00" }] },
+        { no: 21, parts: [{ t: "## Packing" }] },
+        { no: 22, parts: [{ t: "- Sunscreen, hats, two towels" }] },
+        { no: 23, hit: true, parts: [{ t: "Bring water for the " }, { t: "dog on", at: 8 }, { t: " the " }, { t: "beach", at: 18 }, { t: ", shade is scarce after noon." }] },
+        { no: 24, parts: [{ t: "- Folding bowl and a spare lead" }] },
+        { no: 25, parts: [{ t: "\u00a0" }] },
+        { no: 26, parts: [{ t: "## Costs" }] },
+        { no: 27, parts: [{ t: "- Train, two tickets, 36 EUR" }] },
+        { no: 28, parts: [{ t: "- Lunch, 25 EUR" }] },
+        { no: 29, parts: [{ t: "\u00a0" }] },
+        { no: 30, parts: [{ t: "## Notes" }] },
+        { no: 31, parts: [{ t: "- Check the tide table before leaving" }] }
+      ] },
+    { id: "a1", sec: "aud", kind: "aud", nm: "dog barking.m4a", dir: "~/Recordings", bd: "0:07", tint: "", meta: "Audio · Aug 14, 2025 · 2:04 · 1.9 MB", act: "Open at 0:07", why: [{k:"leg",v:"meaning"}, {k:"part",v:"audio"}, {k:"at",v:"0:07–0:37"}, {k:"z",v:"1.6"}], enter: "open at 0:07", space: "play at 0:07", weak: true },
+    { id: "p1", why: [{k:"leg",v:"words"}, {k:"part",v:"text"}, {k:"at",v:"p. 2"}, {k:"hits",v:"dog on",hit:true}], sec: "pdf", kind: "pdf", nm: "Dog license renewal.pdf", dir: "~/Documents/admin", bd: "p. 2", meta: "PDF · Jan 12, 2026 · 3 pages · 84 KB", act: "Open at page 2", enter: "open at page 2", space: "preview", weak: true,
+      snip: [{ t: "…any " }, { t: "dog on", at: 8 }, { t: " public land must wear a valid tag…" }] }
+  ];
+  this.BY = {};
+  this.ITEMS.forEach((it) => { this.BY[it.id] = it; });
+  this.JIT = [0, 11, -7, 14, -9, 5, -13, 9, 12, -6, 8, -11, 4, 13, -8, 6, -10, 10];
+  this.timers = {};
+  this.ev = this.build();
+  this.clock = 0;
+  this.idx = 0;
+  this.last = Date.now();
+  this.state = Object.assign(this.fresh(), { mode: "auto", paused: false, pressed: "", toastOn: false, toastTxt: "" });
+}
+componentDidMount() {
+  this.last = Date.now();
+  this.iv = setInterval(() => this.tick(), 30);
+  this.start();
+}
+componentDidUpdate(prev) {
+  if (prev && prev.autoplay !== this.props.autoplay) this.start();
+}
+componentWillUnmount() {
+  clearInterval(this.iv);
+  Object.keys(this.timers).forEach((g) => this.cancel(g));
+}
+later(group, ms, fn) {
+  const id = setTimeout(fn, ms);
+  (this.timers[group] = this.timers[group] || []).push(id);
+}
+cancel(group) {
+  (this.timers[group] || []).forEach((id) => clearTimeout(id));
+  this.timers[group] = [];
+}
+fresh() {
+  return { open: false, chip: true, chipPress: false, typed: 0, kw: false, meaning: false, sel: "d1", step: 1 };
+}
+finalState(keepSel) {
+  const s = this.state;
+  return { open: true, chip: false, chipPress: false, typed: this.QUERY.length, kw: true, meaning: true, step: 4, sel: keepSel && s.meaning && s.sel ? s.sel : "i1" };
+}
+start() {
+  this.cancelAll();
+  this.clock = 0;
+  this.idx = 0;
+  if (this.props.autoplay !== false) this.setState(Object.assign(this.fresh(), { mode: "auto", paused: false, pressed: "", toastOn: false }));
+  else this.setState(Object.assign(this.finalState(false), { mode: "manual", paused: false, pressed: "", toastOn: false }));
+}
+cancelAll() { Object.keys(this.timers).forEach((g) => this.cancel(g)); }
+
+build() {
+  const ev = [];
+  const at = (t, fn) => ev.push({ t: t, fn: fn });
+  const set = (o) => () => this.setState(o);
+  at(0, set(this.fresh()));
+  at(600, set({ chipPress: true }));
+  at(900, set({ open: true, chip: false, chipPress: false }));
+  let t = 1700;
+  at(t, set({ step: 2 }));
+  const q = this.QUERY;
+  for (let i = 0; i < q.length; i++) {
+    t += 55 + this.JIT[i % this.JIT.length];
+    const n = i + 1;
+    at(t, set({ typed: n }));
+    if (n === 8) {
+      at(t + 50, set({ kw: true, sel: "d1", step: 3 }));
+      t += 380;
+    }
+  }
+  t += 200;
+  at(t, set({ meaning: true, sel: "i1", step: 4 }));
+  t += 3000;
+  at(t, set({ step: 5 }));
+  at(t, () => this.setState({ pressed: "Esc" }));
+  at(t + 150, () => this.setState({ pressed: "", open: false }));
+  ev.push({ t: t + 1100, loop: true });
+  return ev;
+}
+tick() {
+  const now = Date.now();
+  const dt = Math.min(100, now - this.last);
+  this.last = now;
+  const s = this.state;
+  if (s.mode !== "auto" || s.paused) return;
+  this.clock += dt * (this.props.speed === "0.5x" ? 0.5 : 1);
+  while (this.idx < this.ev.length && this.ev[this.idx].t <= this.clock) {
+    const e = this.ev[this.idx++];
+    if (e.loop) { this.clock = 0; this.idx = 0; break; }
+    e.fn();
+  }
+}
+
+flash(key) {
+  this.cancel("flash");
+  this.setState({ pressed: key });
+  this.later("flash", 160, () => this.setState({ pressed: "" }));
+}
+takeOver() {
+  const s = this.state;
+  if (s.mode === "auto") this.setState({ mode: "manual", paused: false });
+}
+toast(txt) {
+  this.cancel("toast");
+  this.setState({ toastOn: true, toastTxt: txt });
+  this.later("toast", 2800, () => this.setState({ toastOn: false }));
+}
+press(key) {
+  this.flash(key);
+  this.takeOver();
+  const s = this.state;
+  const ready = s.open && s.meaning;
+  if (key === "Esc") {
+    if (s.open) this.setState({ open: false });
+    return;
+  }
+  if (!ready) {
+    this.setState(this.finalState(true));
+    return;
+  }
+  const i = this.NAV.indexOf(s.sel);
+  if (key === "Down") this.setState({ sel: this.NAV[Math.min(this.NAV.length - 1, i + 1)] });
+  else if (key === "Up") this.setState({ sel: this.NAV[Math.max(0, i - 1)] });
+  else if (key === "Enter") {
+    this.setState({ open: false });
+    this.toast("Opened " + this.BY[s.sel].nm);
+  }
+}
+choose(id) {
+  this.takeOver();
+  const s = this.state;
+  this.setState(Object.assign(s.open && s.meaning ? {} : this.finalState(true), { sel: id }));
+}
+replay() {
+  this.cancelAll();
+  if (this.state.open) {
+    this.setState({ open: false, toastOn: false, paused: true, mode: "auto", pressed: "" });
+    this.later("rp", 450, () => this.start());
+  } else this.start();
+}
+togglePause() {
+  if (this.state.mode !== "auto") return;
+  this.setState({ paused: !this.state.paused });
+}
+
+layout(order) {
+  const m = {};
+  let y = 0;
+  order.forEach((k) => {
+    m["h_" + k] = y;
+    this.SECS[k].ids.forEach((id, i) => { m[id] = y + 30 + i * 58; });
+    y += 30 + this.SECS[k].ids.length * 58;
+  });
+  return m;
+}
+
+renderVals() {
+  const s = this.state, typed = s.typed;
+  const mk = (segs, on) => (segs || []).map((g) => ({ t: g.t, cls: g.at && typed >= g.at ? on : "" }));
+  const shownOrder = s.meaning ? this.FINAL : (s.kw ? this.KW : []);
+  const layNow = this.layout(shownOrder), layKW = this.layout(this.KW), layFin = this.layout(this.FINAL);
+  const place = (key, sec) => {
+    if (shownOrder.indexOf(sec) >= 0) return { y: layNow[key], shown: true };
+    if (this.KW.indexOf(sec) >= 0) return { y: layKW[key] + 8, shown: false };
+    return { y: layFin[key] - 10, shown: false };
+  };
+  const appearing = s.meaning ? ["h_img", "i1", "i2", "i3", "i4", "h_vid", "v1", "h_aud", "a1"] : ["h_doc", "d1", "d2", "h_pdf", "p1"];
+  const td = (key) => {
+    const k = appearing.indexOf(key);
+    const d = k >= 0 ? k * 20 : 0;
+    return d + "ms, " + d + "ms, 0ms, 0ms";
+  };
+
+  const hdrs = this.FINAL.map((sec) => {
+    const key = "h_" + sec, p = place(key, sec);
+    return { label: this.SECS[sec].label, n: this.SECS[sec].ids.length, y: p.y, op: p.shown ? 1 : 0, td: td(key), hid: p.shown ? "false" : "true" };
+  });
+  const rows = this.ITEMS.map((it) => {
+    const p = place(it.id, it.sec);
+    const on = s.kw && s.sel === it.id;
+    const weak = s.meaning && it.weak;
+    return {
+      nm: it.nm, dir: it.dir, bd: it.bd || "", hasBd: !!it.bd, tint: it.tint || "",
+      isImg: it.kind === "img", isVid: it.kind === "vid", isAud: it.kind === "aud", isMd: it.kind === "md", isPdf: it.kind === "pdf",
+      hasSnip: !!it.snip, noSnip: !it.snip, snip: mk(it.snip, "bw"),
+      cls: (on ? "on" : "") + (weak ? " dimmed" : ""),
+      y: p.y, op: p.shown ? 1 : 0, td: td(it.id), pe: p.shown ? "auto" : "none", hid: p.shown ? "false" : "true",
+      pick: () => this.choose(it.id)
+    };
+  });
+  const pvs = this.ITEMS.map((it) => {
+    const word = !!it.snip;
+    return {
+      cls: s.kw && s.sel === it.id ? "on" : "", hid: s.kw && s.sel === it.id ? "false" : "true",
+      nm: it.nm, dir: it.dir, meta: it.meta, act: it.act, bg: it.bg || "#2c3a52", what: it.what || "", whyf: (it.why || []).map((f) => ({ k: f.k, v: f.v, vc: f.hit ? "v hit" : "v" })),
+      isImg: it.kind === "img", isVid: it.kind === "vid", isAud: it.kind === "aud", isMd: it.kind === "md", isPdf: it.kind === "pdf",
+      isMatch: !word, isWord: word, snip: mk(it.snip, "bw"), hitLabel: "line " + (it.hitLine || 0),
+      pdfCls: typed >= 8 ? "mkp" : "",
+      lines: (it.lines || []).map((l) => ({ no: l.no, cls: l.hit ? "hit" : "", parts: mk(l.parts, "mk2").map((x, i) => ({ t: x.t, cls: x.cls })) }))
+    };
+  });
+  const bars = [];
+  for (let i = 0; i < 62; i++) {
+    const h = Math.round(12 + 100 * Math.pow(Math.abs(Math.sin(i * 0.9 + 0.5) * Math.cos(i * 0.23)), 1.3));
+    bars.push({ h: Math.min(140, h), cls: i >= 4 && i <= 18 ? "h" : "" });
+  }
+
+  const sel = this.BY[s.sel] || this.BY.d1;
+  const fhints = [
+    { keys: [{ k: "Enter" }], t: sel.enter },
+    { keys: [{ k: "Ctrl" }, { k: "Enter" }], t: "show in folder" },
+    { keys: [{ k: "Ctrl" }, { k: "Space" }], t: sel.space },
+    { keys: [{ k: "Ctrl" }, { k: "C" }], t: "copy path" },
+    { keys: [{ k: "Esc" }], t: "close" }
+  ];
+  const showRes = s.kw;
+  const footL = !s.kw ? "3,880 files · watching 4 folders" : (s.meaning ? "9 results · 2 weaker" : "Matching words…");
+
+  const STEPS = [
+    "1 / 5 · Shortcut opens the search",
+    "2 / 5 · Typing a description",
+    "3 / 5 · Matching words answers first",
+    "4 / 5 · Meaning re-ranks the list",
+    "5 / 5 · Esc closes the overlay"
+  ];
+  const stepLbl = s.mode === "auto" ? STEPS[Math.max(0, Math.min(4, s.step - 1))] : (s.open ? "Your turn · ↑ ↓ move, Enter opens, Esc closes" : "Closed · press ↓ or Replay");
+
+  return {
+    corners: this.props.corners ?? "square",
+    chipCls: s.chip ? "on" : "", chipPress: s.chipPress ? "press" : "",
+    openCls: s.open ? "on" : "",
+    showPh: typed === 0, showTyped: typed > 0, qCls: typed === 0 ? "ph" : "", typedText: this.QUERY.slice(0, typed),
+    spin: s.kw && !s.meaning, stText: typed === 0 ? "ready" : (s.meaning ? "41 ms" : (s.kw ? "matching by meaning" : "")),
+    empCls: showRes ? "gone" : "", resCls: showRes ? "on" : "",
+    hdrs: hdrs, rows: rows, pvs: pvs, bars: bars,
+    footL: footL, offline: !s.kw, showIdx: !s.kw, fhints: s.kw ? fhints : [],
+    toastCls: s.toastOn ? "on" : "", toastTxt: s.toastTxt,
+    stepLbl: stepLbl,
+    replay: () => this.replay(), togglePause: () => this.togglePause(),
+    pauseLbl: s.paused ? "Resume" : "Pause", pauseCls: s.mode === "auto" ? "" : "dis",
+    kDown: () => this.press("Down"), kUp: () => this.press("Up"), kEnter: () => this.press("Enter"), kEsc: () => this.press("Esc"),
+    pDown: s.pressed === "Down" ? "press" : "", pUp: s.pressed === "Up" ? "press" : "",
+    pEnter: s.pressed === "Enter" ? "press" : "", pEsc: s.pressed === "Esc" ? "press" : ""
+  };
+}
+}
+</script>
+</body>
+</html>

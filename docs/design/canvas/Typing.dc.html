@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>omafind while typing</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./omaone.css">
+<link rel="stylesheet" href="./omafind.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.it .dir b{color:var(--fg);font-weight:700}
+.pv-img .play{position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;display:grid;place-items:center;border-radius:50%;background:rgba(17,17,27,0.78);border:2px solid var(--fg);color:var(--fg)}
+.pv-img .play .svg-i{width:24px;height:24px;stroke-width:0;fill:currentColor;color:var(--fg);margin-left:3px}
+.pv-img .chip-l{position:absolute;left:12px;bottom:34px;height:22px;padding:0 7px;display:flex;align-items:center;font-size:11px;font-weight:700;background:rgba(17,17,27,0.85);color:var(--fg);border-radius:var(--r)}
+.pv-img .what.top{top:12px;bottom:auto}
+.pv-img .scrub{position:absolute;left:12px;right:12px;bottom:16px}
+.pv-img .scrub .tl-track{background:rgba(205,214,244,0.22)}
+.pv-img .scrub .tl-track .pl{background:rgba(205,214,244,0.5)}
+.pv-img .vid-icon{position:absolute;right:14px;top:12px;width:18px;height:18px;color:var(--dim)}
+.pcard{width:600px;height:340px;background:var(--surface0);border-radius:var(--r);padding:26px 28px 22px;display:flex;flex-direction:column;gap:22px}
+.pcard .wf{width:auto;height:150px;background:transparent;padding:0}
+.pcard .wf i{flex:none;width:5px}
+.pcard .ctl{display:flex;align-items:center;gap:18px}
+.pcard .pbtn{width:46px;height:46px;flex:none;border:0;padding:0;border-radius:50%;background:var(--accent);color:var(--base);display:grid;place-items:center}
+.pcard .pbtn .svg-i{width:20px;height:20px;stroke-width:0;fill:currentColor;color:var(--base);margin-left:3px}
+.pcard .trk{flex:1;position:relative;height:6px;background:var(--fill-hover)}
+.pcard .trk .pl{position:absolute;left:0;top:0;bottom:0;background:rgba(205,214,244,0.25)}
+.pcard .trk .wn{position:absolute;top:-3px;height:12px;background:var(--accent)}
+.pcard .capt{text-align:center;font-size:12px;color:var(--fg2)}
+.pv-page{position:relative}
+.pv-page .pg{position:absolute;left:12px;bottom:12px;height:22px;padding:0 8px;display:flex;align-items:center;font-size:11px;font-weight:700;background:rgba(17,17,27,0.85);color:var(--fg);border-radius:var(--r)}
+.pv-page .row2{display:flex;justify-content:space-between}
+.pv-page .hd2{font-size:9px;font-weight:700;color:#1e1e2e;margin-top:6px}
+.pv-why .aa{font-weight:700;color:var(--accent);font-size:13px;width:15px;flex:none}
+.pv-why .s b{color:var(--fg)}
+.pv-why .stack{display:flex;flex-direction:column;gap:6px}
+.pv-act .note{align-self:center;margin-left:6px;font-size:11px;color:var(--dim)}
+</style>
+</helmet>
+<div class="desk corners-{{corners}} motion-{{motion}}" style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #cdd6f4">
+  <img class="wall" src="/_blob/ceac48904c365f111f8aee8c1d9bc4a5" alt="">
+
+  <div class="bar">
+    <div class="bar-l">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16"/><path d="M4 10h16M10 10v10"/></svg></span>
+      <span class="ws-cur"></span><span class="ws">2</span><span class="ws">3</span><span class="ws empty">4</span><span class="ws empty">5</span>
+    </div>
+    <div class="bar-c"><span>Saturday 15:31</span></div>
+    <div class="bar-r">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="0.6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg></span>
+    </div>
+  </div>
+
+  <div class="scrim"></div>
+
+  <div class="sp surf focus">
+    <div class="sp-q">
+      <svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <label for="q" class="q"><span class="pref">pdf:</span> where they tal<span class="caret"></span></label>
+      <input id="q" type="text" style="position: absolute; opacity: 0; width: 1px; height: 1px" aria-label="Search">
+      <span class="st"><span class="spin"></span>matching by meaning</span>
+    </div>
+    <div class="p-sep"></div>
+
+    <div class="sp-main">
+      <div class="sp-list">
+        <div class="sec-h">PDFs <span class="n">2</span></div>
+        <button class="it on">
+          <span class="th"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg></span>
+          <span class="tx"><span class="nm">Renters insurance - policy summary.pdf</span><span class="dir">…water damage from plumbing, wherever <b>they</b> are…</span></span>
+          <span class="bd">p. 1</span>
+        </button>
+        <button class="it">
+          <span class="th"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg></span>
+          <span class="tx"><span class="nm">lease-agreement-2025.pdf</span><span class="dir">…ask <b>where they tal</b>k about the deposit before…</span></span>
+          <span class="bd">p. 4</span>
+        </button>
+      </div>
+
+      <div class="sp-pv">
+        <div class="pv-media">
+          <div class="pv-page" aria-hidden="true">
+            <span class="row2"><span>Personal property</span><span>$30,000 &nbsp; $500</span></span>
+            <span class="row2"><span>Personal liability</span><span>$100,000 &nbsp; &ndash;</span></span>
+            <span class="row2"><span>Medical payments to others</span><span>$2,000 &nbsp; &ndash;</span></span>
+            <span class="row2"><span>Loss of use</span><span>$9,000 &nbsp; &ndash;</span></span>
+            <span class="hd2">What's covered</span>
+            <span>Your belongings are covered against fire, smoke, theft, vandalism, windstorm and water damage from plumbing, wherever <mark>they</mark> are in the world. Electronics are covered at replacement cost. Bicycles are covered up to $1,500.</span>
+            <span class="hd2">What's not covered</span>
+            <span>Flood and earthquake damage, damage caused on purpose, and business property. Jewelry and watches are limited to $1,500 unless scheduled separately.</span>
+            <span class="hd2">Deductible</span>
+            <span>A $500 deductible applies to each claim. Claims for personal liability have no deductible.</span>
+            <span class="pg">p. 1</span>
+          </div>
+        </div>
+        <div class="pv-info">
+          <span class="pv-name">Renters insurance - policy summary.pdf</span>
+          <span class="pv-path">~/Documents/Home</span>
+          <span class="pv-meta">PDF · Aug 25, 2025 · 2 pages · 59 KB</span>
+        </div>
+        <div class="pv-why" style="align-items:flex-start"><span class="aa">Aa</span><span class="stack"><span class="fx"><span class="f"><span class="k">leg</span><span class="v">words</span></span><span class="f"><span class="k">part</span><span class="v">text</span></span><span class="f"><span class="k">at</span><span class="v">p. 1</span></span><span class="f"><span class="k">hits</span><span class="v hit">they</span></span></span><span class="s">…water damage from plumbing, wherever <b>they</b> are in the world…</span></span></div>
+        <div class="pv-act">
+          <button class="btn-acc">Open at page 1</button>
+          <button class="btn-sec">Show in folder</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sp-f">
+      <span>Matching words…</span>
+      <span class="sp-r">
+        <span><span class="kbd">Enter</span> open at page 1</span>
+        <span><span class="kbd">Ctrl</span><span class="kbd">Enter</span> show in folder</span>
+        <span><span class="kbd">Ctrl</span><span class="kbd">Space</span> preview</span>
+        <span><span class="kbd">Ctrl</span><span class="kbd">C</span> copy path</span>
+        <span><span class="kbd">Esc</span> close</span>
+      </span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"corners":{"editor":"enum","options":["square","rounded"],"default":"square"},"motion":{"editor":"enum","options":["still","live"],"default":"still"},"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return { corners: this.props.corners ?? "square", motion: this.props.motion ?? "still" };
+}
+}
+</script>
+</body>
+</html>

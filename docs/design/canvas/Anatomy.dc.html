@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>omafind list rows, previews and keys</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./omaone.css">
+<link rel="stylesheet" href="./omafind.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.it .dir b{color:var(--fg);font-weight:700}
+.it{cursor:default}
+.t-d2{color:var(--dim)}
+.k{color:var(--fg);font-weight:700}
+</style>
+</helmet>
+<div class="desk corners-{{corners}} motion-{{motion}}" style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #cdd6f4; background: #11111b; padding: 48px 64px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto; align-content: center; gap: 28px">
+
+  <section class="surf" style="padding: 22px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0">
+    <div class="p-sec">List row states <span>left pane</span></div>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <button class="it">
+        <span class="th t-a"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></span>
+        <span class="tx"><span class="nm">Default</span><span class="dir">folder in dim, badge for the matched spot</span></span>
+        <span class="bd">p. 12</span>
+      </button>
+      <button class="it on">
+        <span class="th t-e"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></span>
+        <span class="tx"><span class="nm">Selected</span><span class="dir">accent fill, Enter acts on this row</span></span>
+        <span class="bd">0:42</span>
+      </button>
+      <button class="it dimmed">
+        <span class="th t-d"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></span>
+        <span class="tx"><span class="nm">Offline drive</span><span class="dir">Photos2024 · /2019/lisbon, thumbnail kept</span></span>
+        <span class="bd warn">offline</span>
+      </button>
+      <button class="it">
+        <span class="th "><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M9 12h7M9 16h7M9 8h3"/></svg></span>
+        <span class="tx"><span class="nm">Keyword hit</span><span class="dir">…the <b>words</b> you typed, in bold, replace the folder</span></span>
+        <span class="bd">L41</span>
+      </button>
+      <button class="it">
+        <span class="th "><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg></span>
+        <span class="tx"><span class="nm">Partly indexed PDF</span><span class="dir"><span class="fx"><span class="f"><span class="k">queued</span><span class="v">p. 31–412</span></span></span></span></span>
+        <span class="bd">30 of 412</span>
+      </button>
+    </div>
+    <div class="sp-weak" style="padding: 8px 10px 0"><span>› 3 weaker matches</span><span class="ln"></span></div>
+    <span style="font-size: 12px; color: var(--dim); padding: 0 10px">Hits under half the top score fold into one row at the end of the list. Enter on it expands them.</span>
+  </section>
+
+  <section class="surf" style="padding: 22px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0">
+    <div class="p-sec">Preview by kind <span>right pane</span></div>
+    <div style="display: grid; grid-template-columns: 76px minmax(0, 1fr) 285px 172px; column-gap: 12px; row-gap: 17px; font-size: 13px; color: var(--fg2); align-items: baseline">
+      <span class="t-d2" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase">Kind</span><span class="t-d2" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase">Shows</span><span class="t-d2" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase">Why line</span><span class="t-d2" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase">Primary</span>
+      <span class="t-d2">Image</span><span>Picture</span><span style="display:flex;min-width:0"><span class="fx"><span class="f"><span class="k">leg</span><span class="v">meaning</span></span><span class="f"><span class="k">part</span><span class="v">image</span></span><span class="f"><span class="k">z</span><span class="v">3.4</span></span></span></span><span class="t-d2">Open</span>
+      <span class="t-d2">Video</span><span>Frame and scrubber</span><span style="display:flex;min-width:0"><span class="fx"><span class="f"><span class="k">leg</span><span class="v">meaning</span></span><span class="f"><span class="k">part</span><span class="v">frame</span></span><span class="f"><span class="k">at</span><span class="v">0:42</span></span><span class="f"><span class="k">z</span><span class="v">3.1</span></span></span></span><span class="t-d2">Open at 0:42</span>
+      <span class="t-d2">Audio</span><span>Player with matched window</span><span style="display:flex;min-width:0"><span class="fx"><span class="f"><span class="k">leg</span><span class="v">meaning</span></span><span class="f"><span class="k">part</span><span class="v">audio</span></span><span class="f"><span class="k">at</span><span class="v">7:55&#8211;8:25</span></span><span class="f"><span class="k">z</span><span class="v">2.7</span></span></span></span><span class="t-d2">Open at 7:55</span>
+      <span class="t-d2">PDF</span><span>Rendered page, words highlighted</span><span style="display:flex;min-width:0"><span class="fx"><span class="f"><span class="k">leg</span><span class="v">words</span></span><span class="f"><span class="k">part</span><span class="v">text</span></span><span class="f"><span class="k">at</span><span class="v">p. 12</span></span><span class="f"><span class="k">hits</span><span class="v hit">they</span></span></span></span><span class="t-d2">Open at page 12</span>
+      <span class="t-d2">Document</span><span>Text excerpt, line numbers</span><span style="display:flex;min-width:0"><span class="fx"><span class="f"><span class="k">leg</span><span class="v">words</span></span><span class="f"><span class="k">part</span><span class="v">text</span></span><span class="f"><span class="k">at</span><span class="v">L41</span></span><span class="f"><span class="k">hits</span><span class="v hit">vulkan</span></span></span></span><span class="t-d2">Open at line</span>
+      <span class="t-d2">Code</span><span>Code excerpt, line numbers</span><span style="display:flex;min-width:0"><span class="fx"><span class="f"><span class="k">leg</span><span class="v">meaning + words</span></span><span class="f"><span class="k">part</span><span class="v">code</span></span><span class="f"><span class="k">at</span><span class="v">L1&#8211;47</span></span><span class="f"><span class="k">z</span><span class="v">2.9</span></span></span></span><span class="t-d2">Open in editor at line</span>
+    </div>
+    <div class="p-sep"></div>
+    <span style="font-size: 13px; color: var(--fg2)">Section order: the section with the top hit comes first, the rest by their best hit.</span>
+    <span style="font-size: 13px; color: var(--fg2)">The why line lists computed facts: leg (which index answered), part, at, hits and z (fused score).</span>
+    <span style="font-size: 12px; color: var(--dim)">An offline file keeps its cached thumbnail, dimmed. Open stays disabled until the drive is back.</span>
+  </section>
+
+  <section class="surf" style="padding: 22px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0">
+    <div class="p-sec">Keys</div>
+    <div style="display: grid; grid-template-columns: 220px minmax(0, 1fr); row-gap: 20px; font-size: 13px; color: var(--fg2); align-items: center">
+      <span style="display: flex; gap: 4px; align-items: center"><span class="kbd">Super</span><span class="kbd">E</span></span><span>Open or close omafind</span>
+      <span style="display: flex; gap: 4px; align-items: center"><span class="kbd">↑</span><span class="kbd">↓</span><span class="t-d2" style="font-size: 11px">or</span><span class="kbd">Ctrl</span><span class="kbd">J</span><span class="kbd">K</span></span><span>Move across sections</span>
+      <span style="display: flex; gap: 4px; align-items: center"><span class="kbd">Enter</span></span><span>Open at the match</span>
+      <span style="display: flex; gap: 4px; align-items: center"><span class="kbd">Ctrl</span><span class="kbd">Enter</span></span><span>Show in folder</span>
+      <span style="display: flex; gap: 4px; align-items: center"><span class="kbd">Ctrl</span><span class="kbd">Space</span></span><span>Play or pause the preview</span>
+      <span style="display: flex; gap: 4px; align-items: center"><span class="kbd">Ctrl</span><span class="kbd">C</span></span><span>Copy path</span>
+      <span style="display: flex; gap: 4px; align-items: center"><span class="kbd">Esc</span></span><span>Clear the query, then close</span>
+    </div>
+  </section>
+
+  <section class="surf" style="padding: 22px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0">
+    <div class="p-sec">What Enter opens <span>from your default apps</span></div>
+    <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr); row-gap: 16px; font-size: 13px; color: var(--fg2)">
+      <span class="t-d2">PDF</span><span>Default browser at #page=N</span>
+      <span class="t-d2">Video, audio</span><span>mpv from the matched second</span>
+      <span class="t-d2">Image</span><span>The default image app</span>
+      <span class="t-d2">Text, code</span><span>$EDITOR at the line, in a terminal</span>
+    </div>
+    <div class="p-sep"></div>
+    <div class="p-sec">Prefixes</div>
+    <span style="font-size: 12px; color: var(--dim)">A prefix limits the search to one kind and stays in the query row.</span>
+    <div class="hints" style="justify-content: flex-start">
+      <span class="hint"><b>img:</b> images</span>
+      <span class="hint"><b>pdf:</b> PDF pages</span>
+      <span class="hint"><b>doc:</b> notes and documents</span>
+      <span class="hint"><b>vid:</b> video moments</span>
+      <span class="hint"><b>aud:</b> audio moments</span>
+      <span class="hint"><b>code:</b> code</span>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"corners":{"editor":"enum","options":["square","rounded"],"default":"square"},"motion":{"editor":"enum","options":["still","live"],"default":"still"},"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return { corners: this.props.corners ?? "square", motion: this.props.motion ?? "still" };
+}
+}
+</script>
+</body>
+</html>

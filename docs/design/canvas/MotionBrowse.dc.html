@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>omafind motion, browse and open</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./omaone.css">
+<link rel="stylesheet" href="./omafind.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.it{transition:background 100ms ease,box-shadow 100ms ease;cursor:pointer}
+.it .dir b{color:var(--fg);font-weight:700}
+.pv-stack{flex:1;min-width:0;position:relative}
+.lay{position:absolute;left:0;top:0;right:0;bottom:0;flex:none}
+.mwrap{display:grid;place-items:center}
+.pv-img .play{position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;display:grid;place-items:center;border-radius:50%;background:rgba(17,17,27,0.78);border:2px solid var(--fg);color:var(--fg);padding:0;cursor:pointer}
+.pv-img .play .svg-i{grid-area:1/1;width:24px;height:24px;stroke-width:0;fill:currentColor;color:var(--fg);margin-left:3px}
+.pv-img .play .svg-i.pa{margin-left:0}
+.pv-img .chip-l{position:absolute;left:12px;bottom:34px;height:22px;padding:0 7px;display:flex;align-items:center;font-size:11px;font-weight:700;background:rgba(17,17,27,0.85);color:var(--fg);border-radius:var(--r)}
+.pv-img .what.top{top:12px;bottom:auto}
+.pv-img .scrub{position:absolute;left:12px;right:12px;bottom:16px}
+.pv-img .scrub .tl-track{background:rgba(205,214,244,0.22)}
+.pv-img .scrub .tl-track .pl{background:rgba(205,214,244,0.5)}
+.tl-track .phd{position:absolute;top:-4px;width:2px;height:16px;margin-left:-1px;background:var(--fg)}
+.tl-track .mk.best{transition:box-shadow 160ms ease}
+.pcard{width:600px;height:340px;background:var(--surface0);border-radius:var(--r);padding:26px 28px 22px;display:flex;flex-direction:column;gap:22px;box-sizing:border-box}
+.pcard .wf{width:auto;height:150px;background:transparent;padding:0;justify-content:space-between}
+.pcard .wf i{flex:none;width:5px;transition:background 100ms linear}
+.pcard .wf .win{left:25%;width:50%}
+.pcard .wf .phd{position:absolute;top:6px;bottom:6px;width:2px;margin-left:-1px;background:var(--fg)}
+.pcard .ctl{display:flex;align-items:center;gap:18px}
+.pcard .pbtn{width:46px;height:46px;flex:none;border:0;padding:0;border-radius:50%;background:var(--accent);color:var(--base);display:grid;place-items:center;cursor:pointer}
+.pcard .pbtn .svg-i{grid-area:1/1;width:20px;height:20px;stroke-width:0;fill:currentColor;color:var(--base);margin-left:3px}
+.pcard .pbtn .svg-i.pa{margin-left:0}
+.pcard .trk{flex:1;position:relative;height:6px;background:var(--fill-hover)}
+.pcard .trk .pl{position:absolute;left:0;top:0;bottom:0;background:rgba(205,214,244,0.25)}
+.pcard .trk .wn{position:absolute;top:-3px;height:12px;min-width:4px;background:var(--accent)}
+.pcard .tm{font-size:12px;font-weight:700;color:var(--fg);min-width:40px;text-align:right}
+.pcard .capt{text-align:center;font-size:12px;color:var(--fg2)}
+@keyframes wpulse{from{transform:scaleY(1)}to{transform:scaleY(0.8)}}
+.pv-page{position:relative}
+.pv-page .pg{position:absolute;left:12px;bottom:12px;height:22px;padding:0 8px;display:flex;align-items:center;font-size:11px;font-weight:700;background:rgba(17,17,27,0.85);color:var(--fg);border-radius:var(--r)}
+.pv-page .hd2{font-size:9px;font-weight:700;color:#1e1e2e;margin-top:6px}
+.pv-page .cmd{font-size:8.5px;background:#ccd0da;padding:3px 5px;color:#1e1e2e}
+.pvwrap{position:relative;width:640px;height:400px}
+.pvwrap .pv-text{width:640px;height:100%;box-sizing:border-box}
+.chip{position:absolute;right:10px;bottom:10px;height:22px;padding:0 8px;display:flex;align-items:center;font-size:11px;font-weight:700;background:rgba(17,17,27,0.9);color:var(--fg);border-radius:var(--r);border:1px solid var(--sep)}
+.pv-why .aa{font-weight:700;color:var(--accent);font-size:13px;width:15px;flex:none}
+.pv-why .s b{color:var(--fg)}
+.pv-why .stack{display:flex;flex-direction:column;gap:6px}
+.pv-act .note{align-self:center;margin-left:6px;font-size:11px;color:var(--dim)}
+.pv-act button{cursor:pointer}
+.gwin{position:absolute;left:10px;top:36px;width:1900px;height:1034px;box-sizing:border-box;border:2px solid var(--accent);background:var(--crust);display:flex;flex-direction:column;border-radius:var(--r);overflow:hidden;z-index:4}
+.gtb{height:30px;flex:none;display:flex;align-items:center;gap:12px;padding:0 12px;font-size:12px;background:var(--base);border-bottom:1px solid var(--sep);color:var(--dim)}
+.gtb .gn{color:var(--fg);font-weight:700}
+.gtb .gp{margin-left:auto;color:var(--fg);font-weight:700}
+.gbody{flex:1;position:relative;display:grid;place-items:center}
+.gbody .gwhat{font-size:14px;color:var(--fg2)}
+.gbody .osd{position:absolute;left:24px;right:24px;bottom:72px;display:flex;align-items:center;gap:16px;font-size:13px;color:var(--fg)}
+.gbody .osd .otr{flex:1;height:4px;background:rgba(205,214,244,0.22);position:relative}
+.gbody .osd .otr i{position:absolute;left:0;top:0;bottom:0;background:var(--fg)}
+.naut{background:var(--base)}
+.nbody{flex:1;display:flex;min-height:0}
+.nside{width:220px;flex:none;background:var(--mantle);border-right:1px solid var(--sep);padding:12px 8px;display:flex;flex-direction:column;gap:2px;font-size:13px;color:var(--fg2)}
+.nside span{height:32px;display:flex;align-items:center;padding:0 12px;border-radius:var(--r)}
+.nside span.on{background:var(--fill-hover);color:var(--fg)}
+.nmain{flex:1;min-width:0;display:flex;flex-direction:column}
+.ncrumb{height:44px;flex:none;display:flex;align-items:center;padding:0 18px;font-size:13px;color:var(--fg);border-bottom:1px solid var(--sep)}
+.nhead,.nr{display:grid;grid-template-columns:minmax(0,1fr) 140px 180px;column-gap:16px;align-items:center;padding:0 18px;font-size:13px}
+.nhead{height:34px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid var(--sep)}
+.nr{height:40px;color:var(--fg2)}
+.nstat{margin-top:auto;height:32px;flex:none;display:flex;align-items:center;padding:0 18px;font-size:11px;color:var(--dim);border-top:1px solid var(--sep)}
+.nr .f{display:flex;align-items:center;gap:12px;color:var(--fg)}
+.nr .f .svg-i{width:16px;height:16px;color:var(--dim);flex:none}
+.nr.on{background:rgba(137,180,250,0.22);box-shadow:inset 0 0 0 1px var(--accent)}
+.mc{position:absolute;left:24px;bottom:20px;height:36px;padding:0 10px;display:flex;align-items:center;gap:10px;font-size:11px;color:var(--fg2);z-index:20;box-sizing:border-box}
+.mc .st{width:290px;white-space:nowrap;color:var(--fg)}
+.mc .sep{width:1px;height:16px;background:var(--sep)}
+.mc .mb{height:22px;padding:0 9px;border:1px solid var(--ctl-border);background:transparent;color:var(--fg);font:inherit;font-size:11px;cursor:pointer;border-radius:var(--r)}
+.mc .mk2{height:22px;padding:0 7px;background:transparent;font-family:inherit;cursor:pointer}
+.ntf{z-index:10;transform-origin:top right}
+.ntf .b .fx{font-size:11px;line-height:16px}
+.pv-act .note .fx{font-size:11px}
+.gtb .fx{gap:14px;font-size:11px}
+.brw{background:var(--base)}
+.btabs{height:38px;flex:none;display:flex;align-items:flex-end;gap:8px;padding:8px 10px 0;background:var(--crust)}
+.btab{height:30px;width:280px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:var(--fg);background:var(--base);border-radius:var(--r) var(--r) 0 0;box-sizing:border-box}
+.btab .svg-i{width:14px;height:14px;color:var(--dim);flex:none}
+.btab .tn{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bplus{width:28px;height:28px;display:grid;place-items:center;color:var(--dim)}
+.bplus .svg-i,.bnav .bi .svg-i{width:14px;height:14px}
+.bnav{height:42px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--base);border-bottom:1px solid var(--sep)}
+.bnav .bi{width:28px;height:28px;display:grid;place-items:center;color:var(--fg2)}
+.burl{flex:1;height:28px;display:flex;align-items:center;gap:8px;padding:0 12px;font-size:12px;color:var(--fg);background:var(--mantle);border:1px solid var(--sep);border-radius:var(--r);white-space:nowrap;overflow:hidden}
+.burl .svg-i{width:13px;height:13px;color:var(--dim);flex:none}
+.burl .u2{color:var(--dim)}
+.pdft{height:36px;flex:none;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--mantle);border-bottom:1px solid var(--sep);font-size:12px;color:var(--fg2)}
+.pdft .svg-i{width:16px;height:16px;color:var(--fg2)}
+.pdft .pgbox{height:22px;min-width:34px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;background:var(--base);border:1px solid var(--ctl-border);border-radius:var(--r);color:var(--fg);font-weight:700}
+.pdft .gap{flex:1}
+.pdfb{flex:1;min-height:0;position:relative;overflow:hidden;background:#1a1a26;display:flex;justify-content:center;padding-top:26px}
+.ppaper{width:860px;height:1400px;flex:none;box-sizing:border-box;background:#e6e9ef;color:#4c4f69;padding:48px 72px;display:flex;flex-direction:column;gap:14px;font-size:15px;line-height:22px}
+.ppaper .rh{font-size:11px;color:#7c7f93;display:flex;justify-content:space-between;border-bottom:1px solid #bcc0cc;padding-bottom:8px}
+.ppaper .h1{font-size:22px;line-height:28px;font-weight:700;color:#1e1e2e;margin-top:10px}
+.ppaper .h2{font-size:16px;font-weight:700;color:#1e1e2e;margin-top:8px}
+.ppaper .cm{font-size:13px;background:#ccd0da;padding:8px 12px;color:#1e1e2e}
+.ppaper mark{background:rgba(223,142,29,0.35);color:#1e1e2e}
+</style>
+</helmet>
+<div class="desk corners-{{corners}} motion-live" style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #cdd6f4">
+  <img class="wall" src="/_blob/ceac48904c365f111f8aee8c1d9bc4a5" alt="">
+
+  <div class="bar">
+    <div class="bar-l">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16"/><path d="M4 10h16M10 10v10"/></svg></span>
+      <span class="ws-cur"></span><span class="ws">2</span><span class="ws">3</span><span class="ws empty">4</span><span class="ws empty">5</span>
+    </div>
+    <div class="bar-c"><span>Saturday 15:24</span></div>
+    <div class="bar-r">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="0.6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg></span>
+    </div>
+  </div>
+
+  <div class="scrim" style="{{scrimS}}"></div>
+
+  <div class="sp surf focus" style="{{panelS}}">
+    <div class="sp-q">
+      <svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <label for="q" class="q">someone explaining btrfs snapshots<span class="caret"></span></label>
+      <input id="q" type="text" style="position: absolute; opacity: 0; width: 1px; height: 1px" aria-label="Search">
+      <span class="st">41 ms</span>
+    </div>
+    <div class="p-sep"></div>
+
+    <div class="sp-main">
+      <div class="sp-list">
+        <div class="sec-h">Video <span class="n">3</span></div>
+        <button class="it {{r0}}" onClick="{{pick0}}">
+          <span class="th t-c"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14"/><path d="M17 10l5-3v10l-5-3"/></svg></span>
+          <span class="tx"><span class="nm">linux-fs-talk-2025.mp4</span><span class="dir">~/Videos/talks</span></span>
+          <span class="bd">14:32</span>
+        </button>
+        <button class="it {{r1}}" onClick="{{pick1}}">
+          <span class="th t-a"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14"/><path d="M17 10l5-3v10l-5-3"/></svg></span>
+          <span class="tx"><span class="nm">omarchy-install-walkthrough.mkv</span><span class="dir">~/Videos</span></span>
+          <span class="bd">3:05</span>
+        </button>
+        <button class="it {{r2}}" onClick="{{pick2}}">
+          <span class="th t-e"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14"/><path d="M17 10l5-3v10l-5-3"/></svg></span>
+          <span class="tx"><span class="nm">meetup-recording.webm</span><span class="dir">~/Downloads</span></span>
+          <span class="bd">41:10</span>
+        </button>
+        <div class="sec-h">Audio <span class="n">1</span></div>
+        <button class="it {{r3}}" onClick="{{pick3}}">
+          <span class="th t-b"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
+          <span class="tx"><span class="nm">linux-unplugged-ep612.mp3</span><span class="dir">~/Music/podcasts</span></span>
+          <span class="bd">22:30</span>
+        </button>
+        <div class="sec-h">PDFs <span class="n">1</span></div>
+        <button class="it {{r4}}" onClick="{{pick4}}">
+          <span class="th"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg></span>
+          <span class="tx"><span class="nm">btrfs-admin-guide.pdf</span><span class="dir">~/Documents/manuals</span></span>
+          <span class="bd">p. 37</span>
+        </button>
+        <div class="sec-h">Documents <span class="n">1</span></div>
+        <button class="it {{r5}}" onClick="{{pick5}}">
+          <span class="th"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M9 12h7M9 16h7M9 8h3"/></svg></span>
+          <span class="tx"><span class="nm">homelab-notes.md</span><span class="dir">~/Documents/notes</span></span>
+          <span class="bd">L88</span>
+        </button>
+      </div>
+
+      <div class="pv-stack">
+        <div class="sp-pv lay" style="{{lay0}}">
+          <div class="pv-media"><div class="mwrap" style="{{med0}}">
+            <div class="pv-img" style="background:#2f3f3d">
+              <span class="what top">[frame: terminal showing btrfs subvolume snapshot, speaker beside it]</span>
+              <button type="button" class="play" aria-label="Play or pause" onClick="{{kSpace}}"><svg class="svg-i" style="{{vPlay0}}" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg><svg class="svg-i pa" style="{{vPause0}}" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+              <span class="chip-l">{{vChip0}}</span>
+              <div class="scrub tl" style="width:auto"><div class="tl-track"><span class="pl" style="{{vPl0}}"></span><span class="mk" style="left:12%"></span><span class="mk" style="left:63%"></span><span class="mk best" style="{{vBest0}}"></span><span class="phd" style="{{vPh0}}"></span></div></div>
+            </div>
+          </div></div>
+        <div class="pv-info">
+          <span class="pv-name">linux-fs-talk-2025.mp4</span>
+          <span class="pv-path">~/Videos/talks</span>
+          <span class="pv-meta">Video &middot; Jun 12, 2025 &middot; 48:20 &middot; 1.2 GB</span>
+        </div>
+        <span class="pv-why"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/><path d="M8 11h6M11 8v6"/></svg><span class="fx"><span class="f"><span class="k">leg</span><span class="v">meaning</span></span><span class="f"><span class="k">part</span><span class="v">frame + speech</span></span><span class="f"><span class="k">at</span><span class="v">14:32</span></span><span class="f"><span class="k">z</span><span class="v">3.6</span></span></span></span>
+        <div class="pv-act">
+            <button type="button" class="btn-acc" style="{{acc0}}" onClick="{{kEnter}}">Open at 14:32</button>
+            <button type="button" class="btn-sec" style="{{sec0}}" onClick="{{kCtrlEnter}}">Show in folder</button><span class="note"><span class="fx"><span class="f"><span class="k">opener</span><span class="v">mpv --start=872</span></span></span></span>
+          </div>
+        </div>
+        <div class="sp-pv lay" style="{{lay1}}">
+          <div class="pv-media"><div class="mwrap" style="{{med1}}">
+            <div class="pv-img" style="background:#2c3a52">
+              <span class="what top">[frame: installer menu on a dark screen, host narrating]</span>
+              <button type="button" class="play" aria-label="Play or pause" onClick="{{kSpace}}"><svg class="svg-i" style="{{vPlay1}}" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg><svg class="svg-i pa" style="{{vPause1}}" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+              <span class="chip-l">{{vChip1}}</span>
+              <div class="scrub tl" style="width:auto"><div class="tl-track"><span class="pl" style="{{vPl1}}"></span><span class="mk" style="left:52%"></span><span class="mk" style="left:81%"></span><span class="mk best" style="{{vBest1}}"></span><span class="phd" style="{{vPh1}}"></span></div></div>
+            </div>
+          </div></div>
+        <div class="pv-info">
+          <span class="pv-name">omarchy-install-walkthrough.mkv</span>
+          <span class="pv-path">~/Videos</span>
+          <span class="pv-meta">Video &middot; Mar 3, 2026 &middot; 22:14 &middot; 640 MB</span>
+        </div>
+        <span class="pv-why"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/><path d="M8 11h6M11 8v6"/></svg><span class="fx"><span class="f"><span class="k">leg</span><span class="v">meaning</span></span><span class="f"><span class="k">part</span><span class="v">frame + speech</span></span><span class="f"><span class="k">at</span><span class="v">3:05</span></span><span class="f"><span class="k">z</span><span class="v">3.1</span></span></span></span>
+        <div class="pv-act">
+            <button type="button" class="btn-acc" style="{{acc1}}" onClick="{{kEnter}}">Open at 3:05</button>
+            <button type="button" class="btn-sec" style="{{sec1}}" onClick="{{kCtrlEnter}}">Show in folder</button><span class="note"><span class="fx"><span class="f"><span class="k">opener</span><span class="v">mpv --start=185</span></span></span></span>
+          </div>
+        </div>
+        <div class="sp-pv lay" style="{{lay2}}">
+          <div class="pv-media"><div class="mwrap" style="{{med2}}">
+            <div class="pv-img" style="background:#33364a">
+              <span class="what top">[frame: three speakers on a meetup stage, slide behind them]</span>
+              <button type="button" class="play" aria-label="Play or pause" onClick="{{kSpace}}"><svg class="svg-i" style="{{vPlay2}}" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg><svg class="svg-i pa" style="{{vPause2}}" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+              <span class="chip-l">{{vChip2}}</span>
+              <div class="scrub tl" style="width:auto"><div class="tl-track"><span class="pl" style="{{vPl2}}"></span><span class="mk" style="left:8%"></span><span class="mk" style="left:71%"></span><span class="mk best" style="{{vBest2}}"></span><span class="phd" style="{{vPh2}}"></span></div></div>
+            </div>
+          </div></div>
+        <div class="pv-info">
+          <span class="pv-name">meetup-recording.webm</span>
+          <span class="pv-path">~/Downloads</span>
+          <span class="pv-meta">Video &middot; Feb 7, 2026 &middot; 1:32:05 &middot; 2.4 GB</span>
+        </div>
+        <span class="pv-why"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/><path d="M8 11h6M11 8v6"/></svg><span class="fx"><span class="f"><span class="k">leg</span><span class="v">meaning</span></span><span class="f"><span class="k">part</span><span class="v">frame + speech</span></span><span class="f"><span class="k">at</span><span class="v">41:10</span></span><span class="f"><span class="k">z</span><span class="v">2.7</span></span></span></span>
+        <div class="pv-act">
+            <button type="button" class="btn-acc" style="{{acc2}}" onClick="{{kEnter}}">Open at 41:10</button>
+            <button type="button" class="btn-sec" style="{{sec2}}" onClick="{{kCtrlEnter}}">Show in folder</button><span class="note"><span class="fx"><span class="f"><span class="k">opener</span><span class="v">mpv --start=2470</span></span></span></span>
+          </div>
+        </div>
+        <div class="sp-pv lay" style="{{lay3}}">
+          <div class="pv-media"><div class="mwrap" style="{{med3}}">
+            <div class="pcard">
+              <div class="wf" aria-hidden="true"><span class="win"></span><i style="{{b0}}"></i><i style="{{b1}}"></i><i style="{{b2}}"></i><i style="{{b3}}"></i><i style="{{b4}}"></i><i style="{{b5}}"></i><i style="{{b6}}"></i><i style="{{b7}}"></i><i style="{{b8}}"></i><i style="{{b9}}"></i><i style="{{b10}}"></i><i style="{{b11}}"></i><i style="{{b12}}"></i><i style="{{b13}}"></i><i style="{{b14}}"></i><i style="{{b15}}"></i><i class="h" style="{{b16}}"></i><i class="h" style="{{b17}}"></i><i class="h" style="{{b18}}"></i><i class="h" style="{{b19}}"></i><i class="h" style="{{b20}}"></i><i class="h" style="{{b21}}"></i><i class="h" style="{{b22}}"></i><i class="h" style="{{b23}}"></i><i class="h" style="{{b24}}"></i><i class="h" style="{{b25}}"></i><i class="h" style="{{b26}}"></i><i class="h" style="{{b27}}"></i><i class="h" style="{{b28}}"></i><i class="h" style="{{b29}}"></i><i class="h" style="{{b30}}"></i><i class="h" style="{{b31}}"></i><i class="h" style="{{b32}}"></i><i class="h" style="{{b33}}"></i><i class="h" style="{{b34}}"></i><i class="h" style="{{b35}}"></i><i class="h" style="{{b36}}"></i><i class="h" style="{{b37}}"></i><i class="h" style="{{b38}}"></i><i class="h" style="{{b39}}"></i><i class="h" style="{{b40}}"></i><i class="h" style="{{b41}}"></i><i class="h" style="{{b42}}"></i><i class="h" style="{{b43}}"></i><i class="h" style="{{b44}}"></i><i class="h" style="{{b45}}"></i><i class="h" style="{{b46}}"></i><i class="h" style="{{b47}}"></i><i style="{{b48}}"></i><i style="{{b49}}"></i><i style="{{b50}}"></i><i style="{{b51}}"></i><i style="{{b52}}"></i><i style="{{b53}}"></i><i style="{{b54}}"></i><i style="{{b55}}"></i><i style="{{b56}}"></i><i style="{{b57}}"></i><i style="{{b58}}"></i><i style="{{b59}}"></i><i style="{{b60}}"></i><i style="{{b61}}"></i><i style="{{b62}}"></i><i style="{{b63}}"></i><span class="phd" style="{{aPh}}"></span></div>
+              <div class="ctl">
+                <button type="button" class="pbtn" aria-label="Play or pause" onClick="{{kSpace}}"><svg class="svg-i" style="{{aPlay}}" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg><svg class="svg-i pa" style="{{aPause}}" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+                <div class="trk"><span class="pl" style="{{aPl}}"></span><span class="wn" style="left:58.19%;width:1.29%"></span></div>
+                <span class="tm">{{aTime}}</span>
+              </div>
+              <div class="capt">22:30 &ndash; 23:00 of 38:40</div>
+            </div>
+          </div></div>
+        <div class="pv-info">
+          <span class="pv-name">linux-unplugged-ep612.mp3</span>
+          <span class="pv-path">~/Music/podcasts</span>
+          <span class="pv-meta">Audio &middot; Sep 18, 2026 &middot; 38:40 &middot; 37 MB</span>
+        </div>
+        <span class="pv-why"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/><path d="M8 11h6M11 8v6"/></svg><span class="fx"><span class="f"><span class="k">leg</span><span class="v">meaning</span></span><span class="f"><span class="k">part</span><span class="v">audio</span></span><span class="f"><span class="k">at</span><span class="v">22:30–23:00</span></span><span class="f"><span class="k">z</span><span class="v">2.2</span></span></span></span>
+        <div class="pv-act">
+            <button type="button" class="btn-acc" style="{{acc3}}" onClick="{{kEnter}}">Open at 22:30</button>
+            <button type="button" class="btn-sec" style="{{sec3}}" onClick="{{kCtrlEnter}}">Show in folder</button><span class="note"><span class="fx"><span class="f"><span class="k">opener</span><span class="v">mpv --start=1350</span></span></span></span>
+          </div>
+        </div>
+        <div class="sp-pv lay" style="{{lay4}}">
+          <div class="pv-media"><div class="mwrap" style="{{med4}}">
+            <div class="pv-page" aria-hidden="true">
+              <span class="h">5.3 Working with snapshots</span>
+              <span><mark>Btrfs</mark> <mark>snapshots</mark> are copy-on-write clones of a subvolume. A <mark>snapshot</mark> is created instantly and takes no extra space until either side changes.</span>
+              <span class="hd2">Creating a snapshot</span>
+              <span class="cmd">btrfs subvolume snapshot -r /home /snap/home-0412</span>
+              <span>Add -r to make the <mark>snapshot</mark> read-only. A read-only <mark>snapshot</mark> can be sent to another disk with btrfs send.</span>
+              <span class="hd2">Rolling back</span>
+              <span>To roll back, move the broken subvolume aside and take a writable <mark>snapshot</mark> of the read-only copy in its place. Reboot when the root subvolume is affected.</span>
+              <span class="hd2">Deleting old snapshots</span>
+              <span>Deleting a <mark>snapshot</mark> frees only the extents no other subvolume references.</span>
+              <span class="ln"></span><span class="ln" style="width:86%"></span><span class="ln" style="width:92%"></span><span class="ln" style="width:48%"></span>
+              <span class="pg">p. 37</span>
+            </div>
+          </div></div>
+        <div class="pv-info">
+          <span class="pv-name">btrfs-admin-guide.pdf</span>
+          <span class="pv-path">~/Documents/manuals</span>
+          <span class="pv-meta">PDF &middot; Apr 2, 2024 &middot; 212 pages &middot; 6.8 MB</span>
+        </div>
+        <span class="pv-why"><span class="aa">Aa</span><span class="stack"><span class="fx"><span class="f"><span class="k">leg</span><span class="v">words</span></span><span class="f"><span class="k">part</span><span class="v">text</span></span><span class="f"><span class="k">at</span><span class="v">p. 37</span></span><span class="f"><span class="k">hits</span><span class="v hit">btrfs, snapshots</span></span></span><span class="s">&hellip;<b>btrfs</b> <b>snapshots</b> are copy-on-write clones of a subvolume&hellip;</span></span></span>
+        <div class="pv-act">
+            <button type="button" class="btn-acc" style="{{acc4}}" onClick="{{kEnter}}">Open at page 37</button>
+            <button type="button" class="btn-sec" style="{{sec4}}" onClick="{{kCtrlEnter}}">Show in folder</button><span class="note"><span class="fx"><span class="f"><span class="k">opener</span><span class="v">browser</span></span><span class="f"><span class="k">at</span><span class="v">p. 37</span></span></span></span>
+          </div>
+        </div>
+        <div class="sp-pv lay" style="{{lay5}}">
+          <div class="pv-media"><div class="mwrap" style="{{med5}}">
+            <div class="pvwrap">
+            <div class="pv-text">
+              <div class="l"><span class="no">84</span><span>&nbsp;</span></div>
+              <div class="l"><span class="no">85</span><span>## Snapshots</span></div>
+              <div class="l"><span class="no">86</span><span>&nbsp;</span></div>
+              <div class="l"><span class="no">87</span><span>Notes from the talk so I stop forgetting the commands.</span></div>
+              <div class="l hit"><span class="no">88</span><span><mark>Snapshots</mark> on <mark>btrfs</mark> are cheap: they share extents with the</span></div>
+              <div class="l hit"><span class="no">89</span><span>source subvolume, so nothing is copied until a file changes.</span></div>
+              <div class="l hit"><span class="no">90</span><span>- take a <mark>snapshot</mark> before every pacman upgrade (snapper does it)</span></div>
+              <div class="l hit"><span class="no">91</span><span>- keep a read-only <mark>snapshot</mark> of /home and send it to the NAS weekly</span></div>
+              <div class="l"><span class="no">92</span><span>&nbsp;</span></div>
+              <div class="l"><span class="no">93</span><span>### Commands</span></div>
+              <div class="l"><span class="no">94</span><span>btrfs subvolume snapshot -r /home /.snapshots/home-$(date +%F)</span></div>
+              <div class="l"><span class="no">95</span><span>btrfs send /.snapshots/home-2026-10-04 | ssh nas btrfs receive /tank</span></div>
+              <div class="l"><span class="no">96</span><span>&nbsp;</span></div>
+              <div class="l"><span class="no">97</span><span>### To do</span></div>
+              <div class="l"><span class="no">98</span><span>- try snapper-rollback on the test VM first</span></div>
+              <div class="l"><span class="no">99</span><span>- check how much space the 14 old snapshots hold</span></div>
+              <div class="l"><span class="no">100</span><span>&nbsp;</span></div>
+              <div class="l"><span class="no">101</span><span>## Network</span></div>
+            </div>
+            <span class="chip">lines 88&#8211;91</span>
+            </div>
+          </div></div>
+        <div class="pv-info">
+          <span class="pv-name">homelab-notes.md</span>
+          <span class="pv-path">~/Documents/notes</span>
+          <span class="pv-meta">Markdown &middot; Oct 3, 2026 &middot; 214 lines &middot; 9 KB</span>
+        </div>
+        <span class="pv-why"><span class="aa">Aa</span><span class="stack"><span class="fx"><span class="f"><span class="k">leg</span><span class="v">words</span></span><span class="f"><span class="k">part</span><span class="v">text</span></span><span class="f"><span class="k">at</span><span class="v">L88–91</span></span><span class="f"><span class="k">hits</span><span class="v hit">btrfs, snapshots</span></span></span><span class="s">&hellip;<b>Snapshots</b> on <b>btrfs</b> are cheap: they share extents&hellip;</span></span></span>
+        <div class="pv-act">
+            <button type="button" class="btn-acc" style="{{acc5}}" onClick="{{kEnter}}">Open in Neovim at line 88</button>
+            <button type="button" class="btn-sec" style="{{sec5}}" onClick="{{kCtrlEnter}}">Show in folder</button><span class="note"><span class="fx"><span class="f"><span class="k">opener</span><span class="v">nvim +88</span></span></span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sp-f">
+      <span>6 results</span>
+      <span class="sp-r">
+        <span><span class="kbd" style="{{fkEnter}}">Enter</span> {{ftEnter}}</span>
+        <span><span class="kbd" style="{{fkCE}}">Ctrl</span><span class="kbd" style="{{fkCE}}">Enter</span> show in folder</span>
+        <span style="{{ftSpS}}"><span class="kbd" style="{{fkSp}}">Ctrl</span><span class="kbd" style="{{fkSp}}">Space</span> {{ftSp}}</span>
+        <span><span class="kbd">Ctrl</span><span class="kbd">C</span> copy path</span>
+        <span><span class="kbd" style="{{fkEsc}}">Esc</span> close</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="gwin" style="{{mpvS}}" aria-hidden="{{mpvHidden}}">
+    <div class="gtb"><span class="gn">{{winTitle}}</span><span class="fx"><span class="f"><span class="k">opener</span><span class="v">{{winOpen}}</span></span></span><span class="gp">{{winAt}}</span></div>
+    <div class="gbody" style="{{winBodyS}}">
+      <span class="gwhat">{{winWhat}}</span>
+      <div class="osd" style="{{osdS}}"><span>{{winPos}}</span><span class="otr"><i style="{{osdBar}}"></i></span></div>
+    </div>
+  </div>
+
+  <div class="gwin brw" style="{{pdfS}}" aria-hidden="{{pdfHidden}}">
+    <div class="gtb"><span class="gn">{{pTitle}}</span><span class="fx"><span class="f"><span class="k">opener</span><span class="v">omarchy-launch-browser</span></span><span class="f"><span class="k">browser</span><span class="v">firefox</span></span></span><span class="gp">p. {{pPage}}</span></div>
+    <div class="btabs">
+      <span class="btab"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg><span class="tn">{{pTitle}}</span><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></span>
+      <span class="bplus"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+    </div>
+    <div class="bnav">
+      <span class="bi"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></span>
+      <span class="bi"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></span>
+      <span class="bi"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5"/></svg></span>
+      <span class="burl"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>{{pUrl}}</span></span>
+    </div>
+    <div class="pdft">
+      <svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16"/><path d="M9 4v16"/></svg>
+      <span class="pgbox">{{pPage}}</span><span>/ {{pTotal}}</span>
+      <span class="gap"></span>
+      <svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg><span>100%</span><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </div>
+    <div class="pdfb">
+      <div class="ppaper" aria-hidden="true">
+        <div class="rh"><span>5 Subvolumes and snapshots</span><span>{{pPage}}</span></div>
+        <div class="h1">5.3 Working with snapshots</div>
+        <span><mark>Btrfs</mark> <mark>snapshots</mark> are copy-on-write clones of a subvolume. A <mark>snapshot</mark> is created instantly and takes no extra space until either side changes.</span>
+        <div class="h2">Creating a snapshot</div>
+        <span class="cm">btrfs subvolume snapshot -r /home /snap/home-0412</span>
+        <span>Add -r to make the <mark>snapshot</mark> read-only. A read-only <mark>snapshot</mark> can be sent to another disk with btrfs send.</span>
+        <div class="h2">Rolling back</div>
+        <span>To roll back, move the broken subvolume aside and take a writable <mark>snapshot</mark> of the read-only copy in its place. Reboot when the root subvolume is affected.</span>
+        <div class="h2">Deleting old snapshots</div>
+        <span>Deleting a <mark>snapshot</mark> frees only the extents no other subvolume references.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="gwin naut" style="{{nautS}}" aria-hidden="{{nautHidden}}">
+    <div class="gtb"><span class="gn">{{nTitle}}</span><span>Files</span></div>
+    <div class="nbody">
+      <div class="nside"><span>Recent</span><span>Home</span><span>Documents</span><span>Downloads</span><span>Music</span><span>Pictures</span><span>Videos</span></div>
+      <div class="nmain">
+        <div class="ncrumb">{{nCrumb}}</div>
+        <div class="nhead"><span>Name</span><span>Size</span><span>Modified</span></div>
+        <div class="nr"><span class="f"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>{{nA}}</span><span>{{nASize}}</span><span>{{nADate}}</span></div>
+        <div class="nr on"><span class="f"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>{{nName}}</span><span>{{nSize}}</span><span>{{nDate}}</span></div>
+        <div class="nr"><span class="f"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>{{nB}}</span><span>{{nBSize}}</span><span>{{nBDate}}</span></div>
+        <div class="nstat">3 items, 1 selected ({{nSize}})</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ntf surf focus" style="{{toastS}}" role="status">
+    <div class="h"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true" style="width:14px;height:14px;color:var(--accent);flex:none"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>{{toastTitle}}</div>
+    <div class="b"><span class="fx"><sc-for list="{{toastF}}" as="f" hint-placeholder-count="2"><span class="f"><span class="k">{{f.k}}</span><span class="v">{{f.v}}</span></span></sc-for></span></div>
+  </div>
+
+  <div class="mc surf">
+    <span class="st">{{stepLabel}}</span>
+    <span class="sep"></span>
+    <button class="mb" onClick="{{replay}}">Replay</button>
+    <button class="mb" onClick="{{togglePause}}">{{pauseLabel}}</button>
+    <span class="sep"></span>
+    <button class="kbd mk2" style="{{kUpS}}" onClick="{{kUp}}" aria-label="Up">&#8593;</button>
+    <button class="kbd mk2" style="{{kDownS}}" onClick="{{kDown}}" aria-label="Down">&#8595;</button>
+    <button class="kbd mk2" style="{{kSpaceS}}" onClick="{{kSpace}}">Ctrl Space</button>
+    <button class="kbd mk2" style="{{kEnterS}}" onClick="{{kEnter}}">Enter</button>
+    <button class="kbd mk2" style="{{kCES}}" onClick="{{kCtrlEnter}}">Ctrl Enter</button>
+    <button class="kbd mk2" style="{{kEscS}}" onClick="{{kEsc}}">Esc</button>
+    <button class="kbd mk2" style="{{kSuperS}}" onClick="{{kSuper}}">Super E</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"corners":{"editor":"enum","options":["square","rounded"],"default":"square"},"autoplay":{"editor":"boolean","default":true},"speed":{"editor":"enum","options":["1x","0.5x"],"default":"1x"},"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+constructor(props) {
+  super(props);
+  this.ITEMS = [
+    { kind: "v", name: "linux-fs-talk-2025.mp4", dir: "~/Videos/talks", t: 872, dur: 2900, app: "mpv", what: "[frame: terminal showing btrfs subvolume snapshot, speaker beside it]", tint: "#18201f",
+      sibs: [["kernel-recipes-2024.mp4", "1.8 GB", "Sep 27, 2024"], ["fosdem-btrfs-keynote.mkv", "920 MB", "Feb 3, 2025"]], size: "1.2 GB", date: "Jun 12, 2025" },
+    { kind: "v", name: "omarchy-install-walkthrough.mkv", dir: "~/Videos", t: 185, dur: 1334, app: "mpv", what: "[frame: installer menu on a dark screen, host narrating]", tint: "#161c26",
+      sibs: [["screen-recording-2026-09-02.mkv", "214 MB", "Sep 2, 2026"], ["talks", "—", "Jun 12, 2025"]], size: "640 MB", date: "Mar 3, 2026" },
+    { kind: "v", name: "meetup-recording.webm", dir: "~/Downloads", t: 2470, dur: 5525, app: "mpv", what: "[frame: three speakers on a meetup stage, slide behind them]", tint: "#191b26",
+      sibs: [["archlinux-2026.10.01-x86_64.iso", "1.4 GB", "Oct 1, 2026"], ["invoice-oct.pdf", "92 KB", "Oct 4, 2026"]], size: "2.4 GB", date: "Feb 7, 2026" },
+    { kind: "a", name: "linux-unplugged-ep612.mp3", dir: "~/Music/podcasts", t: 1350, dur: 2320, app: "mpv", what: "[audio: linux-unplugged-ep612.mp3]", tint: "#1d1a24", w0: 1335,
+      sibs: [["linux-unplugged-ep611.mp3", "36 MB", "Sep 11, 2026"], ["selfhosted-ep140.mp3", "41 MB", "Sep 23, 2026"]], size: "37 MB", date: "Sep 18, 2026" },
+    { kind: "p", name: "btrfs-admin-guide.pdf", dir: "~/Documents/manuals", app: "browser", page: 37, pages: 212, at: "p. 37", pos: "p. 37 / 212", what: "[page 37 of btrfs-admin-guide.pdf]", tint: "#1b1d22",
+      sibs: [["zfs-admin-guide.pdf", "4.2 MB", "Jan 9, 2024"], ["hyprland-cheatsheet.pdf", "310 KB", "May 20, 2025"]], size: "6.8 MB", date: "Apr 2, 2024" },
+    { kind: "m", name: "homelab-notes.md", dir: "~/Documents/notes", app: "nvim", at: "L88", pos: "L88", what: "[nvim: homelab-notes.md, cursor on line 88]", tint: "#1b1d22",
+      sibs: [["recipes.md", "6 KB", "Aug 12, 2026"], ["reading-list.md", "3 KB", "Oct 1, 2026"]], size: "9 KB", date: "Oct 3, 2026" }
+  ];
+  this.ITEMS.forEach((it) => {
+    if (it.kind === "v" || it.kind === "a") {
+      it.at = this.fmt(it.t);
+      it.pos = this.fmt(it.t) + " / " + this.fmt(it.dur);
+      it.open = "mpv --start=" + it.t;
+      it.toastF = [{ k: "opener", v: it.open }];
+    } else if (it.kind === "p") {
+      it.open = "omarchy-launch-browser";
+      it.url = "file:///home/radimsem/Documents/manuals/" + it.name + "#page=" + it.page;
+      it.toastF = [{ k: "opener", v: it.open }, { k: "at", v: "p. " + it.page }];
+    } else {
+      it.open = "nvim +88";
+      it.toastF = [{ k: "opener", v: it.open }, { k: "at", v: "L88" }];
+    }
+  });
+  this.H = [30,42,63,60,80,77,65,73,52,47,31,40,57,79,66,72,85,87,65,48,35,38,63,63,66,68,74,85,58,53,37,38,55,56,63,71,88,74,62,55,38,36,57,71,68,84,82,89,74,52,44,33,49,70,64,80,66,83,77,59,46,32,51,65];
+  this.STEPS = ["1 / 6 · Play the matched moment", "2 / 6 · Browse videos, then audio", "3 / 6 · Pages and text show the hit", "4 / 6 · Back up to the PDF", "5 / 6 · Open the PDF page in the browser", "6 / 6 · Return, then open the video in mpv"];
+  this.q = [];
+  this.clock = 0;
+  this.m = { paused: false, auto: true, step: 0 };
+  this.reset();
+  this.state = { m: Object.assign({}, this.m) };
+}
+componentDidMount() {
+  this.last = Date.now();
+  this.iv = setInterval(() => this.tick(), 50);
+  this.ap = (this.props.autoplay ?? true) !== false;
+  if (this.ap) this.runScript();
+  else { this.m.auto = false; this.m.step = -1; this.commit(); }
+}
+syncAutoplay() {
+  const ap = (this.props.autoplay ?? true) !== false;
+  if (ap === this.ap) return;
+  this.ap = ap;
+  if (ap) this.replay();
+  else { this.cancel("auto"); this.m.auto = false; this.m.step = -1; this.commit(); }
+}
+componentWillUnmount() {
+  clearInterval(this.iv);
+  this.q = [];
+}
+fmt(s) {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), mi = Math.floor((s % 3600) / 60), se = s % 60;
+  return h > 0 ? h + ":" + (mi < 10 ? "0" : "") + mi + ":" + (se < 10 ? "0" : "") + se : mi + ":" + (se < 10 ? "0" : "") + se;
+}
+later(group, ms, fn) {
+  this.q.push({ at: this.clock + ms, group: group, fn: fn });
+  this.q.sort((a, b) => a.at - b.at);
+}
+cancel(group) {
+  this.q = this.q.filter((e) => e.group !== group);
+}
+commit() {
+  this.setState({ m: Object.assign({}, this.m) });
+}
+reset() {
+  const m = this.m;
+  m.sel = 0; m.playing = false; m.started = false; m.pos = this.ITEMS[0].t;
+  m.overlay = "open"; m.pressed = ""; m.toastOn = false; m.win = ""; m.winIn = false; m.flash = ""; m.busy = false;
+  m.step = m.auto ? 0 : -1;
+}
+runScript() {
+  const S = [
+    [0, "step", 0], [900, "space"], [5400, "space"],
+    [6300, "step", 1], [6300, "down"], [7000, "down"], [7700, "down"], [8500, "space"],
+    [12700, "step", 2], [12700, "down"], [14400, "down"],
+    [16500, "step", 3], [16700, "up"],
+    [18400, "step", 4], [18400, "enter"], [22000, "esc"],
+    [22700, "step", 5], [22700, "super"], [23600, "up"], [23750, "up"], [23900, "up"], [24050, "up"],
+    [25000, "enter"], [29100, "restart"]
+  ];
+  S.forEach((e) => this.later("auto", e[0], () => {
+    if (e[1] === "step") { this.m.step = e[2]; this.commit(); }
+    else if (e[1] === "restart") this.restart();
+    else this.press(e[1], false);
+  }));
+}
+restart() {
+  this.m.winIn = false; this.m.toastOn = false;
+  this.commit();
+  this.later("auto", 450, () => { this.reset(); this.commit(); this.runScript(); });
+}
+tick() {
+  const now = Date.now();
+  let dt = (now - this.last) / 1000;
+  this.last = now;
+  this.syncAutoplay();
+  if (this.m.paused) return;
+  dt = Math.min(dt, 0.25) * (this.props.speed === "0.5x" ? 0.5 : 1);
+  this.clock += dt * 1000;
+  while (this.q.length && this.q[0].at <= this.clock) this.q.shift().fn();
+  const m = this.m;
+  if (m.playing) {
+    m.pos = Math.min(this.ITEMS[m.sel].dur, m.pos + dt);
+    this.commit();
+  }
+}
+select(i) {
+  const m = this.m;
+  m.sel = i; m.playing = false; m.started = false; m.pos = this.ITEMS[i].t;
+}
+flash(key) {
+  this.m.flash = key;
+  this.cancel("flash");
+  this.later("flash", 170, () => { this.m.flash = ""; this.commit(); });
+}
+press(key, user) {
+  const m = this.m;
+  if (user) { this.cancel("auto"); m.auto = false; m.step = -1; }
+  if (m.overlay !== "open") {
+    if (key === "super") { this.flash(key); this.reopen(); }
+    else if (key === "esc" && m.winIn) { this.flash(key); m.winIn = false; m.toastOn = false; }
+    this.commit();
+    return;
+  }
+  if (m.busy) { this.commit(); return; }
+  this.flash(key);
+  const it = this.ITEMS[m.sel], av = it.kind === "v" || it.kind === "a";
+  if (key === "down") { if (m.sel < 5) this.select(m.sel + 1); }
+  else if (key === "up") { if (m.sel > 0) this.select(m.sel - 1); }
+  else if (key === "space") { if (av) { m.playing = !m.playing; m.started = true; } }
+  else if (key === "enter") this.openIt("acc", false);
+  else if (key === "ctrlenter") this.openIt("sec", true);
+  else if (key === "esc") { m.overlay = "closed"; m.playing = false; }
+  this.commit();
+}
+openIt(btn, folder) {
+  const m = this.m, it = this.ITEMS[m.sel];
+  m.busy = true; m.pressed = btn; m.playing = false;
+  this.later("ui", 260, () => {
+    m.pressed = ""; m.toastOn = true; m.overlay = "closed";
+    m.toastTitle = folder ? "Show in folder" : "Opening " + it.name;
+    m.toastF = folder ? [{ k: "opener", v: "xdg-open" }, { k: "path", v: it.dir }] : it.toastF;
+    this.commit();
+  });
+  this.later("ui", 820, () => { m.win = folder ? "naut" : it.kind === "p" ? "pdf" : "mpv"; m.winIn = true; this.commit(); });
+  this.later("ui", 3060, () => { m.toastOn = false; this.commit(); });
+}
+reopen() {
+  const m = this.m;
+  this.cancel("ui");
+  m.winIn = false; m.toastOn = false; m.busy = false; m.pressed = ""; m.overlay = "open";
+}
+replay() {
+  const m = this.m;
+  this.q = [];
+  m.paused = false; m.auto = true;
+  this.reset();
+  this.commit();
+  this.runScript();
+}
+renderVals() {
+  const m = this.state.m, I = this.ITEMS, o = {};
+  const open = m.overlay === "open", it = I[m.sel], av = it.kind === "v" || it.kind === "a";
+  const EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
+  const FL = "background:var(--accent);color:var(--base);border-color:var(--accent);transition:background 80ms ease";
+  const NF = "transition:background 140ms ease,color 140ms ease";
+  const fl = (k) => (m.flash === k ? FL : NF);
+
+  o.corners = this.props.corners ?? "square";
+  o.scrimS = open ? "opacity:1;transition:opacity 140ms ease" : "opacity:0;transition:opacity 120ms ease";
+  o.panelS = open
+    ? "opacity:1;transform:translate(-50%,-50%);transition:opacity 160ms " + EASE + ",transform 160ms " + EASE
+    : "opacity:0;transform:translate(-50%,calc(-50% + 8px));pointer-events:none;visibility:hidden;transition:opacity 120ms ease,transform 120ms ease,visibility 0s linear 120ms";
+
+  for (let i = 0; i < 6; i++) {
+    const on = m.sel === i, x = I[i], cur = on ? m.pos : x.t;
+    o["r" + i] = on ? "on" : "";
+    o["pick" + i] = () => { this.cancel("auto"); this.m.auto = false; this.m.step = -1; if (this.m.overlay === "open" && !this.m.busy) this.select(i); this.commit(); };
+    o["lay" + i] = on ? "opacity:1;visibility:visible;transition:opacity 120ms ease" : "opacity:0;visibility:hidden;pointer-events:none;transition:opacity 120ms ease,visibility 0s linear 120ms";
+    o["med" + i] = on ? "transform:none;transition:transform 160ms " + EASE : "transform:translateY(6px);transition:transform 0s linear 140ms";
+    o["acc" + i] = on && m.pressed === "acc" ? "filter:brightness(0.78);transform:translateY(1px);box-shadow:inset 0 0 0 2px rgba(17,17,27,0.4);transition:filter 70ms ease,transform 70ms ease" : "transition:filter 140ms ease,transform 140ms ease";
+    o["sec" + i] = on && m.pressed === "sec" ? "background:var(--fill-selected);transform:translateY(1px);transition:background 70ms ease,transform 70ms ease" : "transition:background 140ms ease,transform 140ms ease";
+    if (x.kind === "v") {
+      const pl = on && m.playing;
+      o["vPl" + i] = "width:" + (cur / x.dur * 100).toFixed(3) + "%;transition:width 100ms linear";
+      o["vPh" + i] = "left:" + (cur / x.dur * 100).toFixed(3) + "%;transition:left 100ms linear";
+      o["vChip" + i] = on && m.started ? this.fmt(cur) + " / " + this.fmt(x.dur) : this.fmt(x.t);
+      o["vPlay" + i] = "opacity:" + (pl ? 0 : 1) + ";transition:opacity 100ms ease";
+      o["vPause" + i] = "opacity:" + (pl ? 1 : 0) + ";transition:opacity 100ms ease";
+      o["vBest" + i] = "left:" + (x.t / x.dur * 100).toFixed(2) + "%;" + (pl ? "box-shadow:0 0 0 3px rgba(249,226,175,0.35)" : "box-shadow:0 0 0 0 rgba(249,226,175,0)");
+    }
+  }
+
+  const sa = m.sel === 3, pa = sa && m.playing, a = I[3];
+  const phIdx = (m.pos - a.w0) / 60 * 64;
+  o.aPlay = "opacity:" + (pa ? 0 : 1) + ";transition:opacity 100ms ease";
+  o.aPause = "opacity:" + (pa ? 1 : 0) + ";transition:opacity 100ms ease";
+  o.aPl = "width:" + ((sa ? m.pos : a.t) / a.dur * 100).toFixed(3) + "%;transition:width 100ms linear";
+  o.aTime = this.fmt(sa ? m.pos : a.t);
+  o.aPh = "left:" + (phIdx / 64 * 100).toFixed(2) + "%;opacity:" + (sa && m.started ? 1 : 0) + ";transition:left 100ms linear,opacity 120ms ease";
+  for (let i = 0; i < 64; i++) {
+    const inWin = i >= 16 && i < 48, played = sa && m.started && inWin && i < phIdx;
+    const bg = played ? "var(--fg)" : inWin ? "var(--accent)" : "var(--dim)";
+    const an = pa && inWin ? "animation:wpulse 640ms ease-in-out -" + ((i * 97) % 640) + "ms infinite alternate;animation-play-state:" + (m.paused ? "paused" : "running") : "animation:none";
+    o["b" + i] = "height:" + this.H[i] + "px;background:" + bg + ";" + an;
+  }
+
+  o.kSpace = () => this.press("space", true);
+  o.kEnter = () => this.press("enter", true);
+  o.kCtrlEnter = () => this.press("ctrlenter", true);
+  o.kEsc = () => this.press("esc", true);
+  o.kUp = () => this.press("up", true);
+  o.kDown = () => this.press("down", true);
+  o.replay = () => this.replay();
+  o.togglePause = () => { this.m.paused = !this.m.paused; this.commit(); };
+  o.pauseLabel = m.paused ? "Resume" : "Pause";
+  o.stepLabel = m.step >= 0 ? this.STEPS[m.step] : "Manual · drive it with the keys";
+  o.kSuper = () => this.press("super", true); o.kSuperS = fl("super");
+  o.kUpS = fl("up"); o.kDownS = fl("down"); o.kSpaceS = fl("space"); o.kEnterS = fl("enter"); o.kCES = fl("ctrlenter"); o.kEscS = fl("esc");
+  o.fkEnter = fl("enter"); o.fkCE = fl("ctrlenter"); o.fkSp = fl("space"); o.fkEsc = fl("esc");
+
+  o.ftEnter = av ? "open at " + this.fmt(it.t) : it.kind === "p" ? "open at page 37" : "open in Neovim at line 88";
+  o.ftSp = av ? (m.playing ? "pause" : m.started ? "resume" : "play at " + this.fmt(it.t)) : "preview";
+  o.ftSpS = av ? "" : "opacity:0.4";
+
+  const wk = m.win === "mpv" && m.winIn, nk = m.win === "naut" && m.winIn, pk = m.win === "pdf" && m.winIn;
+  const pd = I[4];
+  const winS = (on) => on ? "opacity:1;visibility:visible;transition:opacity 250ms ease" : "opacity:0;visibility:hidden;pointer-events:none;transition:opacity 250ms ease,visibility 0s linear 250ms";
+  o.mpvS = winS(wk); o.nautS = winS(nk); o.pdfS = winS(pk);
+  o.pdfHidden = pk ? "false" : "true";
+  o.pTitle = pd.name; o.pUrl = pd.url; o.pPage = String(pd.page); o.pTotal = String(pd.pages);
+  o.mpvHidden = wk ? "false" : "true"; o.nautHidden = nk ? "false" : "true";
+  o.winTitle = it.name; o.winOpen = it.open; o.winAt = it.at; o.winPos = it.pos; o.winWhat = it.what;
+  o.winBodyS = "background:" + it.tint;
+  o.osdS = av ? "" : "display:none";
+  o.osdBar = "width:" + (av ? (it.t / it.dur * 100).toFixed(2) : 0) + "%";
+  o.nTitle = it.dir.split("/").pop();
+  o.nCrumb = it.dir.replace("~", "Home").split("/").join("  /  ");
+  o.nName = it.name; o.nSize = it.size; o.nDate = it.date;
+  o.nA = it.sibs[0][0]; o.nASize = it.sibs[0][1]; o.nADate = it.sibs[0][2];
+  o.nB = it.sibs[1][0]; o.nBSize = it.sibs[1][1]; o.nBDate = it.sibs[1][2];
+
+  o.toastS = m.toastOn ? "opacity:1;transform:none;transition:opacity 180ms ease,transform 180ms " + EASE : "opacity:0;transform:translate(12px,-12px);pointer-events:none;transition:opacity 180ms ease,transform 180ms " + EASE;
+  o.toastTitle = m.toastTitle || ""; o.toastF = m.toastF || [];
+  return o;
+}
+}
+</script>
+</body>
+</html>

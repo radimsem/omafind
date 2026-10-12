@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>omafind motion new files and drives</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./omaone.css">
+<link rel="stylesheet" href="./omafind.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.fx-flash{position:absolute;inset:0;pointer-events:none;z-index:9;box-shadow:inset 0 0 0 44px #ffffff}
+.fx-caret{animation:fxblink 1.06s steps(1) infinite}
+@keyframes fxblink{50%{opacity:0}}
+.fx-list{position:relative;flex:1;min-height:0}
+.fx-row{position:absolute;left:0;top:0;cursor:default}
+.fx-row .th,.fx-row .nm{transition:opacity 240ms ease,filter 240ms ease}
+.fx-row.off .th{opacity:0.5;filter:saturate(0.4)}
+.fx-row.off .nm{opacity:0.7}
+.fx-row .bd.nw{color:var(--accent);background:rgba(137,180,250,0.16)}
+.sp-list .sec-h.fx-head{position:absolute;left:0;right:0;top:0;height:30px;padding:12px 10px 0;transition:none}
+.fx-pv-in{display:flex;flex-direction:column;gap:18px;flex:1;min-height:0}
+.fx-pv-in.snap *{transition:none !important}
+.pv-img{transition:filter 240ms ease}
+.pv-img.off{filter:saturate(0.5) brightness(0.8)}
+.pv-img .what{transition:opacity 240ms ease}
+.pv-img .ts.fx-chip{left:10px;right:auto;color:var(--yellow);transition:opacity 240ms ease}
+.pv-text mark:empty{display:none}
+.fx-why{position:relative;height:20px;flex:none}
+.fx-why .pv-why{position:absolute;left:0;top:0;height:20px;white-space:nowrap;transition:opacity 240ms ease}
+.fx-stack{display:grid}
+.fx-stack > button{grid-area:1/1;justify-self:start;transition:opacity 240ms ease,background-color 120ms ease}
+.btn-acc{transition:opacity 240ms ease}
+.sp-f .sp-r > span{transition:opacity 240ms ease}
+.fx-fl{position:relative;min-width:420px;height:100%}
+.fx-fl > span{position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;gap:8px;white-space:nowrap;transition:opacity 200ms ease}
+.fx-ntf{z-index:3;overflow:hidden}
+.fx-ntf .h .svg-i{width:14px;height:14px}
+.fx-ctl{position:absolute;left:24px;bottom:20px;z-index:5;display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:11px;color:var(--fg2);white-space:nowrap}
+.fx-step{min-width:372px;color:var(--fg)}
+.fx-step b{color:var(--accent);font-weight:700}
+.fx-b{height:24px;padding:0 8px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--ctl-border);background:transparent;color:var(--fg);font:inherit;font-size:11px;border-radius:var(--r);transition:background-color 120ms ease,border-color 120ms ease}
+.fx-b:hover{background:var(--fill-hover)}
+.fx-b.on{background:var(--fill-selected);border-color:var(--accent)}
+.fx-sep{width:1px;height:16px;background:var(--sep)}
+.fx-ctl .kbd{height:16px;min-width:16px;font-size:9px;padding:0 4px}
+.btn-pri,.btn-sec{transition:background-color 120ms ease,transform 120ms ease}
+.btn-pri.pr{background:#9aa3c4;transform:translateY(1px)}
+.btn-sec.pr{background:var(--fill-selected)}
+.dt .dt-r .num{color:var(--fg)}
+.dt .dt-r .num.zero{color:var(--dim)}
+.dt-r{transition:background-color 120ms ease}
+.cb{transition:background-color 100ms ease,border-color 100ms ease;cursor:pointer}
+.fx-bot{position:relative;height:32px;flex:none}
+.fx-bot > div{position:absolute;inset:0;display:flex;align-items:center;gap:8px;transition:opacity 180ms ease}
+.fx-idx .lbl{font-size:12px;color:var(--fg);white-space:nowrap}
+.fx-idx .cnt{font-size:12px;color:var(--fg2);white-space:nowrap;min-width:120px;text-align:right}
+.fx-idx .bigprog{flex:1}
+.fx-idx .bigprog i{transition:width 300ms linear}
+.fx-idx.done .lbl,.fx-idx.done .cnt{color:var(--green)}
+</style>
+</helmet>
+<div class="desk corners-{{corners}} motion-live" style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #cdd6f4">
+  <img class="wall" src="/_blob/ceac48904c365f111f8aee8c1d9bc4a5" alt="">
+
+  <div class="bar">
+    <div class="bar-l">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16"/><path d="M4 10h16M10 10v10"/></svg></span>
+      <span class="ws-cur"></span><span class="ws">2</span><span class="ws">3</span><span class="ws empty">4</span><span class="ws empty">5</span>
+    </div>
+    <div class="bar-c"><span>Sunday 15:42</span></div>
+    <div class="bar-r">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="0.6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg></span>
+    </div>
+  </div>
+
+  <div class="scrim" style="{{scrimStyle}}"></div>
+
+  <div class="sp surf focus" style="{{spStyle}}">
+    <div class="sp-q">
+      <svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <span class="q {{qCls}}">{{qShow}}<span class="caret fx-caret"></span></span>
+      <span class="st"><span class="spin" style="{{spinStyle}}"></span><span>{{stText}}</span></span>
+    </div>
+    <div class="p-sep"></div>
+
+    <div class="sp-main">
+      <div class="sp-list">
+        <div class="fx-list">
+          <sc-for list="{{heads}}" as="h" hint-placeholder-count="2">
+            <div class="sec-h fx-head" style="{{h.style}}">{{h.label}} <span class="n">{{h.n}}</span></div>
+          </sc-for>
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+            <button class="it fx-row {{r.cls}}" style="{{r.style}}" tabindex="{{r.tab}}" onClick="{{r.pick}}">
+              <span class="th {{r.tile}}">
+                <sc-if value="{{r.isPic}}" hint-placeholder-val="{{true}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></sc-if>
+                <sc-if value="{{r.isMon}}" hint-placeholder-val="{{false}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg></sc-if>
+                <sc-if value="{{r.isDoc}}" hint-placeholder-val="{{false}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M9 12h7M9 16h7M9 8h3"/></svg></sc-if>
+              </span>
+              <span class="tx"><span class="nm">{{r.name}}</span><span class="dir">{{r.d1}}<b>{{r.d2}}</b>{{r.d3}}<b>{{r.d4}}</b>{{r.d5}}</span></span>
+              <span class="bd {{r.bdCls}}" style="{{r.bdStyle}}">{{r.bd}}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div class="sp-pv">
+        <div class="fx-pv-in {{pv.snap}}" style="{{pv.wrapStyle}}">
+          <div class="pv-media" style="{{pv.mediaStyle}}">
+            <sc-if value="{{pv.isImg}}" hint-placeholder-val="{{true}}">
+              <div class="pv-img {{pv.offCls}}" style="background: {{pv.bg}}">
+                <sc-if value="{{pv.isMon}}" hint-placeholder-val="{{false}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg></sc-if>
+                <sc-if value="{{pv.isPic}}" hint-placeholder-val="{{true}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></sc-if>
+                <span class="what" style="{{pv.whatOnStyle}}">{{pv.what}}</span>
+                <span class="what" style="{{pv.whatOffStyle}}">{{pv.whatOff}}</span>
+                <span class="ts fx-chip" style="{{pv.chipStyle}}">offline</span>
+              </div>
+            </sc-if>
+            <sc-if value="{{pv.isDoc}}" hint-placeholder-val="{{false}}">
+              <div class="pv-text">
+                <sc-for list="{{pv.lines}}" as="l" hint-placeholder-count="5">
+                  <div class="l {{l.cls}}"><span class="no">{{l.no}}</span><span>{{l.a}}<mark>{{l.m}}</mark>{{l.z}}</span></div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+          <div class="pv-info">
+            <span class="pv-name">{{pv.name}}</span>
+            <span class="pv-path">{{pv.path}}</span>
+            <span class="pv-meta">{{pv.meta}}</span>
+          </div>
+          <div class="fx-why">
+            <span class="pv-why" style="{{pv.whyOnStyle}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/><path d="M8 11h6M11 8v6"/></svg><span class="fx"><sc-for list="{{pv.whyf}}" as="f" hint-placeholder-count="4"><span class="f"><span class="k">{{f.k}}</span><span class="{{f.vc}}">{{f.v}}</span></span></sc-for></span></span>
+            <span class="pv-why" style="{{pv.whyOffStyle}}"><svg class="svg-i" style="color: var(--yellow)" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12"/><path d="M7 12h.01"/></svg>Photos2024 is not connected. Connect it to open this file.</span>
+          </div>
+          <div class="pv-act">
+            <button class="btn-acc" style="{{pv.openStyle}}" aria-disabled="{{pv.disabled}}">Open</button>
+            <div class="fx-stack">
+              <button class="btn-sec" style="{{pv.folderStyle}}">Show in folder</button>
+              <button class="btn-sec" style="{{pv.copyStyle}}">Copy path</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sp-f">
+      <span class="fx-fl">
+        <span style="{{foot.aStyle}}"><span>{{foot.res}}</span><span aria-hidden="true">·</span><span class="fx"><span class="f"><span class="k">indexed</span><span class="v"><span style="{{foot.cntStyle}}">{{foot.cnt}}</span></span></span></span></span>
+        <span style="{{foot.bStyle}}"><span>{{foot.recText}}</span><span class="prog"><i style="{{foot.recBar}}"></i></span></span>
+      </span>
+      <span class="sp-r">
+        <span style="{{foot.enterStyle}}"><span class="kbd">Enter</span> open</span>
+        <span><span class="kbd">Ctrl</span><span class="kbd">Enter</span> show in folder</span>
+        <span><span class="kbd">Ctrl</span><span class="kbd">C</span> copy path</span>
+        <span><span class="kbd">Esc</span> close</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="of surf focus" style="{{modStyle}}">
+    <div class="p-head">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span class="p-title">Photos2024</span>
+        <span class="fx" style="font-size: 11px"><span class="f"><span class="k">mount</span><span class="v">/run/media/radimsem/Photos2024</span></span><span class="f"><span class="k">fs</span><span class="v">exfat</span></span><span class="f"><span class="k">scan</span><span class="v">{{scanLbl}}</span></span><span class="f"><span class="k">index</span><span class="v">internal disk</span></span><span class="f"><span class="k">offline</span><span class="v">results kept</span></span></span>
+      </div>
+      <span class="tag" style="margin-left: auto; align-self: flex-start">removable</span>
+    </div>
+    <div class="p-sep"></div>
+
+    <div class="dt">
+      <div class="dt-h">
+        <span></span><span>Folder on the drive</span><span class="num">Text</span><span class="num">PDF</span><span class="num">Images</span><span class="num">Video</span><span class="num">Audio</span><span class="num">Index</span><span class="num">Time</span><span></span>
+      </div>
+      <sc-for list="{{drows}}" as="d" hint-placeholder-count="3">
+        <div class="dt-r {{d.cls}}">
+          <button class="cb {{d.cb}}" aria-label="{{d.aria}}" aria-pressed="{{d.pressed}}" onClick="{{d.toggle}}"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></button>
+          <span class="path"><span class="pp">{{d.path}}</span><span class="why"><span class="fx"><sc-for list="{{d.whyf}}" as="f" hint-placeholder-count="4"><span class="f"><span class="k">{{f.k}}</span><span class="{{f.vc}}">{{f.v}}</span></span></sc-for></span></span></span>
+          <span class="num {{d.z0}}">{{d.n0}}</span><span class="num {{d.z1}}">{{d.n1}}</span><span class="num {{d.z2}}">{{d.n2}}</span><span class="num {{d.z3}}">{{d.n3}}</span><span class="num {{d.z4}}">{{d.n4}}</span>
+          <span class="num">{{d.idx}}</span><span class="num">{{d.time}}</span>
+          <button class="xbtn" aria-label="{{d.xaria}}" tabindex="-1"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
+        </div>
+      </sc-for>
+      <div style="display: flex; gap: 8px; padding: 12px 10px 0">
+        <span class="fx"><span class="f"><span class="k">not proposed</span><span class="v"></span></span><span class="f"><span class="k">dataset</span><span class="v">/Lightroom Catalog previews</span></span><span class="f"><span class="k">files</span><span class="v">41,880</span></span><span class="f"><span class="k">match</span><span class="v">41,880/41,880</span></span></span>
+      </div>
+    </div>
+
+    <div class="p-sep"></div>
+    <div class="kv"><span class="fx"><span class="f"><span class="k">watch</span><span class="v">off · removable</span></span><span class="f"><span class="k">reconcile</span><span class="v">on mount</span></span></span></div>
+    <div class="fx-bot">
+      <div style="{{bot.selStyle}}">
+        <span class="fx" style="font-size: 12px; gap: 18px"><span class="f"><span class="k">selected</span><span class="v"><b>{{bot.files}}</b> files</span></span><span class="f"><span class="k">index</span><span class="v"><b>{{bot.size}}</b></span></span><span class="f"><span class="k">time</span><span class="v"><b>{{bot.time}}</b></span></span></span>
+        <button class="btn-sec {{bot.cancelPr}}" style="margin-left: auto" onClick="{{onCancel}}">Cancel</button>
+        <button class="btn-pri {{bot.idxPr}}" onClick="{{onIndex}}">Index this drive</button>
+      </div>
+      <div class="fx-idx {{bot.doneCls}}" style="{{bot.idxStyle}}">
+        <span class="lbl">{{bot.idxLbl}}</span>
+        <div class="bigprog"><i style="{{bot.idxBar}}"></i></div>
+        <span class="cnt">{{bot.idxCnt}}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="ntf surf focus fx-ntf" style="{{ntf.nShot}}">
+    <div class="h"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg>Screenshot saved</div>
+    <div class="b">Screenshot_2026-10-11_15-42.png</div>
+  </div>
+
+  <div class="ntf surf focus fx-ntf" style="{{ntf.nDrive}}">
+    <div class="h"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12"/><path d="M7 12h.01M11 12h.01"/></svg>New drive found</div>
+    <div class="b">Photos2024 (exFAT, 1.8 TB) is connected. Scan it for photos, videos and documents to search?</div>
+    <div class="a"><button class="btn-sec {{bot.notPr}}" style="height: 28px" onClick="{{onNot}}">Not this drive</button><button class="btn-pri {{bot.scanPr}}" style="height: 28px" onClick="{{onScan}}">Scan</button></div>
+  </div>
+
+  <div class="ntf surf focus fx-ntf" style="{{ntf.nOff}}">
+    <div class="h"><svg class="svg-i" style="color: var(--yellow)" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12"/><path d="M7 12h.01M11 12h.01"/></svg>Photos2024 disconnected</div>
+    <div class="b">Its files stay searchable.</div>
+  </div>
+
+  <div class="ntf surf focus fx-ntf" style="{{ntf.nOn}}">
+    <div class="h"><svg class="svg-i" style="color: var(--green)" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12"/><path d="M7 12h.01M11 12h.01"/></svg>Photos2024 connected</div>
+    <div class="b">Checking for changes</div>
+  </div>
+
+  <div class="fx-ctl surf" role="group" aria-label="Board controls">
+    <span class="fx-step"><b>{{stepNo}}</b> · {{stepLbl}}</span>
+    <span class="tag {{modeCls}}">{{mode}}</span>
+    <button class="fx-b" onClick="{{replay}}">Replay</button>
+    <button class="fx-b" onClick="{{togglePause}}">{{pauseLbl}}</button>
+    <span class="fx-sep"></span>
+    <button class="fx-b {{kp.shot}}" onClick="{{kShot}}">Take screenshot <span class="kbd">Print</span></button>
+    <button class="fx-b {{kp.drive}}" onClick="{{kDrive}}">{{driveLbl}}</button>
+    <button class="fx-b {{kp.search}}" onClick="{{kSearch}}">Open search <span class="kbd">Super</span><span class="kbd">E</span></button>
+    <button class="fx-b {{kp.esc}}" onClick="{{kEsc}}"><span class="kbd">Esc</span></button>
+  </div>
+
+  <div class="fx-flash" style="{{flashStyle}}"></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"corners":{"editor":"enum","options":["square","rounded"],"default":"square"},"autoplay":{"editor":"boolean","default":true},"speed":{"editor":"enum","options":["1x","0.5x"],"default":"1x"},"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+constructor(props) {
+  super(props);
+  this.QA = "error dialog about vulkan";
+  this.QB = "lisbon 2019";
+  this.STEPS = [
+    "Screenshot taken, search opens",
+    "New file slides into the results",
+    "New drive found",
+    "Scan the drive, then index it",
+    "Search finds the drive, then it is unplugged",
+    "Drive plugged back in, reconcile"
+  ];
+  const P = "Photos2024 · /2019/lisbon";
+  this.ROWS = {
+    shot: { sec: "img", ico: "m", tile: "t-b", name: "Screenshot_2026-10-11_15-42.png", d: ["~/Pictures/Screenshots"], bd: "new", bdCls: "nw",
+      pv: { kind: "img", ico: "m", bg: "#3a3346", what: "[screenshot: dialog \"Failed to create Vulkan device\" over a terminal]", path: "~/Pictures/Screenshots", meta: "Image · Oct 11, 2026 · 2560 × 1440 · 412 KB", why: [{k:"leg",v:"meaning + words"}, {k:"part",v:"image + ocr"}, {k:"z",v:"3.0"}] } },
+    a1: { sec: "img", ico: "i", tile: "t-a", name: "vulkan-lost.png", d: ["~/Pictures/bugs"], bd: "",
+      pv: { kind: "img", ico: "i", bg: "#2c3a52", what: "[screenshot: terminal printing \"ggml_vulkan: device lost\"]", path: "~/Pictures/bugs", meta: "Image · Oct 8, 2026 · 1920 × 1080 · 268 KB", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"2.3"}] } },
+    a2: { sec: "img", ico: "m", tile: "t-e", name: "Screenshot_2026-10-02_09-18.png", d: ["~/Pictures/Screenshots"], bd: "",
+      pv: { kind: "img", ico: "m", bg: "#33364a", what: "[screenshot: dialog \"Cannot create swapchain\"]", path: "~/Pictures/Screenshots", meta: "Image · Oct 2, 2026 · 2560 × 1440 · 355 KB", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"1.9"}] } },
+    a3: { sec: "doc", ico: "d", name: "llama-vulkan-notes.md", d: ["## Crashes: ", "error dialog", " on start, ", "vulkan", " device lost"], bd: "L18",
+      pv: { kind: "doc", path: "~/Documents/notes", meta: "Markdown · Oct 6, 2026 · 2.1 KB", why: [{k:"leg",v:"words"}, {k:"part",v:"text"}, {k:"at",v:"L18–20"}, {k:"hits",v:"error dialog, vulkan",hit:true}],
+        lines: [ { no: 12, a: "## Setup" }, { no: 13, a: "" }, { no: 14, a: "Build llama.cpp with GGML_VULKAN=ON and run on the iGPU." }, { no: 15, a: "" },
+          { no: 16, a: "## Crashes on the integrated GPU" }, { no: 17, a: "" },
+          { no: 18, a: "The ", m: "error dialog", z: " says \"Failed to create Vulkan device\".", hit: 1 }, { no: 19, a: "" },
+          { no: 20, a: "Cause: the ", m: "vulkan", z: " driver reports device lost during dequant.", hit: 1 }, { no: 21, a: "" },
+          { no: 22, a: "Fix: set GGML_VK_DISABLE_COOPMAT=1 before launching." }, { no: 23, a: "" },
+          { no: 24, a: "## Open questions" }, { no: 25, a: "" }, { no: 26, a: "- Does the 25.2 Mesa driver fix it?" }, { no: 27, a: "- Is 4-bit dequant the only path that fails?" } ] } },
+    b1: { sec: "img", ico: "i", tile: "t-d", drive: 1, name: "DSC_4410.jpg", d: [P], bd: "offline", bdCls: "warn",
+      pv: { kind: "img", ico: "i", bg: "#403a33", what: "[photo: tram 28 climbing a steep street in Alfama]", whatOff: "[cached thumbnail: tram 28 on a steep street]", path: P, meta: "Image · May 3, 2019 · 6000 × 4000 · 8.4 MB", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"2.8"}] } },
+    b2: { sec: "img", ico: "i", tile: "t-a", drive: 1, name: "DSC_4418.jpg", d: [P], bd: "offline", bdCls: "warn",
+      pv: { kind: "img", ico: "i", bg: "#2c3a52", what: "[photo: tiled facade with laundry drying]", whatOff: "[cached thumbnail: tiled facade]", path: P, meta: "Image · May 3, 2019 · 6000 × 4000 · 7.9 MB", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"2.5"}] } },
+    b3: { sec: "img", ico: "i", tile: "t-c", drive: 1, name: "DSC_4431.jpg", d: [P], bd: "offline", bdCls: "warn",
+      pv: { kind: "img", ico: "i", bg: "#2f3f3d", what: "[photo: river Tagus at dusk from the ferry]", whatOff: "[cached thumbnail: river at dusk]", path: P, meta: "Image · May 4, 2019 · 6000 × 4000 · 9.2 MB", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"2.2"}] } },
+    b4: { sec: "img", ico: "i", tile: "t-e", drive: 1, name: "DSC_4502.jpg", d: [P], bd: "offline", bdCls: "warn",
+      pv: { kind: "img", ico: "i", bg: "#33364a", what: "[photo: LX Factory courtyard, people at tables]", whatOff: "[cached thumbnail: courtyard]", path: P, meta: "Image · May 5, 2019 · 6000 × 4000 · 8.8 MB", why: [{k:"leg",v:"meaning"}, {k:"part",v:"image"}, {k:"z",v:"1.9"}] } },
+    b5: { sec: "img", ico: "m", tile: "t-b", name: "Screenshot_2019-05-02.png", d: ["~/Pictures/Screenshots"], bd: "",
+      pv: { kind: "img", ico: "m", bg: "#3a3346", what: "[screenshot: flight confirmation, Prague to Lisbon]", path: "~/Pictures/Screenshots", meta: "Image · May 2, 2019 · 1920 × 1080 · 301 KB", why: [{k:"leg",v:"words"}, {k:"part",v:"ocr"}, {k:"hits",v:"lisbon, 2019",hit:true}] } },
+    b6: { sec: "doc", ico: "d", name: "trips.md", d: ["## ", "Lisbon", " ", "2019", ": stayed in Alfama, tram 28 early"], bd: "L12",
+      pv: { kind: "doc", path: "~/Documents/notes", meta: "Markdown · Apr 28, 2026 · 3.4 KB", why: [{k:"leg",v:"words"}, {k:"part",v:"text"}, {k:"at",v:"L12"}, {k:"hits",v:"lisbon, 2019",hit:true}],
+        lines: [ { no: 4, a: "## Madrid 2018" }, { no: 5, a: "" }, { no: 6, a: "Hostel near Atocha, day trip to Toledo." }, { no: 7, a: "" },
+          { no: 8, a: "## Porto 2018" }, { no: 9, a: "" }, { no: 10, a: "Train from Lisbon, two nights, port tasting at Graham's." }, { no: 11, a: "" },
+          { no: 12, a: "## ", m: "Lisbon 2019", z: "", hit: 1 }, { no: 13, a: "" },
+          { no: 14, a: "Stayed in Alfama, took tram 28 early, LX Factory on Sunday." },
+          { no: 15, a: "Photos are on the Photos2024 drive under /2019/lisbon." }, { no: 16, a: "" },
+          { no: 17, a: "## Vienna 2022" }, { no: 18, a: "" }, { no: 19, a: "Opera standing tickets, Naschmarkt on Saturday." } ] } }
+  };
+  this.ORDER = ["shot", "a1", "a2", "a3", "b1", "b2", "b3", "b4", "b5", "b6"];
+  this.DRV = [
+    { id: "dcim", path: "/DCIM", why: [{ k: "dirs", v: "2019–2025" }, { k: ".jpg", n: 2 }, { k: ".mp4", n: 3 }], n: [0, 0, 1684, 46, 0], mb: 61, sec: 220 },
+    { id: "phone", path: "/Phone backup", why: [{ k: ".jpg", n: 2 }, { k: ".m4a", n: 4 }], n: [0, 0, 1184, 9, 197], mb: 38, sec: 140 },
+    { id: "scans", path: "/Scans", why: [{ k: ".pdf", n: 1 }, { k: ".png", n: 2 }], n: [0, 87, 311, 0, 0], mb: 12, sec: 50 }
+  ];
+  this.q = [];
+  this.nq = 0;
+  this.vt = 0;
+  this.isPaused = false;
+  this.qNext = 0;
+  this.S = this.fresh();
+  this.S.auto = true;
+  this.S.paused = false;
+  this.state = Object.assign({}, this.S);
+}
+fresh() {
+  return {
+    step: 1, flash: 0, kp: "", prBtn: "",
+    ovOpen: false, q: "", stage: "idle", set: "A", lay: [], rows: this.hiddenRows(), heads: this.hiddenHeads(),
+    sel: null, pvId: null, pvPh: "out", newTag: false, shotIn: false, shotPend: false,
+    cnt: 3880, cntHot: false,
+    nShot: false, nDrive: false, nOff: false, nOn: false,
+    modOpen: false, scanT: 0, scanning: false, inc: { dcim: true, phone: true, scans: false }, idx: "none", idxN: 0, idxTot: 0,
+    drOn: false, drKnown: false, rowsOff: false, rec: -1, recDone: false
+  };
+}
+hiddenRows() {
+  const r = {};
+  ["shot", "a1", "a2", "a3", "b1", "b2", "b3", "b4", "b5", "b6"].forEach((id) => { r[id] = { y: 0, o: 0, d: 0, snap: true }; });
+  return r;
+}
+hiddenHeads() {
+  return { img: { y: 0, o: 0, d: 0, snap: true, n: 0 }, doc: { y: 0, o: 0, d: 0, snap: true, n: 0 } };
+}
+set(p) {
+  Object.assign(this.S, p);
+  this.setState(p);
+}
+componentDidMount() {
+  this.last = Date.now();
+  this.iv = setInterval(() => this.tick(), 20);
+  if ((this.props.autoplay ?? true) !== false) this.start();
+}
+componentWillUnmount() {
+  clearInterval(this.iv);
+  this.q = [];
+}
+rate() { return (this.props.speed ?? "1x") === "0.5x" ? 0.5 : 1; }
+tick() {
+  const now = Date.now(), dt = now - this.last;
+  this.last = now;
+  if (this.isPaused) return;
+  this.vt += dt * this.rate();
+  for (;;) {
+    let k = -1;
+    for (let i = 0; i < this.q.length; i++) {
+      const e = this.q[i];
+      if (e.at <= this.vt && (k < 0 || e.at < this.q[k].at || (e.at === this.q[k].at && e.id < this.q[k].id))) k = i;
+    }
+    if (k < 0) break;
+    const ev = this.q.splice(k, 1)[0];
+    try { ev.fn(); } catch (err) { console.error(err); }
+  }
+}
+later(group, ms, fn) {
+  this.q.push({ at: this.vt + ms, g: group, fn: fn, id: ++this.nq });
+}
+cancel(group) {
+  this.q = this.q.filter((e) => e.g !== group);
+}
+reset() {
+  this.q = [];
+  this.vt = 0;
+  const f = this.fresh();
+  Object.assign(this.S, f);
+  this.setState(f);
+}
+start() {
+  this.reset();
+  const L = (t, fn) => this.later("scn", t, fn);
+  const step = (n) => this.set({ step: n });
+  L(0, () => step(1));
+  L(300, () => this.press("shot", () => this.takeShot(5200)));
+  L(1400, () => this.press("search", () => this.openSearch(this.QA)));
+  L(5400, () => step(2));
+  L(9400, () => { step(3); this.press("esc", () => this.esc()); });
+  L(9900, () => this.press("drive", () => this.plug()));
+  L(12300, () => { step(4); this.pressBtn("scan", () => this.doScan()); });
+  L(15400, () => this.pressBtn("idx", () => this.startIndex()));
+  L(20600, () => this.closeModal());
+  L(21000, () => step(5));
+  L(21200, () => this.press("search", () => this.openSearch(this.QB)));
+  L(25000, () => this.press("drive", () => this.unplug()));
+  L(28700, () => step(6));
+  L(28800, () => this.press("drive", () => this.plug()));
+  L(33600, () => this.press("esc", () => this.esc()));
+  L(34300, () => { if (this.S.auto) this.start(); });
+}
+manual() {
+  if (this.S.auto) {
+    this.cancel("scn");
+    this.set({ auto: false });
+  }
+  this.isPaused = false;
+  this.set({ paused: false });
+}
+press(key, fn) {
+  this.cancel("kp");
+  this.set({ kp: key });
+  this.later("kp", 280, () => this.set({ kp: "" }));
+  fn();
+}
+pressBtn(key, fn) {
+  this.cancel("prb");
+  this.set({ prBtn: key });
+  this.later("prb", 200, () => { this.set({ prBtn: "" }); fn(); });
+}
+
+/* layout of the result list: section header 30px, row 56px, 2px gaps */
+layoutPos(lay) {
+  const T = { rows: {}, heads: {} };
+  let y = -6;
+  lay.forEach((sec) => {
+    T.heads[sec.k] = y;
+    y += 32;
+    sec.ids.forEach((id) => { T.rows[id] = y; y += 58; });
+  });
+  return T;
+}
+applyLayout(lay, dyMap) {
+  this.cancel("lay");
+  const S = this.S, T = this.layoutPos(lay), dyM = dyMap || {};
+  const inLay = {};
+  lay.forEach((sec) => sec.ids.forEach((id) => { inLay[id] = true; }));
+  const rows = Object.assign({}, S.rows), heads = Object.assign({}, S.heads);
+  const entering = [];
+  this.ORDER.forEach((id) => {
+    if (inLay[id] && rows[id].o === 0) { entering.push(id); rows[id] = { y: T.rows[id] - (dyM[id] || 8), o: 0, d: 0, snap: true }; }
+  });
+  const enteringH = [];
+  lay.forEach((sec) => {
+    if (heads[sec.k].o === 0) { enteringH.push(sec.k); heads[sec.k] = Object.assign({}, heads[sec.k], { y: T.heads[sec.k] - 8, o: 0, d: 0, snap: true }); }
+  });
+  const go = () => {
+    const r2 = {}, h2 = {};
+    this.ORDER.forEach((id) => {
+      const cur = this.S.rows[id];
+      if (inLay[id]) {
+        const i = entering.indexOf(id);
+        r2[id] = { y: T.rows[id], o: 1, d: i < 0 ? 0 : i * 20, snap: false };
+      } else r2[id] = { y: cur.y, o: 0, d: 0, snap: false };
+    });
+    ["img", "doc"].forEach((k) => {
+      const cur = this.S.heads[k], sec = lay.filter((s) => s.k === k)[0];
+      if (sec) h2[k] = { y: T.heads[k], o: 1, d: 0, snap: false, n: sec.ids.length };
+      else h2[k] = { y: cur.y, o: 0, d: 0, snap: false, n: cur.n };
+    });
+    this.set({ rows: r2, heads: h2, lay: lay });
+  };
+  if (entering.length || enteringH.length) {
+    this.set({ rows: rows, heads: heads });
+    this.later("lay", 40, go);
+  } else go();
+}
+
+/* selection and preview cross-fade */
+select(id) {
+  if (this.S.sel === id) return;
+  this.set({ sel: id });
+  this.cancel("pv");
+  if (this.S.pvId === null) {
+    this.set({ pvId: id, pvPh: "pre" });
+    this.later("pv", 40, () => this.set({ pvPh: "in" }));
+    return;
+  }
+  this.set({ pvPh: "out" });
+  this.later("pv", 130, () => this.set({ pvId: id, pvPh: "pre" }));
+  this.later("pv", 175, () => this.set({ pvPh: "in" }));
+}
+
+/* search overlay */
+openSearch(q) {
+  const S = this.S;
+  if (S.ovOpen || S.modOpen) return;
+  ["type", "res", "lay", "pv"].forEach((g) => this.cancel(g));
+  this.set({ ovOpen: true, q: "", stage: "idle", set: q === this.QA ? "A" : "B", lay: [], rows: this.hiddenRows(), heads: this.hiddenHeads(), sel: null, pvId: null, pvPh: "out", newTag: false });
+  this.later("type", 300, () => this.typeNext(q, 1));
+}
+closeOverlay() {
+  ["type", "res", "lay", "pv", "tag"].forEach((g) => this.cancel(g));
+  this.set({ ovOpen: false });
+}
+typeNext(q, i) {
+  this.set({ q: q.slice(0, i), stage: "typing" });
+  if (i < q.length) this.later("type", 55 + ((i * 7) % 5 - 2) * 6, () => this.typeNext(q, i + 1));
+  else this.later("res", 50, () => this.legKeyword(q));
+}
+finalLay(setId) {
+  const S = this.S;
+  if (setId === "A") {
+    return [{ k: "img", ids: (S.shotIn ? ["shot"] : []).concat(["a1", "a2"]) }, { k: "doc", ids: ["a3"] }];
+  }
+  const imgs = (S.drKnown ? ["b1", "b2", "b3", "b4"] : []).concat(["b5"]);
+  return [{ k: "img", ids: imgs }, { k: "doc", ids: ["b6"] }];
+}
+legKeyword(q) {
+  const S = this.S;
+  this.set({ stage: "kw" });
+  if (S.set === "A") {
+    this.applyLayout([{ k: "doc", ids: ["a3"] }, { k: "img", ids: (S.shotIn ? ["shot"] : []).concat(["a1"]) }]);
+    this.later("res", 70, () => this.select("a3"));
+  } else {
+    this.applyLayout([{ k: "doc", ids: ["b6"] }]);
+    this.later("res", 70, () => this.select("b6"));
+  }
+  this.later("res", 250, () => this.set({ stage: "sem" }));
+  this.later("res", 600, () => this.legMeaning());
+}
+legMeaning() {
+  const S = this.S, lay = this.finalLay(S.set);
+  this.set({ stage: "done" });
+  this.applyLayout(lay);
+  this.select(lay[0].ids[0]);
+}
+takeShot(ocr) {
+  this.cancel("flash");
+  this.cancel("nshot");
+  this.set({ flash: 1 });
+  this.later("flash", 60, () => this.set({ flash: 0 }));
+  this.later("nshot", 160, () => this.set({ nShot: true }));
+  this.later("nshot", 2960, () => this.set({ nShot: false }));
+  if (!this.S.shotIn && !this.S.shotPend) {
+    this.set({ shotPend: true });
+    this.later("ocr", ocr || 2200, () => this.indexShot());
+  }
+}
+indexShot() {
+  const S = this.S;
+  this.set({ shotIn: true, shotPend: false, cnt: S.cnt + 1, cntHot: true });
+  this.cancel("cnt");
+  this.later("cnt", 900, () => this.set({ cntHot: false }));
+  if (S.ovOpen && S.set === "A" && S.stage === "done") {
+    this.set({ newTag: true });
+    this.applyLayout(this.finalLay("A"), { shot: 18 });
+    this.later("lay2", 60, () => this.select("shot"));
+    this.cancel("tag");
+    this.later("tag", 2800, () => this.set({ newTag: false }));
+  }
+}
+
+/* drive */
+plug() {
+  const S = this.S;
+  if (S.drOn) return;
+  this.set({ drOn: true });
+  if (!S.drKnown) {
+    this.set({ nDrive: true });
+    return;
+  }
+  this.cancel("non");
+  this.set({ nOn: true });
+  this.later("non", 2900, () => this.set({ nOn: false }));
+  this.reconcile();
+}
+unplug() {
+  const S = this.S;
+  if (!S.drOn) return;
+  this.cancel("rec");
+  this.cancel("non");
+  this.set({ drOn: false, nDrive: false, nOn: false, rec: -1, recDone: false });
+  if (S.drKnown) {
+    this.cancel("noff");
+    this.set({ nOff: true, rowsOff: true });
+    this.later("noff", 2900, () => this.set({ nOff: false }));
+  }
+}
+reconcile() {
+  this.cancel("rec");
+  this.set({ rec: 0, recDone: false });
+  for (let i = 1; i <= 10; i++) this.later("rec", 170 * i, () => this.set({ rec: i / 10 }));
+  this.later("rec", 1700 + 250, () => this.set({ rowsOff: false, recDone: true }));
+  this.later("rec", 1700 + 1500, () => this.set({ rec: -1, recDone: false }));
+}
+toggleDrive() {
+  this.manual();
+  if (this.S.drOn) this.unplug(); else this.plug();
+}
+notThis() {
+  this.set({ nDrive: false });
+}
+incTotal() {
+  const inc = this.S.inc;
+  let t = 0;
+  this.DRV.forEach((d) => { if (inc[d.id]) t += d.n[0] + d.n[1] + d.n[2] + d.n[3] + d.n[4]; });
+  return t;
+}
+doScan() {
+  const S = this.S;
+  if (!S.nDrive) return;
+  this.set({ nDrive: false });
+  this.later("scan", 200, () => {
+    this.set({ modOpen: true, scanT: 0, scanning: true, idx: "none", idxN: 0 });
+    this.later("scan", 280, () => this.scanTick(0));
+  });
+}
+scanTick(i) {
+  const t = i / 30;
+  this.set({ scanT: t, scanning: t < 1 });
+  if (i < 30) this.later("scan", 60, () => this.scanTick(i + 1));
+}
+startIndex() {
+  const S = this.S;
+  if (!S.modOpen || S.idx !== "none") return;
+  const tot = this.incTotal();
+  this.set({ idx: "run", idxN: 0, idxTot: tot });
+  this.idxTick(0, tot);
+}
+idxTick(i, tot) {
+  const t = i / 42, e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const n = Math.round(tot * (0.1 * t + 0.9 * e));
+  this.set({ idxN: Math.min(tot, n) });
+  if (i < 42) this.later("idx", 100, () => this.idxTick(i + 1, tot));
+  else {
+    this.set({ idx: "done", idxN: tot, drKnown: true, cnt: this.S.cnt + tot, cntHot: true });
+    this.cancel("cnt");
+    this.later("cnt", 900, () => this.set({ cntHot: false }));
+  }
+}
+closeModal() {
+  this.cancel("scan");
+  this.set({ modOpen: false, scanning: false, scanT: this.S.scanT });
+}
+cancelModal() {
+  this.manual();
+  if (this.S.idx === "none") this.closeModal();
+}
+esc() {
+  const S = this.S;
+  if (S.modOpen) return this.closeModal();
+  if (S.ovOpen) return this.closeOverlay();
+  if (S.nDrive) return this.set({ nDrive: false });
+}
+
+fmtTime(s) {
+  s = Math.round(s);
+  if (s < 60) return s + "s";
+  return Math.floor(s / 60) + "m " + (s % 60 < 10 ? "0" : "") + (s % 60) + "s";
+}
+fmtN(n) { return Number(n).toLocaleString("en-US"); }
+
+renderVals() {
+  const S = this.S, R = this.ROWS, EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
+  const sh = (on, ms) => "visibility:" + (on ? "visible" : "hidden") + "; transition-property: transform, opacity, visibility; transition-duration: " + ms + "ms, " + ms + "ms, 0s; transition-delay: 0s, 0s, " + (on ? 0 : ms) + "ms; transition-timing-function: " + EASE + ", " + EASE + ", linear;";
+
+  const scrimOn = S.ovOpen || S.modOpen;
+  const scrimStyle = "opacity:" + (scrimOn ? 1 : 0) + "; transition: opacity " + (scrimOn ? 140 : 120) + "ms ease; pointer-events: none";
+  const spStyle = "transform: translate(-50%, calc(-50% + " + (S.ovOpen ? 0 : 8) + "px)); opacity:" + (S.ovOpen ? 1 : 0) + "; " + sh(S.ovOpen, S.ovOpen ? 160 : 120) + (S.ovOpen ? "" : " pointer-events: none;");
+  const modStyle = "left: 50%; top: calc(50% + 13px); padding: 18px; gap: 14px; z-index: 2; transform: translate(-50%, calc(-50% + " + (S.modOpen ? 0 : 8) + "px)); opacity:" + (S.modOpen ? 1 : 0) + "; " + sh(S.modOpen, S.modOpen ? 160 : 120) + (S.modOpen ? "" : " pointer-events: none;");
+
+  const typing = S.stage === "typing" || S.stage === "idle";
+  const qShow = S.q || "Search your files";
+  const qCls = S.q ? "" : "ph";
+  const spinOn = S.stage === "sem";
+  const spinStyle = "opacity:" + (spinOn ? 1 : 0) + "; transition: opacity 120ms ease";
+  const stText = S.stage === "sem" ? "matching by meaning" : S.stage === "kw" ? "5 ms" : S.stage === "done" ? "41 ms" : "";
+
+  const rows = this.ORDER.map((id) => {
+    const D = R[id], p = S.rows[id], off = !!(D.drive && S.rowsOff);
+    const tr = p.snap ? "none" : "transform 220ms " + EASE + " " + p.d + "ms, opacity 160ms ease " + p.d + "ms, background-color 100ms ease, box-shadow 100ms ease";
+    const bdOn = D.drive ? off : (id === "shot" ? S.newTag : !!D.bd);
+    return {
+      name: D.name, tile: D.tile || "",
+      cls: (S.sel === id && p.o ? "on" : "") + (off ? " off" : ""),
+      style: "transform: translateY(" + p.y + "px); opacity:" + p.o + "; transition: " + tr + ";" + (p.o ? "" : " pointer-events: none;"),
+      tab: p.o ? 0 : -1,
+      isPic: D.ico === "i", isMon: D.ico === "m", isDoc: D.ico === "d",
+      d1: D.d[0] || "", d2: D.d[1] || "", d3: D.d[2] || "", d4: D.d[3] || "", d5: D.d[4] || "",
+      bd: D.bd, bdCls: D.bdCls || "",
+      bdStyle: "opacity:" + (bdOn ? 1 : 0) + "; transition: opacity " + (id === "shot" ? 700 : 240) + "ms ease",
+      pick: () => { this.manual(); if (S.ovOpen) this.select(id); }
+    };
+  });
+  const heads = ["img", "doc"].map((k) => {
+    const h = S.heads[k];
+    return {
+      label: k === "img" ? "Images" : "Documents", n: h.n,
+      style: "transform: translateY(" + h.y + "px); opacity:" + h.o + "; transition: " + (h.snap ? "none" : "transform 220ms " + EASE + ", opacity 160ms ease") + ";"
+    };
+  });
+
+  const total = S.lay.reduce((a, s) => a + s.ids.length, 0);
+  const done = S.stage === "done";
+  const rec = S.rec >= 0;
+  const foot = {
+    res: done ? total + (total === 1 ? " result" : " results") : (S.q ? "Matching words…" : "Ready"),
+    cnt: this.fmtN(S.cnt),
+    cntStyle: "display: inline-block; color:" + (S.cntHot ? "var(--accent)" : "var(--dim)") + "; transform: translateY(" + (S.cntHot ? -2 : 0) + "px); transition: color " + (S.cntHot ? 80 : 700) + "ms ease, transform " + (S.cntHot ? 80 : 400) + "ms ease",
+    aStyle: "opacity:" + (rec ? 0 : 1),
+    bStyle: "opacity:" + (rec ? 1 : 0) + (rec ? "" : "; pointer-events: none"),
+    recText: S.recDone ? "Photos2024 is up to date" : "Checking Photos2024 for changes",
+    recBar: "width:" + Math.round(Math.max(S.rec, 0) * 100) + "%; transition: width 300ms linear",
+    enterStyle: "opacity:" + (S.pvId && R[S.pvId].drive && S.rowsOff ? 0.4 : 1)
+  };
+
+  // preview
+  const pvD = S.pvId ? R[S.pvId] : null, P = pvD ? pvD.pv : null;
+  const pOff = !!(pvD && pvD.drive && S.rowsOff);
+  const ph = S.pvPh;
+  const op = (on) => "opacity:" + (on ? 1 : 0);
+  const pv = {
+    snap: ph === "pre" ? "snap" : "",
+    wrapStyle: !pvD ? "opacity: 0" : ph === "out" ? "opacity: 0; transition: opacity 120ms ease" : ph === "pre" ? "opacity: 0; transition: none" : "opacity: 1; transition: opacity 160ms ease",
+    mediaStyle: ph === "pre" ? "transform: translateY(6px); transition: none" : ph === "in" ? "transform: translateY(0); transition: transform 180ms " + EASE : "transform: translateY(0)",
+    isImg: !!(P && P.kind === "img"), isDoc: !!(P && P.kind === "doc"),
+    isMon: !!(P && P.ico === "m"), isPic: !!(P && P.ico === "i"),
+    bg: P && P.bg ? P.bg : "#2c3a52", offCls: pOff ? "off" : "",
+    what: P && P.what ? P.what : "", whatOff: P && P.whatOff ? P.whatOff : "",
+    whatOnStyle: op(!pOff), whatOffStyle: op(pOff && P && P.whatOff),
+    chipStyle: op(pOff),
+    lines: P && P.lines ? P.lines.map((l) => ({ no: l.no, a: l.a || "", m: l.m || "", z: l.z || "", cls: l.hit ? "hit" : "" })) : [],
+    name: pvD ? pvD.name : "", path: P ? P.path : "", meta: P ? P.meta : "",
+    whyf: P ? P.why.map((f) => ({ k: f.k, v: f.v, vc: f.hit ? "v hit" : "v" })) : [],
+    whyOnStyle: op(!pOff), whyOffStyle: op(pOff) + "; color: var(--yellow)",
+    openStyle: "opacity:" + (pOff ? 0.4 : 1), disabled: pOff,
+    folderStyle: op(!pOff) + (pOff ? "; pointer-events: none" : ""), copyStyle: op(pOff) + (pOff ? "" : "; pointer-events: none")
+  };
+
+  // drive table
+  const sc = S.scanT, ease = 1 - Math.pow(1 - sc, 2);
+  const drows = this.DRV.map((d, i) => {
+    const p = Math.max(0, Math.min(1, (ease * 1.5 - i * 0.2) / 0.7)), on = !!S.inc[d.id];
+    const cell = (k) => ({ n: this.fmtN(Math.round(d.n[k] * p)), z: d.n[k] === 0 ? "zero" : "" });
+    const c = [0, 1, 2, 3, 4].map(cell);
+    return {
+      cls: (on ? "on" : "") + (i === 0 ? " focus" : ""), cb: on ? "on" : "", aria: "Include " + d.path.slice(1), pressed: on,
+      toggle: () => { this.manual(); const inc = Object.assign({}, this.S.inc); inc[d.id] = !inc[d.id]; this.set({ inc: inc }); },
+      path: d.path, whyf: d.why.map((w) => ({ k: w.k, v: w.n === undefined ? w.v : c[w.n].n, vc: "v" })),
+      n0: c[0].n, z0: c[0].z, n1: c[1].n, z1: c[1].z, n2: c[2].n, z2: c[2].z, n3: c[3].n, z3: c[3].z, n4: c[4].n, z4: c[4].z,
+      idx: Math.round(d.mb * p) + " MB", time: this.fmtTime(d.sec * p), xaria: "Add an exclude to " + d.path.slice(1)
+    };
+  });
+  let selFiles = 0, selMb = 0, selSec = 0;
+  this.DRV.forEach((d, i) => {
+    if (!S.inc[d.id]) return;
+    const p = Math.max(0, Math.min(1, (ease * 1.5 - i * 0.2) / 0.7));
+    selFiles += Math.round((d.n[0] + d.n[1] + d.n[2] + d.n[3] + d.n[4]) * p);
+    selMb += d.mb * p; selSec += d.sec * p;
+  });
+  const idxRun = S.idx !== "none", idxDone = S.idx === "done";
+  const bot = {
+    files: this.fmtN(selFiles), size: Math.round(selMb) + " MB", time: selSec < 90 ? Math.round(selSec) + " s" : Math.round(selSec / 60) + " min",
+    selStyle: "opacity:" + (idxRun ? 0 : 1) + (idxRun ? "; pointer-events: none" : ""),
+    idxStyle: "opacity:" + (idxRun ? 1 : 0) + (idxRun ? "" : "; pointer-events: none"),
+    doneCls: idxDone ? "done" : "",
+    idxLbl: idxDone ? "Indexed Photos2024" : "Indexing Photos2024",
+    idxCnt: this.fmtN(S.idxN) + " of " + this.fmtN(S.idxTot || 0),
+    idxBar: "width:" + (S.idxTot ? Math.round(S.idxN / S.idxTot * 100) : 0) + "%; transition: width 300ms linear",
+    idxPr: S.prBtn === "idx" ? "pr" : "", scanPr: S.prBtn === "scan" ? "pr" : "", cancelPr: "", notPr: ""
+  };
+  const scanLbl = S.scanning ? "running" : S.scanT >= 1 ? "2.4 s" : "—";
+
+  // notifications
+  const NT = [["nShot", 76], ["nDrive", 132], ["nOff", 76], ["nOn", 76]];
+  let top = 36;
+  const ntf = {};
+  NT.forEach((n) => {
+    const on = !!S[n[0]];
+    ntf[n[0]] = "top:" + top + "px; height:" + n[1] + "px; opacity:" + (on ? 1 : 0) + "; transform: translateY(" + (on ? 0 : -12) + "px); visibility:" + (on ? "visible" : "hidden") + "; transition: top 180ms " + EASE + ", transform 180ms " + EASE + ", opacity 180ms ease, visibility 0s linear " + (on ? 0 : 180) + "ms;" + (on ? "" : " pointer-events: none;");
+    if (on) top += n[1] + 8;
+  });
+
+  const kp = { shot: S.kp === "shot" ? "on" : "", drive: S.kp === "drive" ? "on" : "", search: S.kp === "search" ? "on" : "", esc: S.kp === "esc" ? "on" : "" };
+  return {
+    corners: this.props.corners ?? "square",
+    scrimStyle, spStyle, modStyle, qShow, qCls, spinStyle, stText, rows, heads, foot, pv, drows, bot, scanLbl, ntf, kp,
+    flashStyle: "opacity:" + (S.flash ? 0.9 : 0) + "; transition: opacity " + (S.flash ? 30 : 420) + "ms ease-out",
+    stepNo: S.auto ? S.step + " / 6" : "Manual", stepLbl: S.auto ? this.STEPS[S.step - 1] : "Use the keys, Replay restarts the story",
+    mode: S.auto ? "autoplay" : "manual", modeCls: S.auto ? "ok" : "warn",
+    pauseLbl: S.paused ? "Resume" : "Pause", driveLbl: S.drOn ? "Unplug drive" : "Plug in drive",
+    replay: () => { this.set({ auto: true, paused: false }); this.isPaused = false; this.start(); },
+    togglePause: () => { this.isPaused = !this.isPaused; this.set({ paused: this.isPaused }); },
+    kShot: () => { this.manual(); this.press("shot", () => this.takeShot(2200)); },
+    kDrive: () => { this.manual(); this.press("drive", () => (this.S.drOn ? this.unplug() : this.plug())); },
+    kSearch: () => {
+      this.manual();
+      const q = this.S.drKnown && this.qNext++ % 2 === 0 ? this.QB : this.QA;
+      this.press("search", () => this.openSearch(q));
+    },
+    kEsc: () => { this.manual(); this.press("esc", () => this.esc()); },
+    onScan: () => { this.manual(); this.pressBtn("scan", () => this.doScan()); },
+    onNot: () => { this.manual(); this.notThis(); },
+    onIndex: () => { this.manual(); this.pressBtn("idx", () => this.startIndex()); },
+    onCancel: () => this.cancelModal()
+  };
+}
+}
+</script>
+</body>
+</html>

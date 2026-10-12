@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>omafind setup pick folders</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./omaone.css">
+<link rel="stylesheet" href="./omafind.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.dt .dt-r .zero{color:var(--dim)}
+.dt .dt-r .num{color:var(--fg)}
+.lo{position:relative;background:rgba(17,17,27,0.42);border-bottom:1px solid rgba(205,214,244,0.06);padding-bottom:4px}
+.lo .dt-r{min-height:50px;border-bottom:0}
+.lo .dt-r .path{gap:6px}
+.dt-r .why .fx{display:inline-flex;vertical-align:middle}
+.dt-r .why{overflow:visible}
+.lo .lo-h{min-height:30px;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--dim)}
+.lo .lo-h .num{color:var(--fg2);letter-spacing:0;font-size:11px}
+.lo .lo-h .lbl b{color:var(--fg2);font-weight:400;letter-spacing:0;margin-left:6px}
+.tr{position:relative;align-self:stretch;width:28px}
+.tr::before{content:"";position:absolute;left:13px;top:0;bottom:0;border-left:1px solid rgba(205,214,244,0.32)}
+.tr::after{content:"";position:absolute;left:13px;top:50%;width:13px;border-top:1px solid rgba(205,214,244,0.32)}
+.tr.top::after{display:none}
+.tr.end::before{bottom:50%}
+.lo .path .pp{display:flex;align-items:center;gap:8px}
+.lo .path .pp .dir{color:var(--dim)}
+.tg{display:inline-flex;align-items:center;gap:4px;height:16px;padding:0 5px;font-size:9px;letter-spacing:0.06em;text-transform:uppercase;border:1px solid;flex:none}
+.tg .svg-i{width:9px;height:9px}
+.tg.you{color:var(--accent);border-color:rgba(137,180,250,0.5)}
+.tg.pr{color:var(--yellow);border-color:rgba(249,226,175,0.42)}
+.tg.rule{color:var(--green);border-color:rgba(166,227,161,0.42)}
+.tg.nil{color:var(--dim);border-color:var(--sep)}
+.dt .lo .dt-r .num.cut{color:var(--fg2)}
+.num.cut i{font-style:normal;color:var(--red)}
+.dt-r .num{font-variant-numeric:tabular-nums}
+.hx{grid-column:span 2;align-self:stretch;margin:8px 0 8px 18px;display:grid;place-items:center;font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--dim);background:repeating-linear-gradient(135deg,rgba(205,214,244,0.16) 0 1px,transparent 1px 6px)}
+.lo-h .hx{background:none;margin:0 0 0 18px;border-bottom:1px dashed rgba(205,214,244,0.2)}
+.lo .xbtn .svg-i{width:12px;height:12px}
+.lo .dt-r.hot{background:rgba(205,214,244,0.05)}
+.lo .dt-r.hot .xbtn{color:var(--fg);box-shadow:inset 0 0 0 1px var(--ctl-border)}
+.lo .lock{width:28px;height:28px;display:grid;place-items:center;color:var(--green);opacity:0.75}
+.lo .lock .svg-i{width:12px;height:12px}
+.addx{height:24px;display:inline-flex;align-items:center;gap:8px;padding:0 10px;border:1px dashed var(--ctl-border);background:transparent;color:var(--fg2);font:inherit;font-size:11px;border-radius:var(--r);justify-self:start}
+.addx .svg-i{width:11px;height:11px}
+.lo .addhint{font-size:10px;color:var(--dim)}
+.dt-r .why .car{width:10px;height:10px;margin-left:4px;vertical-align:-1px;color:var(--fg2)}
+.xbtn.act{color:var(--accent)}
+</style>
+</helmet>
+<div class="desk corners-{{corners}} motion-{{motion}}" style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #cdd6f4">
+  <img class="wall" src="/_blob/ceac48904c365f111f8aee8c1d9bc4a5" alt="">
+
+  <div class="bar">
+    <div class="bar-l">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16"/><path d="M4 10h16M10 10v10"/></svg></span>
+      <span class="ws-cur"></span><span class="ws">2</span><span class="ws empty">3</span><span class="ws empty">4</span><span class="ws empty">5</span>
+    </div>
+    <div class="bar-c"><span>Saturday 10:09</span></div>
+    <div class="bar-r">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="0.6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg></span>
+    </div>
+  </div>
+
+  <div class="scrim"></div>
+
+  <div class="of surf focus" style="top: 50%; transform: translate(-50%, -50%); padding: 18px; gap: 14px">
+    <div class="p-head">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span class="p-title">Pick the folders to search</span>
+        <span style="font-size: 12px"><span class="fx"><span class="f"><span class="k">scan</span><span class="v">0.8 s</span></span><span class="f"><span class="k">roots</span><span class="v">$HOME</span></span><span class="f"><span class="k">volumes</span><span class="v">0</span></span><span class="f"><span class="k">dirs</span><span class="v">4,812</span></span><span class="f"><span class="k">read</span><span class="v">names only</span></span></span></span>
+      </div>
+      <span class="p-sub" style="margin-left: auto">Step 2 of 3</span>
+    </div>
+    <div class="steps" style="flex-direction: row">
+      <span class="step done"><span class="no">✓</span>Search engine<span class="dash"></span></span>
+      <span class="step cur"><span class="no">2</span>Folders<span class="dash"></span></span>
+      <span class="step"><span class="no">3</span>Index</span>
+    </div>
+    <div class="p-sep"></div>
+
+    <div class="dt">
+      <div class="dt-h">
+        <span></span><span>Folder</span><span class="num">Text</span><span class="num">PDF</span><span class="num">Images</span><span class="num">Video</span><span class="num">Audio</span><span class="num">Index</span><span class="num">Time</span><span></span>
+      </div>
+
+      <div class="p-sec" style="padding: 10px 10px 4px">Home folders <span>XDG, checked when they hold files</span></div>
+      <div class="dt-r on focus">
+        <button class="cb on" aria-label="Include Documents"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></button>
+        <span class="path"><span class="pp">~/Documents</span><span class="why"><span class="fx"><span class="f"><span class="k">dirs</span><span class="v">1,550</span></span><span class="f"><span class="k">kept</span><span class="v">793/899</span></span><span class="f"><span class="k">left out</span><span class="v">4</span></span><svg class="svg-i car" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></span></span></span>
+        <span class="num">731</span><span class="num">45</span><span class="num">17</span><span class="num zero">0</span><span class="num zero">0</span><span class="num">9 MB</span><span class="num">2 min</span>
+        <button class="xbtn act" aria-label="Add an exclude to Documents"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
+      </div>
+      <div class="lo" role="group" aria-label="Left out of Documents">
+        <div class="dt-r lo-h">
+          <span class="tr top"></span>
+          <span class="lbl">Left out<b>4 entries · 106 files</b></span>
+          <span class="num cut"><i>−</i>75</span><span class="num cut"><i>−</i>22</span><span class="num cut"><i>−</i>9</span><span class="num zero">0</span><span class="num zero">0</span>
+          <span class="hx">not indexed</span>
+          <span></span>
+        </div>
+        <div class="dt-r hot">
+          <span class="tr"></span>
+          <span class="path"><span class="pp"><span><span class="dir">~/Documents/</span>tax/2024</span><span class="tg you">user</span></span><span class="why"><span class="fx"><span class="f"><span class="k">added</span><span class="v">2026-10-11 10:07</span></span><span class="f"><span class="k">files</span><span class="v">45</span></span></span></span></span>
+          <span class="num cut"><i>−</i>14</span><span class="num cut"><i>−</i>22</span><span class="num cut"><i>−</i>9</span><span class="num zero">0</span><span class="num zero">0</span>
+          <span class="hx" title="Not indexed"></span>
+          <button class="xbtn" aria-label="Include tax/2024 again" title="Include again"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+        <div class="dt-r">
+          <span class="tr"></span>
+          <span class="path"><span class="pp"><span><span class="dir">~/Documents/</span>vault/exports</span><span class="tg pr">generated</span></span><span class="why"><span class="fx"><span class="f"><span class="k">pattern</span><span class="v">inv-YYYYMMDD.csv</span></span><span class="f"><span class="k">match</span><span class="v">58/58</span></span><span class="f"><span class="k">dataset limit</span><span class="v">300</span></span></span></span></span>
+          <span class="num cut"><i>−</i>58</span><span class="num zero">0</span><span class="num zero">0</span><span class="num zero">0</span><span class="num zero">0</span>
+          <span class="hx" title="Not indexed"></span>
+          <button class="xbtn" aria-label="Include vault/exports again" title="Include again"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+        <div class="dt-r">
+          <span class="tr"></span>
+          <span class="path"><span class="pp"><span><span class="dir">~/Documents/</span>archive/old-backups</span><span class="tg nil">no-kind</span></span><span class="why"><span class="fx"><span class="f"><span class="k">files</span><span class="v">37</span></span><span class="f"><span class="k">.zip</span><span class="v">31</span></span><span class="f"><span class="k">.tar.gz</span><span class="v">6</span></span><span class="f"><span class="k">searchable</span><span class="v"><b>0</b></span></span></span></span></span>
+          <span class="num zero">0</span><span class="num zero">0</span><span class="num zero">0</span><span class="num zero">0</span><span class="num zero">0</span>
+          <span class="hx" title="Not indexed"></span>
+          <button class="xbtn" aria-label="Include archive/old-backups again" title="Include again"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+        <div class="dt-r">
+          <span class="tr"></span>
+          <span class="path"><span class="pp"><span><span class="dir">~/Documents/</span>**</span><span class="tg rule"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>secrets</span></span><span class="why"><span class="fx"><span class="f"><span class="k">.env</span><span class="v">3</span></span><span class="f"><span class="k">.kdbx</span><span class="v">1</span></span><span class="f"><span class="k">in</span><span class="v">tax/2024, work/clients</span></span></span></span></span>
+          <span class="num cut"><i>−</i>3</span><span class="num zero">0</span><span class="num zero">0</span><span class="num zero">0</span><span class="num zero">0</span>
+          <span class="hx" title="Not indexed"></span>
+          <span class="lock" title="Always skipped"><svg class="svg-i" viewBox="0 0 24 24" aria-label="Always skipped"><rect x="5" y="11" width="14" height="10"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+        </div>
+        <div class="dt-r" style="min-height: 34px">
+          <span class="tr end"></span>
+          <span style="display: flex; align-items: center; gap: 12px; grid-column: span 9"><button class="addx"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Leave out a subfolder</button></span>
+        </div>
+      </div>
+      <div class="dt-r on">
+        <button class="cb on" aria-label="Include Pictures"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></button>
+        <span class="path"><span class="pp">~/Pictures</span><span class="why"><span class="fx"><span class="f"><span class="k">dirs</span><span class="v">3</span></span><span class="f"><span class="k">.png</span><span class="v">388</span></span></span></span></span>
+        <span class="num zero">0</span><span class="num zero">0</span><span class="num">388</span><span class="num zero">0</span><span class="num zero">0</span><span class="num">4 MB</span><span class="num">1 min</span>
+        <button class="xbtn" aria-label="Add an exclude to Pictures"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
+      </div>
+      <div class="dt-r on">
+        <button class="cb on" aria-label="Include Downloads"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></button>
+        <span class="path"><span class="pp">~/Downloads</span><span class="why"><span class="fx"><span class="f"><span class="k">dirs</span><span class="v">4</span></span><span class="f"><span class="k">left out</span><span class="v">1</span></span><svg class="svg-i car" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 7l5 5-5 5"/></svg></span></span></span>
+        <span class="num">3</span><span class="num">4</span><span class="num">15</span><span class="num zero">0</span><span class="num zero">0</span><span class="num">1 MB</span><span class="num">&lt; 1 min</span>
+        <button class="xbtn" aria-label="Add an exclude to Downloads"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
+      </div>
+      <div class="dt-r on">
+        <button class="cb on" aria-label="Include Videos"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></button>
+        <span class="path"><span class="pp">~/Videos</span><span class="why"><span class="fx"><span class="f"><span class="k">dirs</span><span class="v">2</span></span><span class="f"><span class="k">.mp4</span><span class="v">6</span></span></span></span></span>
+        <span class="num zero">0</span><span class="num zero">0</span><span class="num zero">0</span><span class="num">6</span><span class="num zero">0</span><span class="num">2 MB</span><span class="num">4 min</span>
+        <button class="xbtn" aria-label="Add an exclude to Videos"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
+      </div>
+
+      <div class="p-sec" style="padding: 14px 10px 4px">Found elsewhere <span>unchecked until you choose</span></div>
+      <div class="dt-r">
+        <button class="cb" aria-label="Include research"></button>
+        <span class="path"><span class="pp">~/personal/projects/research</span><span class="why"><span class="fx"><span class="f"><span class="k">rule</span><span class="v">dense</span></span><span class="f"><span class="k">.md</span><span class="v">[N]</span></span><span class="f"><span class="k">.png</span><span class="v">[N]</span></span></span></span></span>
+        <span class="num">[N]</span><span class="num zero">0</span><span class="num">[N]</span><span class="num zero">0</span><span class="num zero">0</span><span class="num">[SIZE]</span><span class="num">[TIME]</span>
+        <button class="xbtn" aria-label="Add an exclude to research"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
+      </div>
+      <div class="dt-r">
+        <button class="cb" aria-label="Include docs folders in projects"></button>
+        <span class="path"><span class="pp">~/personal/projects/omaone/docs</span><span class="why"><span class="fx"><span class="f"><span class="k">git</span><span class="v">repo</span></span><span class="f"><span class="k">rule</span><span class="v">gitignore, code</span></span></span></span></span>
+        <span class="num">[N]</span><span class="num">[N]</span><span class="num">[N]</span><span class="num zero">0</span><span class="num zero">0</span><span class="num">[SIZE]</span><span class="num">[TIME]</span>
+        <button class="xbtn" aria-label="Add an exclude to project docs"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
+      </div>
+
+      <div class="p-sec" style="padding: 14px 10px 4px">Code repositories <span>separate code index, searched only with code:</span></div>
+      <div class="dt-r">
+        <button class="cb" aria-label="Index code in omaone"></button>
+        <span class="path"><span class="pp">~/personal/projects/omaone</span><span class="why"><span class="fx"><span class="f"><span class="k">git</span><span class="v">tracked [N]</span></span><span class="f"><span class="k">rule</span><span class="v">secrets, generated</span></span></span></span></span>
+        <span class="num zero">–</span><span class="num zero">–</span><span class="num zero">–</span><span class="num zero">–</span><span class="num zero">–</span><span class="num">[SIZE]</span><span class="num">[TIME]</span>
+        <span></span>
+      </div>
+      <div class="dt-r">
+        <button class="cb" aria-label="Index code in herdr"></button>
+        <span class="path"><span class="pp">~/personal/projects/herdr</span><span class="why"><span class="fx"><span class="f"><span class="k">git</span><span class="v">tracked [N]</span></span></span></span></span>
+        <span class="num zero">–</span><span class="num zero">–</span><span class="num zero">–</span><span class="num zero">–</span><span class="num zero">–</span><span class="num">[SIZE]</span><span class="num">[TIME]</span>
+        <span></span>
+      </div>
+
+      <div style="display: flex; gap: 8px; padding: 12px 10px 0">
+        <button class="btn-sec" style="height: 28px"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add folder</button>
+        <span style="align-self: center; margin-left: 6px"><span class="fx"><span class="f"><span class="k">not proposed</span><span class="v"></span></span><span class="f"><span class="k">no-kind</span><span class="v">~/Music</span></span><span class="f"><span class="k">dot</span><span class="v">212 dirs</span></span><span class="f"><span class="k">heavy</span><span class="v">14 dirs</span></span><span class="f"><span class="k">dataset</span><span class="v">2 dirs</span></span></span></span>
+      </div>
+    </div>
+
+    <div class="p-sep"></div>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span class="fx" style="font-size: 12px; gap: 18px"><span class="f"><span class="k">selected</span><span class="v"><b>1,209</b> files</span></span><span class="f"><span class="k">index</span><span class="v"><b>16 MB</b></span></span><span class="f"><span class="k">time</span><span class="v"><b>~7 min</b></span></span><span class="f"><span class="k">device</span><span class="v">GPU</span></span></span>
+      <button class="btn-sec" style="margin-left: auto">Back</button>
+      <button class="btn-pri">Start indexing</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"corners":{"editor":"enum","options":["square","rounded"],"default":"square"},"motion":{"editor":"enum","options":["still","live"],"default":"still"},"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return { corners: this.props.corners ?? "square", motion: this.props.motion ?? "still" };
+}
+}
+</script>
+</body>
+</html>

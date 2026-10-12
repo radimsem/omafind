@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>omafind search, video on top</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./omaone.css">
+<link rel="stylesheet" href="./omafind.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.it .dir b{color:var(--fg);font-weight:700}
+.pv-img .play{position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;display:grid;place-items:center;border-radius:50%;background:rgba(17,17,27,0.78);border:2px solid var(--fg);color:var(--fg)}
+.pv-img .play .svg-i{width:24px;height:24px;stroke-width:0;fill:currentColor;color:var(--fg);margin-left:3px}
+.pv-img .chip-l{position:absolute;left:12px;bottom:34px;height:22px;padding:0 7px;display:flex;align-items:center;font-size:11px;font-weight:700;background:rgba(17,17,27,0.85);color:var(--fg);border-radius:var(--r)}
+.pv-img .what.top{top:12px;bottom:auto}
+.pv-img .scrub{position:absolute;left:12px;right:12px;bottom:16px}
+.pv-img .scrub .tl-track{background:rgba(205,214,244,0.22)}
+.pv-img .scrub .tl-track .pl{background:rgba(205,214,244,0.5)}
+.pv-img .vid-icon{position:absolute;right:14px;top:12px;width:18px;height:18px;color:var(--dim)}
+.pcard{width:600px;height:340px;background:var(--surface0);border-radius:var(--r);padding:26px 28px 22px;display:flex;flex-direction:column;gap:22px}
+.pcard .wf{width:auto;height:150px;background:transparent;padding:0}
+.pcard .wf i{flex:none;width:5px}
+.pcard .ctl{display:flex;align-items:center;gap:18px}
+.pcard .pbtn{width:46px;height:46px;flex:none;border:0;padding:0;border-radius:50%;background:var(--accent);color:var(--base);display:grid;place-items:center}
+.pcard .pbtn .svg-i{width:20px;height:20px;stroke-width:0;fill:currentColor;color:var(--base);margin-left:3px}
+.pcard .trk{flex:1;position:relative;height:6px;background:var(--fill-hover)}
+.pcard .trk .pl{position:absolute;left:0;top:0;bottom:0;background:rgba(205,214,244,0.25)}
+.pcard .trk .wn{position:absolute;top:-3px;height:12px;background:var(--accent)}
+.pcard .capt{text-align:center;font-size:12px;color:var(--fg2)}
+.pv-page{position:relative}
+.pv-page .pg{position:absolute;left:12px;bottom:12px;height:22px;padding:0 8px;display:flex;align-items:center;font-size:11px;font-weight:700;background:rgba(17,17,27,0.85);color:var(--fg);border-radius:var(--r)}
+.pv-page .row2{display:flex;justify-content:space-between}
+.pv-page .hd2{font-size:9px;font-weight:700;color:#1e1e2e;margin-top:6px}
+.pv-why .aa{font-weight:700;color:var(--accent);font-size:13px;width:15px;flex:none}
+.pv-why .s b{color:var(--fg)}
+.pv-why .stack{display:flex;flex-direction:column;gap:6px}
+.pv-act .note{align-self:center;margin-left:6px;font-size:11px;color:var(--dim)}
+</style>
+</helmet>
+<div class="desk corners-{{corners}} motion-{{motion}}" style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #cdd6f4">
+  <img class="wall" src="/_blob/ceac48904c365f111f8aee8c1d9bc4a5" alt="">
+
+  <div class="bar">
+    <div class="bar-l">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16"/><path d="M4 10h16M10 10v10"/></svg></span>
+      <span class="ws-cur"></span><span class="ws">2</span><span class="ws">3</span><span class="ws empty">4</span><span class="ws empty">5</span>
+    </div>
+    <div class="bar-c"><span>Saturday 15:24</span></div>
+    <div class="bar-r">
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="0.6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></span>
+      <span class="bar-icon"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg></span>
+    </div>
+  </div>
+
+  <div class="scrim"></div>
+
+  <div class="sp surf focus">
+    <div class="sp-q">
+      <svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <label for="q" class="q">someone explaining btrfs snapshots<span class="caret"></span></label>
+      <input id="q" type="text" style="position: absolute; opacity: 0; width: 1px; height: 1px" aria-label="Search">
+      <span class="st">41 ms</span>
+    </div>
+    <div class="p-sep"></div>
+
+    <div class="sp-main">
+      <div class="sp-list">
+        <div class="sec-h">Video <span class="n">3</span></div>
+        <button class="it on">
+          <span class="th t-c"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14"/><path d="M17 10l5-3v10l-5-3"/></svg></span>
+          <span class="tx"><span class="nm">linux-fs-talk-2025.mp4</span><span class="dir">~/Videos/talks</span></span>
+          <span class="bd">14:32</span>
+        </button>
+        <button class="it">
+          <span class="th t-a"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14"/><path d="M17 10l5-3v10l-5-3"/></svg></span>
+          <span class="tx"><span class="nm">omarchy-install-walkthrough.mkv</span><span class="dir">~/Videos</span></span>
+          <span class="bd">3:05</span>
+        </button>
+        <button class="it">
+          <span class="th t-e"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14"/><path d="M17 10l5-3v10l-5-3"/></svg></span>
+          <span class="tx"><span class="nm">meetup-recording.webm</span><span class="dir">~/Downloads</span></span>
+          <span class="bd">41:10</span>
+        </button>
+        <div class="sec-h">Audio <span class="n">1</span></div>
+        <button class="it">
+          <span class="th t-b"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
+          <span class="tx"><span class="nm">linux-unplugged-ep612.mp3</span><span class="dir">~/Music/podcasts</span></span>
+          <span class="bd">22:30</span>
+        </button>
+        <div class="sec-h">PDFs <span class="n">1</span></div>
+        <button class="it">
+          <span class="th"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg></span>
+          <span class="tx"><span class="nm">btrfs-admin-guide.pdf</span><span class="dir">~/Documents/manuals</span></span>
+          <span class="bd">p. 37</span>
+        </button>
+        <div class="sec-h">Documents <span class="n">1</span></div>
+        <button class="it">
+          <span class="th"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M9 12h7M9 16h7M9 8h3"/></svg></span>
+          <span class="tx"><span class="nm">homelab-notes.md</span><span class="dir">~/Documents/notes</span></span>
+          <span class="bd">L88</span>
+        </button>
+      </div>
+
+      <div class="sp-pv">
+        <div class="pv-media">
+          <div class="pv-img" style="background:#2f3f3d">
+            <span class="what top">[frame: terminal showing btrfs subvolume snapshot, speaker beside it]</span>
+            <span class="play"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg></span>
+            <span class="chip-l">14:32</span>
+            <div class="scrub tl"  style="width:auto">
+              <div class="tl-track"><span class="pl" style="width:30.1%"></span><span class="mk" style="left:12%"></span><span class="mk" style="left:63%"></span><span class="mk best" style="left:30.1%"></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="pv-info">
+          <span class="pv-name">linux-fs-talk-2025.mp4</span>
+          <span class="pv-path">~/Videos/talks</span>
+          <span class="pv-meta">Video · Jun 12, 2025 · 48:20 · 1.2 GB</span>
+        </div>
+        <span class="pv-why"><svg class="svg-i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/><path d="M8 11h6M11 8v6"/></svg><span class="fx"><span class="f"><span class="k">leg</span><span class="v">meaning</span></span><span class="f"><span class="k">part</span><span class="v">frame + speech</span></span><span class="f"><span class="k">at</span><span class="v">14:32</span></span><span class="f"><span class="k">z</span><span class="v">3.1</span></span></span></span>
+        <div class="pv-act">
+          <button class="btn-acc">Open at 14:32</button>
+          <button class="btn-sec">Show in folder</button><span class="note"><span class="fx"><span class="f"><span class="k">opener</span><span class="v">mpv --start=872</span></span></span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sp-f">
+      <span>6 results</span>
+      <span class="sp-r">
+        <span><span class="kbd">Enter</span> open at 14:32</span>
+        <span><span class="kbd">Ctrl</span><span class="kbd">Enter</span> show in folder</span>
+        <span><span class="kbd">Ctrl</span><span class="kbd">Space</span> preview at 14:32</span>
+        <span><span class="kbd">Ctrl</span><span class="kbd">C</span> copy path</span>
+        <span><span class="kbd">Esc</span> close</span>
+      </span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"corners":{"editor":"enum","options":["square","rounded"],"default":"square"},"motion":{"editor":"enum","options":["still","live"],"default":"still"},"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return { corners: this.props.corners ?? "square", motion: this.props.motion ?? "still" };
+}
+}
+</script>
+</body>
+</html>
