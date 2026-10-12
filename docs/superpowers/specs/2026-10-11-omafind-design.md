@@ -55,17 +55,17 @@ Hyprland bind / omarchy-menu row
 | `Overlay.qml` + views | Search view and setup view. No logic beyond layout and key handling. | `Service.qml`, `lib/results.js` |
 | `lib/*.js` | Pure functions: message encode/decode, connection reducer, result grouping, settings merge and clamp. | none |
 | `omafindd.ipc` | Socket server, hello handshake, dispatch, events. | all daemon units through narrow calls |
-| `omafindd.discovery` | Walks roots, counts kinds per directory, proposes candidates. | `rules` |
-| `omafindd.rules` | Global skip rules: dot-dirs, heavy dirs, secrets, datasets, size caps, `*.noindex`, `.gitignore`. | none |
-| `omafindd.crawler` | Walks selected roots and upserts `files` rows as pending. | `rules`, `store` |
-| `omafindd.watcher` | inotify on internal-volume roots, coalesces churn, marks files pending or deleted. | `rules`, `store` |
-| `omafindd.volumes` | Maps paths to volume UUIDs, watches mounts, announces new and returning drives. | `/proc/self/mountinfo` |
-| `omafindd.extractors.*` | Turn one file into segments (text chunks, page renders, frames, audio windows), plus FTS text and a thumbnail. Pure, run in a process pool. | pillow, pypdf, pypdfium2, python-docx, odfpy, ffmpeg, tesseract |
+| `omafindd.discovery` | Lists `$HOME` and mounted volumes with `fd`, counts kinds per directory, proposes candidates. | `rules`, `fd`, `lsblk` |
+| `omafindd.rules` | Global skip rules (4.3): one glob list rendered as `fd` arguments, plus the dataset and size-cap post-filters and the per-rule counts for the boards. | `fd` |
+| `omafindd.crawler` | Runs `fd` on each selected root and upserts `files` rows as pending. | `rules`, `store`, `fd` |
+| `omafindd.watcher` | inotify on internal-volume roots, coalesces churn, re-lists changed directories with `fd` from the root, marks files pending or deleted. | `rules`, `store`, `watchdog` |
+| `omafindd.volumes` | Maps paths to volume UUIDs, watches mounts, announces new and returning drives. | `findmnt`, `lsblk` |
+| `omafindd.extractors.*` | Turn one file into segments (text chunks, page renders, frames, audio windows), plus FTS text and a thumbnail. Pure, run in a process pool. | `pdfinfo`, `pdftotext`, `pdftoppm`, `magick`, `ffmpeg`, `ffprobe`, `tesseract`, stdlib `zipfile` |
 | `omafindd.embedder` | Starts, stops and talks to llama-server. Validates vectors. Chooses GPU or CPU. | `runtime/bin/llama-server`, `model/*.gguf`, `nvidia-smi` |
 | `omafindd.jobs` | Bounded queue, worker pool, resume journal, progress events. | `extractors`, `embedder`, `store` |
 | `omafindd.store` | One SQLite file per volume plus `code.sqlite`: schema, migrations, transactions, vector loading. | sqlite3 |
-| `omafindd.search` | Query parsing, both legs, fusion, grouping, jump targets. | `embedder`, `store` |
-| `omafindd.opener` | Turns a result into the right opener command for the jump target. | `omarchy-launch-browser`, `xdg-open` |
+| `omafindd.search` | Query parsing, both legs, fusion, jump targets. The `code:` words leg runs `rg`. | `embedder`, `store`, `rg` |
+| `omafindd.opener` | Turns a result into the right opener command for the jump target. | `omarchy-launch-editor`, `omarchy-launch-browser`, `mpv`, `xdg-open`, `gdbus` |
 | `bin/omafind` | `setup`, `status [--json]`, `discover --json`, `search --json`, `reindex`, `bindings check`, `build-runtime`. Stdlib only, imports daemon modules for shared logic. | daemon modules |
 
 ### 2.2 Repo layout
@@ -110,6 +110,25 @@ The index of an external drive lives on the internal disk, not on the drive.
 - GPU policy: the daemon reads free VRAM with `nvidia-smi` before it starts a server. Full mode uses the GPU when at least 1.5 GB is free, otherwise it runs on CPU (`-ngl 0`) under `nice 19`. Text mode uses the GPU when at least 0.5 GB is free. If `nvidia-smi` fails, the daemon tries the GPU and falls back to CPU when the start fails. This lets omafind run beside omaone's local decider (about 9.5 GB when pinned).
 - One server process at a time. A query while full mode is running uses the full-mode server.
 
+### 2.5 External tools
+
+omafind drives existing command-line tools instead of reimplementing them or linking Python decoders (ADR-5). Each tool is required, and each job has one code path.
+
+| Tool | Package | Used for |
+|---|---|---|
+| `fd` 10 or newer | `fd` | discovery, crawl and watcher re-checks, `.gitignore` and `.ignore` handling |
+| `rg` | `ripgrep` | the `code:` words leg, `open_line`, preview hit lines |
+| `magick` | `imagemagick` | image orientation, the Catrom pre-resize (5.3), thumbnails |
+| `pdfinfo`, `pdftotext`, `pdftoppm` | `poppler` | PDF page count, page text, page renders |
+| `ffmpeg`, `ffprobe` | `ffmpeg` | video frames, audio PCM, stream probe |
+| `tesseract` | `tesseract`, `tesseract-data-eng` | screenshot OCR |
+| `git` | `git` | `git ls-files` for code roots |
+| `findmnt`, `lsblk` | `util-linux` | volume identity, mount events, drive facts |
+| `mpv` | `mpv` | audio and video jumps |
+| `gdbus` | `glib2` | Show in folder |
+
+Omarchy installs all of them except `poppler`, which arrives only as a dependency of other packages. `bin/omafind setup` and `status --json` report a `tools` check. When a tool is missing they print one `sudo pacman -S --needed <packages>` line and exit 1. plocate is not used: its database is up to a day old and prunes `/media` and `/mnt`.
+
 ## 3. Runtime and model
 
 - **Runtime**: stock `llama-server` from a pinned llama.cpp tag, at least b11461 (b11452 is the first tag with `gemma-embedding2`). `scripts/build-runtime.sh` builds it with `-DGGML_VULKAN=ON -DLLAMA_BUILD_SERVER=ON`, Release, everything else off, into `runtime/`. It needs `vulkan-headers` and `shaderc`. Arch `extra/llama-cpp` (0.6.0) is too old and is not used.
@@ -137,7 +156,7 @@ The index of an external drive lives on the internal disk, not on the drive.
 The setup view in the overlay, mirrored by `bin/omafind setup` and `bin/omafind discover --json`:
 
 1. **Runtime and model.** Build llama-server if it is missing. Download both model files with progress. The view shows the disk cost: about 865 MB for the model and about 200 MB for the runtime.
-2. **Discovery scan.** A parallel `os.scandir` walk of `$HOME` and every mounted non-system volume. The walk does not `stat` files: kind comes from the extension, directory type from `d_type`. The global skip rules (4.3) apply during the walk. Each directory gets counts of `{text, pdf, image, video, audio}`, rolled up to its ancestors.
+2. **Discovery scan.** One `fd` listing of `$HOME` and of every mounted non-system volume from `lsblk -J`, with the global skip rules (4.3) as `fd` arguments. Nothing is `stat`ed: kind comes from the extension. Extra `fd` passes count what each rule removed (`dot`, `heavy`, `secrets`) for the boards, by name only. On this host `fd` lists all 3.9 M files under `$HOME` in 1.6 s, against 48 s for a serial `os.scandir` walk (the walk ran first, so `fd` had a warm cache), and the six text and PDF extensions with the default rules in 0.16 s. Each directory gets counts of `{text, pdf, image, video, audio}`, rolled up to its ancestors.
 3. **Candidate list.** A candidate is a directory whose subtree holds at least 20 content files and that is the highest ancestor still dense in content. Rule: walk up from each dense directory and stop before an ancestor where the dense subtree holds less than 60% of the ancestor's content files. `$HOME` and volume roots are never proposed. XDG user dirs that hold content are pre-checked. Other candidates start unchecked. Each row shows the path, per-kind counts, estimated index size and estimated time. Estimates use per-kind rates measured in the spike.
 4. **Code repositories.** A separate section lists git repositories found during the walk (a directory holding `.git`). All start unchecked. A checked repository goes to the code index (5.2), not the content index, and is searched only with the `code:` prefix.
 5. **Edit.** The user checks or unchecks rows, adds any directory through a picker, and adds excludes per root. The view shows the total estimated time and size. **Start indexing** writes the roots to the plugin's `shell.json` entry and starts the crawl.
@@ -158,7 +177,6 @@ Inline on the plugin's entry in `~/.config/omarchy/shell.json`, written only by 
 | `roots` | `[{path, volume, excludes: [path]}]` | `[]` |
 | `maxResults` | int, 10..200 | `40` |
 | `codeRoots` | `[path]`, git repositories | `[]` |
-| `editor` | string, command used for text and code | `$EDITOR`, else `xdg-open` |
 | `warmMinutes` | int, 0..60 | `5` |
 | `gpu` | `"auto"`, `"never"` | `"auto"` |
 | `imageBudget` | 70, 140, 280 | `140` |
@@ -169,12 +187,16 @@ Inline on the plugin's entry in `~/.config/omarchy/shell.json`, written only by 
 
 Applied to every kind at discovery, crawl and watch time:
 
-- dot-files and dot-dirs, any directory containing `*.noindex` or named `*.noindex`
-- heavy dirs: `node_modules`, `.git`, `target`, `build`, `dist`, `venv`, `.venv`, `__pycache__`, cache dirs
-- secrets: DigUp's `Rules.isSecret` list (`.pem`, `.key`, `.p12`, `id_rsa*`, `.env*`, `secret*`, `credential*`, `.netrc`, `.npmrc`, …) plus `.kdbx`, `.gpg`, `.age`
-- dataset folders: at least 300 files of one kind with machine-made names
-- size caps per kind
-- inside git repos, files ignored by `.gitignore`, checked in batches with `git check-ignore --stdin`
+A path is indexable when `fd` with the rule arguments lists it and the Python post-filters keep it. Discovery, the crawler and the watcher all use this one predicate.
+
+- dot-files and dot-dirs: `fd` default
+- inside git repos, files ignored by `.gitignore`: `fd` default, including parent repositories
+- patterns in `.ignore` files: `fd` default. A `.ignore` holding `*` leaves its folder out, and `rg` honors the same file. This replaces the `*.noindex` marker.
+- heavy dirs: `node_modules`, `.git`, `target`, `build`, `dist`, `venv`, `.venv`, `__pycache__`, cache dirs, as `-E` globs
+- secrets: DigUp's `Rules.isSecret` list (`.pem`, `.key`, `.p12`, `id_rsa*`, `.env*`, `secret*`, `credential*`, `.netrc`, `.npmrc`, …) plus `.kdbx`, `.gpg`, `.age`, as `-E` globs, so omafind never sees these paths
+- per-root excludes, as `-E` globs
+- dataset folders: at least 300 files of one kind with machine-made names, a Python post-filter over the listing
+- size caps per kind, a Python post-filter after `stat`
 
 DigUp applies its secrets list to code only. omafind applies it everywhere. A test proves that a fixture tree of secrets never reaches `files`.
 
@@ -182,7 +204,7 @@ DigUp applies its secrets list to code only. omafind applies it everywhere. A te
 
 - The internal disk is one volume, keyed by its filesystem UUID.
 - Each external drive is a volume keyed by its filesystem UUID, with its own DB and thumbnail dir. Paths in a DB are relative to the volume's mount point, so a drive mounted at another path still matches.
-- The daemon watches mounts by polling `/proc/self/mountinfo` (every 5 s, or on `poll()` readiness of that file).
+- The daemon reads mount and unmount events from `findmnt --poll`, and the label, filesystem, size and removable flag of a drive from `lsblk -J -o UUID,LABEL,FSTYPE,SIZE,RM,HOTPLUG,MOUNTPOINTS`.
 - When a known volume appears, the daemon reconciles its DB with a size and mtime walk.
 - When an unknown volume appears, the daemon sends a toast: "New drive Photos2024 found. Scan it for content?" Accepting opens the setup view with candidates for that drive only.
 - Removable volumes get no inotify watches. They update only through the reconcile on mount.
@@ -191,7 +213,7 @@ DigUp applies its secrets list to code only. omafind applies it everywhere. A te
 ### 4.5 Freshness on the internal volume
 
 - `watchdog` inotify watchers on each selected root.
-- Create and modify events compare (size, mtime) with the stored row. Delete events remove the file and its segments. Bursts in one directory are coalesced for 2 s.
+- Bursts in one directory are coalesced for 2 s. Then one `fd` call with the rule arguments lists the root again, filtered with `--full-path` to the changed directories, so the watcher and the crawler cannot disagree. Starting `fd` inside the changed directory is wrong: it does not check whether that directory itself is ignored by a parent `.gitignore`. Listed files compare (size, mtime) with the stored row. Rows no longer listed are deleted with their segments.
 - On daemon start, roots marked dirty in the journal, or all roots after a crash, are reconciled by a re-walk.
 
 ## 5. Indexing pipeline
@@ -200,24 +222,24 @@ DigUp applies its secrets list to code only. omafind applies it everywhere. A te
 
 crawler or watcher → `files` row with `state = pending` → bounded asyncio queue → extract in a process pool → embed in batches → one transaction writes segments, FTS rows and the thumbnail path → `state` becomes `done`, `partial`, `skipped` or `failed` with a `detail`.
 
-- The journal holds in-flight file ids. A `kill -9` loses at most one batch, which is retried on start.
+- The journal holds in-flight file ids. A `kill -9` loses at most one batch, which is retried on start. The walk keeps no journal: a rerun of `fd` is cheap.
 - Workers run with `nice 19` and `ionice -c 3`.
 - Progress events go to the plugin at most twice per second: done count, queued count, current volume.
 
 ### 5.2 Extractors
 
-No GPL or AGPL library is linked. GPL or LGPL tools run only as subprocesses (`ffmpeg`). PyMuPDF is excluded (AGPL).
+No GPL or AGPL library is linked. GPL or LGPL tools run only as subprocesses (`ffmpeg`, poppler). PyMuPDF is excluded (AGPL). Tools decode and resize; Python keeps the logic DigUp tuned (thresholds, windows, hashes, chunking).
 
 | Kind | Tool | Segments | Extra |
 |---|---|---|---|
-| text: md, txt, html, docx, odt | stdlib, `python-docx`, `odfpy` | 1800-character chunks, 200 overlap, at most 5000 per file, `loc` = start line | full text into FTS5 |
-| pdf | `pypdf` for text, `pypdfium2` to render pages with under 200 characters | one vector per page, `loc` = page; rendered pages are embedded as images | over 50 pages: first 30 in the first pass, the rest later; at most 5000 pages |
-| image | `pillow` | one vector per image, budget `imageBudget` (280 for screenshots) | 128 px JPEG thumbnail; OCR with `tesseract` into FTS5 only, for screenshot-like images (name pattern, or dimensions matching a common screen size) |
-| video | `ffmpeg` frame every 3 s, 8 × 8 average-hash dedup (keep when distance > 4 bits), at most 1200 frames | frame vectors at budget 70, `loc` = second | soundtrack goes through the audio path; thumbnail is the first kept frame |
-| audio | `ffmpeg` to 16 kHz mono PCM, RMS silence gate | 30 s windows, 25 s hop, `loc` = start second | none |
-| code | `git ls-files` per repository in `codeRoots`, minus secrets, generated and vendored files (DigUp's `CodeExtractor` rules) | stretches of whole lines up to 1800 characters, `loc` = first line, `loc_end` = last line, stored in `code.sqlite` | file text into that DB's FTS5; queried only with `code:` |
+| text: md, txt, html, docx, odt | stdlib; docx and odt through `zipfile` reading `word/document.xml` and `content.xml` | 1800-character chunks, 200 overlap, at most 5000 per file, `loc` = start line | full text into FTS5 |
+| pdf | `pdfinfo` for the page count, one `pdftotext -f a -l b` call per pass with pages split at form feeds, `pdftoppm -scale-to 1024` then the `magick` pre-resize for pages with under 200 characters. An encrypted file fails with detail `encrypted-pdf` | one vector per page, `loc` = page; rendered pages are embedded as images | over 50 pages: first 30 in the first pass, the rest later; at most 5000 pages |
+| image | `magick -auto-orient`, the Catrom pre-resize, `magick -thumbnail` | one vector per image, budget `imageBudget` (280 for screenshots) | 128 px JPEG thumbnail; OCR with `tesseract` into FTS5 only, for screenshot-like images (name pattern, or dimensions matching a common screen size) |
+| video | `ffprobe` for streams; `ffmpeg` samples a frame every 3 s as 8 × 8 gray bytes, Python keeps a frame when its average hash differs by more than 4 bits, at most 1200 frames, and a second `ffmpeg` pass extracts kept frames at a 1024 px long side | frame vectors at budget 70, `loc` = second | soundtrack goes through the audio path; thumbnail is the first kept frame |
+| audio | `ffprobe` for an audio stream, `ffmpeg` streams 16 kHz mono PCM, numpy RMS silence gate | 30 s windows, 25 s hop, `loc` = start second | none |
+| code | `git ls-files` per repository in `codeRoots`, minus secrets, generated and vendored files (DigUp's `CodeExtractor` rules) | stretches of whole lines up to 1800 characters, `loc` = first line, `loc_end` = last line, stored in `code.sqlite` | no FTS table: the words leg runs `rg` over `codeRoots` live (6.3); queried only with `code:` |
 
-Images sent to the server are pre-resized to the pixel area of their token budget. This guards against llama.cpp issue #30195, where the server ignores the configured vision budget.
+Images sent to the server are pre-resized to the pixel area of their token budget. This guards against llama.cpp issue #30195, where the server ignores the configured vision budget. Every image, frame and rendered page goes through the one `magick -filter Catrom` resize that passed parity in 5.3; Pillow's resize was not measured and is not used.
 
 ### 5.3 Spike-gated items
 
@@ -256,7 +278,7 @@ CREATE VIRTUAL TABLE fts USING fts5(name, body, original UNINDEXED,
   tokenize = "porter unicode61 remove_diacritics 2 categories 'L* N* Co M*'");
 ```
 
-`files.path` is relative to the volume mount point. `info` is JSON (thumbnail path, page count, duration). Pragmas: WAL, `synchronous=NORMAL`, `foreign_keys=ON`. FTS5 BM25 weights: 3.0 for name, 1.0 for body. OCR text goes into `body` and gets no vector.
+`files.path` is relative to the volume mount point. `info` is JSON (thumbnail path, page count, duration). Pragmas: WAL, `synchronous=NORMAL`, `foreign_keys=ON`. FTS5 BM25 weights: 3.0 for name, 1.0 for body. OCR text goes into `body` and gets no vector. `code.sqlite` has the same tables except `fts`: the `code:` words leg reads the files live with `rg`.
 
 ### 6.2 Vector scan
 
@@ -270,7 +292,7 @@ CREATE VIRTUAL TABLE fts USING fts5(name, body, original UNINDEXED,
 1. Normalize the query. Parse an optional prefix: `img:`, `pdf:`, `vid:`, `aud:`, `doc:`, `code:`. A kind prefix filters to that kind. `code:` searches `code.sqlite` only; no other query touches it.
 2. Run both legs in parallel:
    - **meaning**: embed the query with the search prompt, score every loaded vector.
-   - **words**: FTS5 match, up to 100 files, giving each file's coverage = share of query words it contains.
+   - **words**: FTS5 match, up to 100 files, giving each file's coverage = share of query words it contains. For `code:` the words leg is `rg --json -F -i -e <word>…` over `codeRoots`, which honors `.gitignore`. Coverage comes from the submatches of each file, the snippet from its first matching line.
 3. Fuse, as DigUp's `Searcher.swift` does:
    - subtract each modality's mean cosine (a modality with fewer than 20 vectors uses the global mean), then compute one global z-score with a deviation floor of 0.02
    - lookup queries (identifier-like or quoted terms) use weights (meaning 0.5, words 4); others use (1, 2)
@@ -343,7 +365,7 @@ omafind computes every status it shows, so the overlay shows the computed values
 | pdf | the default web browser, through `omarchy-launch-browser file://…#page=N`, which resolves `xdg-settings get default-web-browser`. Without that helper, `xdg-open` on the file, without a page |
 | video, audio | `mpv --start=<seconds>` |
 | image | `xdg-open` |
-| text, code | the `editor` setting at the matched line (`<editor> +<line>` in the default terminal); without one, `xdg-open` |
+| text, code | `omarchy-launch-editor`, which runs the Omarchy default editor (a terminal editor through `omarchy-launch-tui`). The line argument follows that editor: `+N` for nvim, vim, nano and micro, `path:N` for helix, none for others. Code jumps to `open_line`, found with `rg -n -m1` and a definition pattern, else `loc` |
 
 ## 8. Security, privacy, operations
 
@@ -362,12 +384,12 @@ Offline, in milliseconds, following omaone's rules: behavior at module boundarie
 
 - `FakeEmbedder` with deterministic vectors drives fusion, ranking and grouping tests.
 - Extractors run against tiny fixture files of every kind.
-- Watcher and volume tests use tmpdirs and fake mountinfo files.
+- Watcher and volume tests use tmpdirs and canned `findmnt --poll` and `lsblk -J` output. Extractor tests run the real tools on fixtures generated at test time with `magick` and `ffmpeg -f lavfi`.
 - Discovery candidate selection runs on synthetic trees with known answers.
 - A fixture tree of secrets must never produce a `files` row.
 - `lib/*.js` runs under `node --test` (`tests/js/*.test.mjs`). QML is checked with `scripts/qmllint.sh`.
 - One suite marked manual needs the real model: the parity gate and the eval run.
-- CI on ubuntu-latest, actions pinned by SHA: ruff, pytest, node, qmllint. Docs-only changes skip CI.
+- CI on ubuntu-latest, actions pinned by SHA: ruff, pytest, node, qmllint. CI installs `fd-find` (linked to `fd`), `ripgrep`, `poppler-utils`, `imagemagick`, `ffmpeg` and `tesseract-ocr`. Docs-only changes skip CI.
 
 ### 9.2 Evals
 
@@ -389,6 +411,7 @@ Offline, in milliseconds, following omaone's rules: behavior at module boundarie
 2. Brute-force scan over float16 blobs until more than 1M segments.
 3. Scope is `$HOME` and mounted volumes. No root daemon, no fanotify.
 4. Stock llama-server subprocess instead of a custom libllama shim, unless the spike shows audio or parity needs the shim.
+5. Existing command-line tools over custom code and Python decoders (2.5).
 
 ## 10. Corrections to the research note
 
@@ -405,3 +428,4 @@ Offline, in milliseconds, following omaone's rules: behavior at module boundarie
 | `kinds: ["service","bar-widget","panel"]` | `["service","overlay"]`. |
 | Code index opt-in in v1 | Kept: opt-in per repository in setup, `code:` prefix only. |
 | Index plaintext is an open risk | Covered by LUKS on this host and stated in the README. |
+| Parallel `os.scandir` walk, `git check-ignore`, pypdf, pillow, python-docx, odfpy | `fd`, poppler and `magick` subprocesses (2.5, ADR-5). |
