@@ -61,7 +61,7 @@ Hyprland bind / omarchy-menu row
 | `omafindd.watcher` | inotify on internal-volume roots, coalesces churn, marks files pending or deleted. | `rules`, `store` |
 | `omafindd.volumes` | Maps paths to volume UUIDs, watches mounts, announces new and returning drives. | `/proc/self/mountinfo` |
 | `omafindd.extractors.*` | Turn one file into segments (text chunks, page renders, frames, audio windows), plus FTS text and a thumbnail. Pure, run in a process pool. | pillow, pypdf, pypdfium2, python-docx, odfpy, ffmpeg, tesseract |
-| `omafindd.embedder` | Starts, stops and talks to llama-server. Validates vectors. Chooses GPU or CPU. | `runtime/llama-server`, `model/*.gguf`, `nvidia-smi` |
+| `omafindd.embedder` | Starts, stops and talks to llama-server. Validates vectors. Chooses GPU or CPU. | `runtime/bin/llama-server`, `model/*.gguf`, `nvidia-smi` |
 | `omafindd.jobs` | Bounded queue, worker pool, resume journal, progress events. | `extractors`, `embedder`, `store` |
 | `omafindd.store` | One SQLite file per volume plus `code.sqlite`: schema, migrations, transactions, vector loading. | sqlite3 |
 | `omafindd.search` | Query parsing, both legs, fusion, grouping, jump targets. | `embedder`, `store` |
@@ -93,7 +93,7 @@ Everything lives under `~/.local/share/omafind/`, mode 0700:
 | Path | Content |
 |---|---|
 | `venv/` | uv environment (`UV_PROJECT_ENVIRONMENT`) |
-| `runtime/llama-server` | pinned build from `scripts/build-runtime.sh` |
+| `runtime/bin/llama-server` | pinned build from `scripts/build-runtime.sh` |
 | `model/embeddinggemma-2-Q8_0.gguf`, `model/mmproj-embeddinggemma-2-Q8_0.gguf` | sha256-verified, mode 0600 |
 | `index/<volume-uuid>.sqlite` | one DB per volume, mode 0600 |
 | `index/code.sqlite` | the code index, mode 0600, only when a code repository is selected |
@@ -226,6 +226,14 @@ Phase 0 decides these. The outcome is recorded in this spec and in ADR-4 before 
 - **Audio through llama-server.** Documented upstream, not confirmed working. If it fails, `audio` is forced off, the audio and soundtrack legs are skipped, and the custom mtmd shim is reconsidered for media only.
 - **Image parity.** Cosine at least 0.999 against a one-time bf16 sentence-transformers reference (transformers ≥ 5.19.0) for a photo, a screenshot, a rendered PDF page and, if audio works, a speech clip. These reference vectors become the regression gate for any runtime or model change.
 - **Rates.** Measured per-kind times on GPU and CPU feed the setup estimates.
+
+**Phase 0 outcome (2026-10-12, llama.cpp b11461 `4d756bc` with the no-logits patch, RTX 3060, Vulkan).** Full numbers are in ADR-4.
+
+- **Audio works** through `input_audio`: cosine 0.99975 on the speech clip, so `audio` stays available. 30 s of audio is 754 prompt tokens.
+- **Image parity holds** at cosine at least 0.99914 for every input (photo 140 and 280, frame 70, screenshot, PDF page). It requires the client pre-resize: the server's own downscale gives 0.986 to 0.993. The budget is a server-wide flag, not a request field. The client resizes with ImageMagick `-filter Catrom` to multiples of 48 with at most `budget * 2304` pixels, and the server runs with `--image-min-tokens 1` so a 63-token frame is not upscaled again. One server serves every budget.
+- **Token budget.** Without a flag the server sends a 4000 px photo as 976 tokens. With `--image-max-tokens` 70, 140 or 280 it sends 67, 134 or 270, so the flag is honored at this tag. The pre-resize stays because of the parity result above.
+- **Rates** per item on GPU / `-ngl 0`: text chunk 0.03 / 0.09 s, image (140) 0.10 / 1.4 s, frame (70) 0.05 / 0.7 s, 30 s audio 0.14 / 1.4 s.
+- **Phase 0 query set:** not run. `~/Pictures` holds only screenshots, so `evals/phase0.json` has no pairs yet.
 
 ## 6. Storage and search
 

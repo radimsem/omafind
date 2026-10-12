@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "radimsem.omafind",
+  "name": "omafind",
+  "version": "0.1.0",
+  "author": "radimsem",
+  "license": "MIT",
+  "description": "Search local files by content",
+  "homepage": "https://github.com/radimsem/omafind",
+  "kinds": ["service", "overlay"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "overlay": "Overlay.qml"
+  }
+}

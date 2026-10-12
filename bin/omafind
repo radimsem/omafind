@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+import importlib
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PLUGIN_ROOT / "helper"))
+paths = importlib.import_module("omafindd.paths")
+MODEL_NAMES = ("embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf")
+MODEL_DOWNLOAD = '''
+import sys
+from omafindd import models, paths
+
+def progress(name, done, total):
+    print(f"\\rmodel {name} {done}/{total} bytes", end="", flush=True)
+
+directory = paths.model_dir()
+try:
+    models.download(directory, progress=progress)
+    print()
+    checked = models.verify(directory)
+    for name, valid in checked.items():
+        if not valid:
+            print(f"model invalid {name}", file=sys.stderr)
+    if not all(checked.values()):
+        sys.exit(1)
+except (OSError, ValueError) as error:
+    print(str(error), file=sys.stderr)
+    sys.exit(1)
+print("model ready")
+'''
+
+
+def read_hello(path, timeout):
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            deadline = time.monotonic() + timeout
+            client.settimeout(timeout)
+            client.connect(str(path))
+            client.sendall(b'{"t":"hello","v":1}\n')
+            data = b""
+            while time.monotonic() < deadline:
+                client.settimeout(max(0.001, deadline - time.monotonic()))
+                chunk = client.recv(4096)
+                if not chunk:
+                    return False
+                data += chunk
+                while b"\n" in data:
+                    line, data = data.split(b"\n", 1)
+                    if len(line) > 1_048_576:
+                        return False
+                    try:
+                        message = json.loads(line)
+                    except (ValueError, UnicodeError):
+                        continue
+                    if (isinstance(message, dict) and message.get("t") == "state"
+                            and type(message.get("v")) is int and message["v"] == 1):
+                        return message
+                if len(data) > 1_048_576:
+                    return False
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+def _socket_path(env):
+    if not env.get("XDG_RUNTIME_DIR"):
+        raise ValueError("XDG_RUNTIME_DIR is unset. Run omafind in a user session.")
+    return Path(env["XDG_RUNTIME_DIR"]) / "omafind/ui.sock"
+
+
+def _presence(env):
+    # The shared path helpers create the data directory; status must only read it.
+    data = Path(env.get("XDG_DATA_HOME") or Path(env["HOME"]) / ".local/share") / "omafind"
+    binary = data / "runtime/bin/llama-server"
+    directory = data / "model"
+    return {
+        "runtime": {"path": str(binary),
+                    "present": binary.is_file() and os.access(binary, os.X_OK)},
+        "model": {"path": str(directory),
+                  "files": {name: (directory / name).is_file() for name in MODEL_NAMES}},
+    }
+
+
+def _print_presence(details):
+    print("runtime ready" if details["runtime"]["present"] else "runtime missing")
+    files = details["model"]["files"]
+    print("model ready" if all(files.values()) else "model missing")
+    for name, present in files.items():
+        print(f"model {name} {'ready' if present else 'missing'}")
+
+
+def _command(command, env, run):
+    result = run(command, env=env, capture_output=True, text=True)
+    if result.returncode:
+        print(result.stderr or result.stdout or f"{command[0]} failed", file=sys.stderr)
+    return result.returncode == 0
+
+
+def setup(env, run=subprocess.run, probe=read_hello, clock=time.monotonic, sleep=time.sleep):
+    home = Path(env["HOME"])
+    socket_path = _socket_path(env)
+    if not _command(["systemctl", "--user", "show-environment"], env, run):
+        return 1
+    python = home / ".local/share/omafind/venv/bin/python"
+    sync_env = dict(env, UV_PROJECT_ENVIRONMENT=str(python.parent.parent))
+    sync = ["uv", "sync", "--project", str(PLUGIN_ROOT / "helper"), "--frozen", "--no-dev"]
+    if not _command(sync, sync_env, run):
+        return 1
+    paths.data_dir()
+    python.parent.parent.parent.chmod(0o700)
+    config = Path(env.get("XDG_CONFIG_HOME") or home / ".config")
+    unit = config / "systemd/user/omafind.service"
+    unit.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(PLUGIN_ROOT / "systemd/omafind.service", unit)
+    unit.chmod(0o644)
+    if not _command(["systemctl", "--user", "daemon-reload"], env, run):
+        return 1
+    active = run(["systemctl", "--user", "is-active", "omafind.service"],
+                 env=env, capture_output=True, text=True)
+    if not _command(["systemctl", "--user", "enable", "--now", "omafind.service"], env, run):
+        return 1
+    if (active.returncode == 0 and active.stdout.strip() == "active"
+            and not _command(["systemctl", "--user", "restart", "omafind.service"], env, run)):
+        return 1
+    deadline = clock() + 5
+    while clock() < deadline:
+        if probe(socket_path, min(0.2, max(0.001, deadline - clock()))):
+            print("unit active")
+            print("socket answering")
+            details = _presence(env)
+            _print_presence(details)
+            if not details["runtime"]["present"] or not all(details["model"]["files"].values()):
+                print("next bin/omafind build-runtime")
+            return 0
+        sleep(min(0.1, max(0, deadline - clock())))
+    print("socket silent", file=sys.stderr)
+    journal = run(["journalctl", "--user", "-u", "omafind.service", "-n", "20", "--no-pager"],
+                  env=env, capture_output=True, text=True)
+    print(journal.stdout or journal.stderr, end="", file=sys.stderr)
+    return 1
+
+
+def status(env, run=subprocess.run, probe=read_hello, as_json=False):
+    enabled_result = run(["systemctl", "--user", "is-enabled", "omafind.service"],
+                         env=env, capture_output=True, text=True)
+    active_result = run(["systemctl", "--user", "is-active", "omafind.service"],
+                        env=env, capture_output=True, text=True)
+    enabled = enabled_result.returncode == 0 and enabled_result.stdout.strip() in (
+        "enabled", "enabled-runtime",
+    )
+    active = active_result.returncode == 0 and active_result.stdout.strip() == "active"
+    path = _socket_path(env)
+    answers = bool(probe(path, 0.2))
+    details = {"unit": {"enabled": enabled, "active": active},
+               "socket": {"path": str(path), "answers": answers}, **_presence(env)}
+    if as_json:
+        print(json.dumps(details, separators=(",", ":")))
+    else:
+        print("unit enabled" if enabled else "unit disabled")
+        print("unit active" if active else "unit inactive")
+        print("socket answering" if answers else "socket silent")
+        _print_presence(details)
+    if not enabled:
+        return 1
+    if not active:
+        return 2
+    return 0 if answers else 3
+
+
+def build_runtime(env, run=subprocess.run):
+    python = Path(env["HOME"]) / ".local/share/omafind/venv/bin/python"
+    if not python.is_file():
+        print("venv missing\nnext bin/omafind setup", file=sys.stderr)
+        return 1
+    build_env = dict(env, OMAFIND_DATA_DIR=str(paths.data_dir()))
+    result = run([str(PLUGIN_ROOT / "scripts/build-runtime.sh")], env=build_env)
+    if result.returncode:
+        return 1
+    result = run([str(python), "-c", MODEL_DOWNLOAD], env=env, cwd=str(PLUGIN_ROOT / "helper"))
+    return 0 if result.returncode == 0 else 1
+
+
+def main(args=None, env=None, run=subprocess.run, probe=read_hello):
+    args = sys.argv[1:] if args is None else args
+    env = os.environ if env is None else env
+    try:
+        if args == ["setup"]:
+            return setup(env, run, probe)
+        if args == ["build-runtime"]:
+            return build_runtime(env, run)
+        if args in (["status"], ["status", "--json"]):
+            return status(env, run, probe, as_json="--json" in args)
+    except (OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    print("Usage: omafind setup | status [--json] | build-runtime", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
