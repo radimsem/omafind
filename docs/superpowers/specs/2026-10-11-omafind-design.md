@@ -141,12 +141,12 @@ The setup view in the overlay, mirrored by `bin/omafind setup` and `bin/omafind 
 3. **Candidate list.** A candidate is a directory whose subtree holds at least 20 content files and that is the highest ancestor still dense in content. Rule: walk up from each dense directory and stop before an ancestor where the dense subtree holds less than 60% of the ancestor's content files. `$HOME` and volume roots are never proposed. XDG user dirs that hold content are pre-checked. Other candidates start unchecked. Each row shows the path, per-kind counts, estimated index size and estimated time. Estimates use per-kind rates measured in the spike.
 4. **Code repositories.** A separate section lists git repositories found during the walk (a directory holding `.git`). All start unchecked. A checked repository goes to the code index (5.2), not the content index, and is searched only with the `code:` prefix.
 5. **Edit.** The user checks or unchecks rows, adds any directory through a picker, and adds excludes per root. The view shows the total estimated time and size. **Start indexing** writes the roots to the plugin's `shell.json` entry and starts the crawl.
-6. **Left out.** A root with excludes expands into a nested "left out" ledger in the same table (board 11). Each entry is a row with the per-kind counts it removes, shown as negative numbers, and no index size or time, since nothing is indexed. A header row sums the entries, and the root's own counts are net of them. Entry types, each with a tag:
-   - **you**: an exclude the user added. An X button includes it again.
-   - **proposed**: a subfolder that looks generated (machine-made names, below the dataset threshold in 4.3). Pre-applied; an X includes it again.
-   - **nothing to search**: a subfolder whose files are all of non-searchable types. It shows zeros in every column, so the user can see that leaving it out changes nothing.
-   - **built in**: the secrets rule (4.3) for this root, with its file counts. It has a lock instead of an X and cannot be removed.
-7. **Leave out a subfolder.** The filter button on a root, or the "Leave out a subfolder" row, opens a tree of that root's scanned subfolders (board 11b). Every node shows per-kind counts, a bar whose segments give the mix and whose length grows with the file count (log scale), index size and time. Unchecking a node leaves it out; a partly excluded parent shows a mixed checkbox. Quick picks select every "nothing to search" or "looks generated" folder at once. Ctrl Z undoes the last change. A footer ledger shows found, left out and kept files for the root.
+6. **Left out.** A root with excludes expands into a nested "left out" ledger in the same table (board 11). Each entry is a row with the per-kind counts it removes, shown as negative numbers, and no index size or time, since nothing is indexed. A header row sums the entries, and the root's own counts are net of them. Each entry is tagged with the rule that produced it, and its second line lists that rule's evidence as fact tokens (7.4):
+   - `user`: an exclude the user added. Evidence: `added`, `files`. An X button includes it again.
+   - `generated`: a subfolder whose file names match one machine-made pattern but stay under the dataset threshold in 4.3. Evidence: `pattern`, `match` (matching/total), `dataset limit`. Pre-applied; an X includes it again.
+   - `no-kind`: a subfolder with no file of a searchable kind. Evidence: `files`, the extension histogram, `searchable 0`. Every count column is 0, so leaving it out visibly changes nothing.
+   - `secrets`: the secrets rule (4.3) for this root, written as `<root>/**`. Evidence: matched extensions and the directories they sit in. It has a lock instead of an X and cannot be removed.
+7. **Leave out a subfolder.** The filter button on a root, or the "Leave out a subfolder" row, opens a tree of that root's scanned subfolders (board 11b). Every node shows per-kind counts, a bar whose segments give the mix and whose length grows with the file count (log scale), index size and time. Unchecking a node leaves it out; a partly excluded parent shows a mixed checkbox. "Select by rule" picks every `no-kind` or `generated` folder at once. Ctrl Z undoes the last change. A footer ledger shows found, left out and kept files for the root.
 
 ### 4.2 Settings
 
@@ -294,16 +294,16 @@ Layout, as on the design canvas (boards 1 to 9):
 
 - A query field at the top. `code:` swaps the search icon for a code icon.
 - **Left pane**: results in sections by kind (Images, Video, Audio, PDFs, Documents, Code), ordered as in 6.3. Each row has a 44 px thumbnail or kind icon, the file name, and the folder; a keyword hit shows its snippet with the words in bold instead of the folder. A badge shows the jump target (`14:32`, `p. 12`, `L41`, `L1–47`) or `offline`. Hits below half the top score fold into a "› N weaker matches" row. The top hit is selected on every new result set.
-- **Right pane**: the selected result, rendered by kind, then its name, folder, a meta line (kind, date, dimensions or duration or pages or lines, size), a "why it matched" line, and actions.
+- **Right pane**: the selected result, rendered by kind, then its name, folder, a meta line (kind, date, dimensions or duration or pages or lines, size), a why line of fact tokens (7.4), and actions.
 
   | Kind | Rendering | Why line | Primary action |
   |---|---|---|---|
-  | image | the image, fitted | Matches the picture | Open |
-  | video | the matched frame, play button, timestamp chip, scrubber with match markers | Matches the frame at 0:42 (or the frame and speech) | Open at 0:42 |
-  | audio | player card: waveform, play button, progress bar with the matched 30 s window, "7:55 – 8:25 of 13:43" | Matches what's heard at 7:55 | Open at 7:55 |
-  | pdf | the matched page rendered, matched words highlighted, page chip | Has your words (with the snippet) or Matches page 12 | Open at page 12 |
-  | text | text excerpt with line numbers, hit lines highlighted, line-range chip | Matches lines 205–222 | Open in <editor> at line 212 |
-  | code | code excerpt with line numbers, hit lines and words highlighted, line-range chip | Matches lines 1–47 | Open in <editor> at line 8 |
+  | image | the image, fitted | `leg meaning · part image · z 3.4` | Open |
+  | video | the matched frame, play button, timestamp chip, scrubber with match markers | `leg meaning · part frame + speech · at 0:42 · z 3.1` | Open at 0:42 |
+  | audio | player card: waveform, play button, progress bar with the matched 30 s window, "7:55 – 8:25 of 13:43" | `leg meaning · part audio · at 7:55–8:25 · z 2.7` | Open at 7:55 |
+  | pdf | the matched page rendered, matched words highlighted, page chip | `leg words · part text · at p. 12 · hits …`, with the quoted snippet under it | Open at page 12 |
+  | text | text excerpt with line numbers, hit lines highlighted, line-range chip | `leg meaning + words · part text · at L205–222 · z 3.2` | Open in <editor> at line 212 |
+  | code | code excerpt with line numbers, hit lines and words highlighted, line-range chip | `leg meaning + words · part code · at L1–47 · hits … · z 2.9` | Open in <editor> at line 8 |
 
   Secondary action: Show in folder. Offline results show the cached thumbnail dimmed, the line "<label> is not connected. Connect it to open this file.", Open disabled and Copy path enabled.
 - `Ctrl Space` plays or pauses audio and video inside the preview from the matched second, through `mpv` with no window (audio) or a Quickshell video item (video); the spike confirms which.
@@ -316,6 +316,17 @@ Layout, as on the design canvas (boards 1 to 9):
 
 - An owned block in the Hyprland bindings between `-- omafind-shortcut-start` and `-- omafind-shortcut-end`, written only when the user confirms in setup, default `SUPER + E`. Omarchy 4 already binds `SUPER + SHIFT + SPACE` (toggle top bar), `SUPER + SPACE`, `SUPER + ALT + SPACE` and `SUPER + CTRL + SPACE`, so no Space chord is free. On this host `SUPER + E`, `SUPER + D` and `SUPER + U` are free; `SUPER + PERIOD` is free but the Omarchy bindings template suggests it for emojis. `bin/omafind bindings check` reads `hyprctl binds -j` and reports free, ours, or conflict, as omaone does. When the default is taken, setup offers the first free key from `SUPER + E`, `SUPER + D`, `SUPER + U`.
 - An optional "Find files" row in `~/.config/omarchy/extensions/omarchy-menu.jsonc`, added only when the user asks for it in setup.
+
+### 7.4 Facts, not prose
+
+omafind computes every status it shows, so the overlay shows the computed values and never an interpretation of them. Any line that explains a result, a scan or a skip is a row of key/value fact tokens (`.fx` on the canvas): a dim key, a value, and nothing else. A sentence is kept only for an instruction, an error with its fix, or a title.
+
+| Where | Keys, in order |
+|---|---|
+| why line of a result | `leg` (`meaning`, `words`, `meaning + words`), `part` (`image`, `ocr`, `frame`, `speech`, `audio`, `text`, `code`), `at`, `hits`, `z` (fused score) |
+| discovery and picker rows | `dirs`, `files`, extension counts (`.png 388`), `rule`, `git`, `kept` (`793/899`) |
+| left-out entries | the rule's evidence, as in 4.1 step 6 |
+| progress and totals | `selected`, `index`, `time`, `device`, `vram`, `skipped`, `failed`, `queued` |
 
 ### 7.3 Jump map
 
