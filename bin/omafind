@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import argparse
+import asyncio
 import importlib
 import json
 import os
@@ -103,7 +105,14 @@ def _command(command, env, run):
     return result.returncode == 0
 
 
-def setup(env, run=subprocess.run, probe=read_hello, clock=time.monotonic, sleep=time.sleep):
+def setup(env, run=subprocess.run, probe=read_hello, clock=time.monotonic, sleep=time.sleep,
+          which=shutil.which):
+    from omafindd.tools import check
+
+    missing = check(which=which, run=run)
+    if missing:
+        print("sudo pacman -S --needed " + " ".join(missing), file=sys.stderr)
+        return 1
     home = Path(env["HOME"])
     socket_path = _socket_path(env)
     if not _command(["systemctl", "--user", "show-environment"], env, run):
@@ -148,6 +157,9 @@ def setup(env, run=subprocess.run, probe=read_hello, clock=time.monotonic, sleep
 
 
 def status(env, run=subprocess.run, probe=read_hello, as_json=False):
+    from omafindd.tools import check
+
+    missing = check(run=run)
     enabled_result = run(["systemctl", "--user", "is-enabled", "omafind.service"],
                          env=env, capture_output=True, text=True)
     active_result = run(["systemctl", "--user", "is-active", "omafind.service"],
@@ -159,7 +171,8 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
     path = _socket_path(env)
     answers = bool(probe(path, 0.2))
     details = {"unit": {"enabled": enabled, "active": active},
-               "socket": {"path": str(path), "answers": answers}, **_presence(env)}
+               "socket": {"path": str(path), "answers": answers},
+               "tools": {"missing": missing}, **_presence(env)}
     if as_json:
         print(json.dumps(details, separators=(",", ":")))
     else:
@@ -167,6 +180,9 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
         print("unit active" if active else "unit inactive")
         print("socket answering" if answers else "socket silent")
         _print_presence(details)
+    if missing:
+        print("sudo pacman -S --needed " + " ".join(missing), file=sys.stderr)
+        return 1
     if not enabled:
         return 1
     if not active:
@@ -174,7 +190,7 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
     return 0 if answers else 3
 
 
-def build_runtime(env, run=subprocess.run):
+def build_runtime(env, run=subprocess.run, execve=os.execve):
     python = Path(env["HOME"]) / ".local/share/omafind/venv/bin/python"
     if not python.is_file():
         print("venv missing\nnext bin/omafind setup", file=sys.stderr)
@@ -183,24 +199,132 @@ def build_runtime(env, run=subprocess.run):
     result = run([str(PLUGIN_ROOT / "scripts/build-runtime.sh")], env=build_env)
     if result.returncode:
         return 1
-    result = run([str(python), "-c", MODEL_DOWNLOAD], env=env, cwd=str(PLUGIN_ROOT / "helper"))
-    return 0 if result.returncode == 0 else 1
+    os.chdir(PLUGIN_ROOT / "helper")
+    return execve(str(python), [str(python), "-c", MODEL_DOWNLOAD], env)
 
 
-def main(args=None, env=None, run=subprocess.run, probe=read_hello):
+def request_search(path, message, timeout=65):
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(timeout)
+            client.connect(str(path))
+            client.sendall(b'{"t":"hello","v":1}\n' + json.dumps(message).encode() + b"\n")
+            deadline = time.monotonic() + timeout
+            data = b""
+            while time.monotonic() < deadline:
+                client.settimeout(max(.001, deadline - time.monotonic()))
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+                while b"\n" in data:
+                    line, data = data.split(b"\n", 1)
+                    if len(line) > 1_048_576:
+                        return False
+                    reply = json.loads(line)
+                    if isinstance(reply, dict) and reply.get("t") in ("results", "error"):
+                        return reply
+                if len(data) > 1_048_576:
+                    return False
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+def search(args, env, request):
+    parser = argparse.ArgumentParser(prog="omafind search")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("query")
+    try:
+        parsed = parser.parse_args(args)
+    except SystemExit as error:
+        return error.code
+    if not parsed.query.strip() or (parsed.limit is not None and not 1 <= parsed.limit <= 200):
+        print("Query must be nonempty and --limit must be 1..200", file=sys.stderr)
+        return 2
+    message = {"t": "search", "seq": 1, "q": parsed.query, "legs": ["words", "meaning"]}
+    if parsed.limit is not None:
+        message["limit"] = parsed.limit
+    reply = request(_socket_path(env), message)
+    if not reply:
+        print("socket silent", file=sys.stderr)
+        return 3
+    if reply["t"] == "error":
+        print(reply["reason"], file=sys.stderr)
+        return 2 if reply.get("code") == "bad-request" else 1
+    if parsed.json:
+        print(json.dumps(reply, separators=(",", ":"), ensure_ascii=False))
+    else:
+        for item in reply["items"]:
+            print(f"{item['path']}:{item['loc'] or ''}")
+    return 0
+
+
+def reindex(args, env, execve=os.execve):
+    from omafindd.settings import load
+
+    parser = argparse.ArgumentParser(prog="omafind reindex")
+    parser.add_argument("--root", action="append", default=[])
+    parser.add_argument("--volume")
+    try:
+        parsed = parser.parse_args(args)
+    except SystemExit as error:
+        return error.code
+    settings = load(Path(env["HOME"]) / ".config/omarchy/shell.json")
+    configured = {Path(root["path"]).resolve(): root for root in settings.roots}
+    roots = []
+    for root in parsed.root:
+        path = Path(root).expanduser().resolve()
+        roots.append(dict(configured.get(path, {"excludes": []}), path=str(path)))
+    roots = roots or settings.roots
+    if not roots:
+        print("Choose --root PATH or configure the roots setting before omafind reindex",
+              file=sys.stderr)
+        return 2
+    python = Path(env["HOME"]) / ".local/share/omafind/venv/bin/python"
+    if Path(sys.prefix) != python.parent.parent:
+        if not python.is_file():
+            print("venv missing\nnext bin/omafind setup", file=sys.stderr)
+            return 1
+        return execve(str(python), [str(python), str(PLUGIN_ROOT / "bin/omafind"),
+                                  "reindex", *args], env)
+    from omafindd.embedder import Embedder, EmbeddingError
+    from omafindd.embedding import Adapter
+    from omafindd.indexing import reindex as index
+
+    directory = Path(env.get("XDG_DATA_HOME") or Path(env["HOME"]) / ".local/share") / "omafind"
+    embedder = Adapter(Embedder(binary=directory / "runtime/bin/llama-server",
+                                model_dir=directory / "model"))
+    try:
+        asyncio.run(index(roots, directory=directory, embedder=embedder, volume=parsed.volume))
+    except EmbeddingError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    return 0
+
+
+def main(args=None, env=None, run=subprocess.run, probe=read_hello, request=request_search,
+         execve=os.execve):
     args = sys.argv[1:] if args is None else args
     env = os.environ if env is None else env
     try:
+        if args and args[0] == "search":
+            return search(args[1:], env, request)
+        if args and args[0] == "reindex":
+            return reindex(args[1:], env, execve)
         if args == ["setup"]:
             return setup(env, run, probe)
         if args == ["build-runtime"]:
-            return build_runtime(env, run)
+            return build_runtime(env, run, execve)
         if args in (["status"], ["status", "--json"]):
             return status(env, run, probe, as_json="--json" in args)
     except (OSError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 1
-    print("Usage: omafind setup | status [--json] | build-runtime", file=sys.stderr)
+    print("Usage: omafind setup | status [--json] | build-runtime | "
+          "search [--json] [--limit N] QUERY | reindex [--root PATH]... [--volume UUID]",
+          file=sys.stderr)
     return 2
 
 

@@ -40,6 +40,8 @@ class FakeRun:
 
     def __call__(self, command, **kwargs):
         self.calls.append((command, kwargs))
+        if command == ["fd", "--version"]:
+            return subprocess.CompletedProcess(command, 0, "fd 10.5.0\n", "")
         if command[0] == "uv":
             Path(kwargs["env"]["UV_PROJECT_ENVIRONMENT"]).mkdir(parents=True, exist_ok=True)
         verb = command[2] if len(command) > 2 else ""
@@ -66,6 +68,7 @@ def test_status_exit_codes_and_json(cli, env, capsys, enabled, active, answers, 
                  "active": active == "active"},
         "socket": {"path": str(Path(env["XDG_RUNTIME_DIR"]) / "omafind/ui.sock"),
                    "answers": answers},
+        "tools": {"missing": []},
         "runtime": {"path": str(Path(env["XDG_DATA_HOME"]) / "omafind/runtime/bin/llama-server"),
                     "present": False},
         "model": {"path": str(Path(env["XDG_DATA_HOME"]) / "omafind/model"),
@@ -81,6 +84,7 @@ def test_setup_twice_installs_unit_and_restarts_active_service(cli, env, capsys)
         run.calls.clear()
         assert cli.main(["setup"], env, run=run, probe=lambda path, timeout: True) == 0
         expected = [
+            ["fd", "--version"],
             ["systemctl", "--user", "show-environment"],
             ["uv", "sync", "--project", str(ROOT / "helper"), "--frozen", "--no-dev"],
             ["systemctl", "--user", "daemon-reload"],
@@ -90,7 +94,7 @@ def test_setup_twice_installs_unit_and_restarts_active_service(cli, env, capsys)
         if active == "active":
             expected.append(["systemctl", "--user", "restart", "omafind.service"])
         assert [command for command, _ in run.calls] == expected
-        assert run.calls[1][1]["env"]["UV_PROJECT_ENVIRONMENT"] == str(
+        assert run.calls[2][1]["env"]["UV_PROJECT_ENVIRONMENT"] == str(
             Path(env["HOME"]) / ".local/share/omafind/venv")
         assert unit.read_text() == (ROOT / "systemd/omafind.service").read_text()
         assert unit.stat().st_mode & 0o777 == 0o644
@@ -152,6 +156,7 @@ def test_build_runtime_builds_before_download_and_digest_check(
         cli, env, monkeypatch, capsys, valid):
     from omafindd import models
 
+    monkeypatch.chdir(Path(env["HOME"]).parent)
     python = Path(env["HOME"]) / ".local/share/omafind/venv/bin/python"
     python.parent.mkdir(parents=True)
     python.touch()
@@ -166,20 +171,23 @@ def test_build_runtime_builds_before_download_and_digest_check(
         return {"tiny.gguf": valid}
 
     def run(command, **kwargs):
-        if command[0] == str(ROOT / "scripts/build-runtime.sh"):
-            events.append(("build", kwargs["env"]["OMAFIND_DATA_DIR"]))
-        else:
-            assert command[:2] == [str(python), "-c"]
-            assert kwargs["cwd"] == str(ROOT / "helper")
-            try:
-                exec(command[2], {"__name__": "__main__"})  # noqa: S102
-            except SystemExit as error:
-                return subprocess.CompletedProcess(command, error.code)
+        assert command == [str(ROOT / "scripts/build-runtime.sh")]
+        events.append(("build", kwargs["env"]["OMAFIND_DATA_DIR"]))
         return subprocess.CompletedProcess(command, 0)
+
+    def execve(path, command, environment):
+        assert path == str(python)
+        assert command[:2] == [str(python), "-c"]
+        assert environment == env
+        assert Path.cwd() == ROOT / "helper"
+        exec(command[2], {"__name__": "__main__"})  # noqa: S102
+        raise SystemExit(0)
 
     monkeypatch.setattr(models, "download", download)
     monkeypatch.setattr(models, "verify", verify)
-    assert cli.main(["build-runtime"], env, run=run) == (0 if valid else 1)
+    with pytest.raises(SystemExit) as result:
+        cli.main(["build-runtime"], env, run=run, execve=execve)
+    assert result.value.code == (0 if valid else 1)
     data = Path(env["XDG_DATA_HOME"]) / "omafind"
     assert events == [
         ("build", str(data)), ("download", data / "model"), ("verify", data / "model")]
@@ -253,10 +261,12 @@ def test_setup_stops_on_sync_failure(cli, env, capsys):
 
     def run(command, **kwargs):
         calls.append(command)
+        if command == ["fd", "--version"]:
+            return subprocess.CompletedProcess(command, 0, "fd 10.5.0\n", "")
         return subprocess.CompletedProcess(command, int(command[0] == "uv"), "", "sync failed")
 
     assert cli.main(["setup"], env, run=run) == 1
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert "sync failed" in capsys.readouterr().err
     assert not (Path(env["XDG_CONFIG_HOME"]) / "systemd/user/omafind.service").exists()
 

@@ -25,4 +25,69 @@ The scaffold implements the proposed state shape and push-on-change behavior. `r
 {"t":"state","v":1,"runtime":"missing","model":"missing","embedder":"stopped"}
 ```
 
+## Search and warm-up (issue #2)
+
+These shapes are proposed. After `hello`, a connection may send:
+
+```json
+{"t":"warm"}
+{"t":"search","seq":7,"q":"invoice 4412","legs":["words","meaning"],"limit":40}
+```
+
+`warm` starts the text-mode embedder and replies with the current `state`, or
+`{"t":"warm_failed","reason":"Vulkan device lost"}`.
+After `warmMinutes` without a query the embedder stops. Each query resets this
+timeout. `warmMinutes:0` stops it immediately after the reply.
+
+The CLI holds an exclusive lock on `~/.local/share/omafind/index.lock` during
+reindex. The daemon probes it with a non-blocking shared flock before starting
+a server. While reindex holds the lock, all searches use `legs:["words"]` and
+`degraded:"indexing in progress"`, including requests for meaning only.
+`warm` replies `{"t":"warm_failed","reason":"indexing in progress"}`.
+The daemon keeps its shared lock until its server stops. Reindex first tries
+the exclusive lock without blocking. If it is busy, reindex prints
+`waiting index.lock` once on stderr, holds an exclusive lock on
+`~/.local/share/omafind/index.want`, then waits for `index.lock`.
+The daemon probes both files without blocking on each 0.5 s tick. When
+`index.want` is held, it stops its server and releases the shared lock. Reindex
+keeps `index.want` held through server shutdown and the end of the run, so the daemon stays
+words-only until indexing ends.
+Words-only searches do not wait for server startup or embedding requests.
+After the `hello` reply, requests on one connection run concurrently. Search
+replies may arrive in any order; clients use `seq` to match them to requests.
+
+A search gets exactly one reply. `seq` is an integer, `q` a string, `legs` a
+nonempty array of `words` and/or `meaning`, and `limit` an integer 1..200.
+Omitted legs mean both; an omitted limit uses `maxResults` (default 40).
+A client may repeat `seq` with words-only then both legs. For one `seq`, a reply
+whose `legs` include `meaning` supersedes words-only regardless of arrival order.
+Results are flat in score order; grouping is client-side in #4.
+
+```json
+{"t":"results","seq":7,"legs":["words","meaning"],"ms":{"embed":14,"scan":9,"words":4,"total":31},"total":17,"weaker":3,"degraded":null,"items":[{"id":"b81e:812:900","kind":"pdf","path":"/home/u/a.pdf","name":"a.pdf","dir":"/home/u","volume":"<uuid>","label":"root","offline":false,"loc":12,"loc_end":null,"open_line":null,"leg":"meaning + words","part":"text","z":3.4,"score":7.4,"weak":false,"hits":["invoice","4412"],"snippet":[{"t":"due on ","m":false},{"t":"invoice","m":true}],"thumb":null,"mtime":1760000000,"size":48211,"info":{}}]}
+```
+
+`id` is opaque, resolved only against that connection's latest results.
+`offline` is false until #6; `open_line` is null until #3. `loc` is a 1-based
+line or PDF page. Extracted HTML/docx/odt set `info.extracted:true`. `part` is
+`text`, `image` (a rendered PDF page), or `name`. `z` is null for words-only
+results. `weak` means score below half the top score. `total` counts qualified
+files before the limit; `weaker` counts weak items in the returned list.
+`degraded` is null or a reason string; embedding failures still return words.
+Timing fields are milliseconds.
+
+Proposed error replies are `{"t":"error","seq":7,"code":"no-index","reason":"No index exists. Run omafind reindex --root PATH."}` or
+`{"t":"error","seq":7,"code":"bad-request","reason":"Invalid search arguments"}`.
+An exception while handling a request replies
+`{"t":"error","seq":7,"reason":"no such table: meta"}` and leaves the
+connection open for the next request. `seq` echoes the request; `code` is
+optional for service errors.
+The CLI sends seq 1 with both legs and prints the complete results object for
+`--json`. It exits 0 for any result, 1 for no index or a service error, 2 for bad arguments, and
+3 for a silent socket.
+
+Settings in the plugin's shell.json entry now include `roots` (default `[]`),
+`maxResults` (10..200, default 40), and `warmMinutes` (0..60, default 5).
+There is no editor setting; openers read the Omarchy default editor.
+
 Later issues append their messages here.
