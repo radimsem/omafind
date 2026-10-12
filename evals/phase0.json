@@ -1,0 +1,6 @@
+{
+  "approved": false,
+  "note": "pairs proposed by the agent; the user has not reviewed them. Empty: ~/Pictures holds 389 files and all are screenshots, and ~/Obrazky and ~/Photos do not exist, so there were no photos to pair.",
+  "root": "~/Pictures",
+  "pairs": []
+}
