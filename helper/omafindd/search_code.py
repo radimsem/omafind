@@ -58,11 +58,12 @@ async def words_leg(roots: Sequence[Path], words: Sequence[str], files: dict) ->
         args.extend(["-g", f"!{glob}"])
     args.extend(["--", *(str(root) for root in roots)])
     hits = {}
-    with tempfile.TemporaryFile() as errors, subprocess.Popen(
-        args, stdout=subprocess.PIPE, stderr=errors,
-    ) as process:
+    with tempfile.TemporaryFile() as errors:
+        process = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=errors,
+        )
         try:
-            for line in process.stdout:
+            while line := await process.stdout.readline():
                 event = json.loads(line)
                 if event["type"] != "match":
                     continue
@@ -77,13 +78,16 @@ async def words_leg(roots: Sequence[Path], words: Sequence[str], files: dict) ->
                 for submatch in data["submatches"]:
                     value = submatch["match"].get("text", "").lower()
                     entry["words"].update(word for word in words if word.lower() == value)
-            if process.wait() not in (0, 1):
+            if await process.wait() not in (0, 1):
                 errors.seek(0)
                 raise OSError(errors.read().decode(errors="replace").strip())
         finally:
-            if process.poll() is None:
-                process.kill()
-                process.wait()
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
     return hits
 
 
@@ -136,29 +140,16 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
                         if row["file"] not in best or z > best[row["file"]][0]:
                             best[row["file"]] = float(z), row
             scan_ms = (time.monotonic() - scan_begun) * 1000
-            scored = []
+            scored, details = [], {}
             for filename, file in files.items():
                 hit = hits.get(filename)
                 semantic = best.get(file["id"])
                 if not hit and not (semantic and semantic[0] >= 2):
                     continue
                 live = Path(filename)
-                if not classify_code(live) or live.is_symlink():
+                root = next(root for root in roots if live.is_relative_to(root))
+                if not classify_code(live.relative_to(root)) or live.is_symlink():
                     continue
-                try:
-                    pieces = read(live)
-                except (OSError, ValueError, TypeError):
-                    continue
-                if hit and live.suffix.lower() == ".ipynb":
-                    # rg sees notebook JSON; only authored cell sources count as words.
-                    matching = [piece for piece in pieces if any(
-                        word.lower() in piece.text.lower() for word in words)]
-                    if not matching:
-                        hit = None
-                    else:
-                        hit = {"words": {word for word in words if any(
-                            word.lower() in piece.text.lower() for piece in matching)},
-                            "line": matching[0].first, "snippet": matching[0].text.splitlines()[0]}
                 coverage = len(hit["words"]) / len(words) if hit and words else 0
                 z = semantic[0] if semantic else 0
                 if z < 2 and coverage < 0.5:
@@ -174,17 +165,12 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
                     )) if rows else segment
                 if segment is None:
                     continue
-                piece = next((piece for piece in pieces if piece.first == segment["loc"]
-                              and piece.last == segment["loc_end"]), None)
-                jump = open_line(q, named or words, piece.text, piece.first) if piece else None
-                if live.suffix.lower() == ".ipynb":
-                    jump = None
                 score = fused_score(z, coverage, lookup=named is not None or is_lookup(q),
                                     hinted=False)
                 item = {"id": f"code:{file['id']}:{segment['id']}", "kind": "code",
                         "path": filename, "name": live.name, "dir": str(live.parent),
                         "volume": "code", "label": "code", "offline": False,
-                        "loc": segment["loc"], "loc_end": segment["loc_end"], "open_line": jump,
+                        "loc": segment["loc"], "loc_end": segment["loc_end"], "open_line": None,
                         "leg": "meaning + words" if z >= 2 and hit else
                         "meaning" if z >= 2 else "words", "part": "text",
                         "z": z if semantic else None, "score": score, "weak": False,
@@ -194,11 +180,57 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
                         "thumb": None, "mtime": file["mtime"], "size": file["size"],
                         "info": json.loads(file["info"] or "{}")}
                 scored.append(item)
+                details[filename] = rows, segment, hit, semantic
             scored.sort(key=lambda item: (-item["score"], item["path"]))
             reply["total"] = len(scored)
-            reply["items"] = scored[:limit]
+            for item in scored[:limit]:
+                live = Path(item["path"])
+                rows, segment, hit, semantic = details[item["path"]]
+                try:
+                    pieces = await asyncio.to_thread(read, live)
+                except (OSError, ValueError, TypeError):
+                    reply["total"] -= 1
+                    continue
+                if live.suffix.lower() == ".ipynb":
+                    if hit:
+                        # rg sees notebook JSON; only authored cell sources count as words.
+                        matching = [piece for piece in pieces if any(
+                            word.lower() in piece.text.lower() for word in words)]
+                        hit = ({"words": {word for word in words if any(
+                            word.lower() in piece.text.lower() for piece in matching)},
+                            "line": matching[0].first,
+                            "snippet": matching[0].text.splitlines()[0]} if matching else None)
+                    coverage = len(hit["words"]) / len(words) if hit and words else 0
+                    z = semantic[0] if semantic else 0
+                    if z < 2 and coverage < 0.5:
+                        reply["total"] -= 1
+                        continue
+                    segment = (next((row for row in rows
+                                     if row["loc"] <= hit["line"] <= row["loc_end"]), segment)
+                               if hit else semantic[1])
+                    item.update(
+                        id=f"code:{segment['file']}:{segment['id']}",
+                        loc=segment["loc"], loc_end=segment["loc_end"],
+                        score=fused_score(z, coverage, lookup=named is not None or is_lookup(q),
+                                          hinted=False),
+                        leg="meaning + words" if z >= 2 and hit else
+                            "meaning" if z >= 2 else "words",
+                        hits=[word for word in words if hit and word in hit["words"]],
+                        snippet=_marked(hit["snippet"] if hit else segment["excerpt"] or "",
+                                        words),
+                    )
+                else:
+                    # Segment order distinguishes pieces sharing the same long source line.
+                    index = next(i for i, row in enumerate(rows) if row["id"] == segment["id"])
+                    piece = pieces[index] if index < len(pieces) else None
+                    if piece and (piece.first, piece.last) == (segment["loc"], segment["loc_end"]):
+                        item["open_line"] = await asyncio.to_thread(
+                            open_line, q, named or words, piece.text, piece.first,
+                        )
+                reply["items"].append(item)
+            reply["items"].sort(key=lambda item: (-item["score"], item["path"]))
             for item in reply["items"]:
-                item["weak"] = item["score"] < scored[0]["score"] * 0.5
+                item["weak"] = item["score"] < reply["items"][0]["score"] * 0.5
             reply["weaker"] = sum(item["weak"] for item in reply["items"])
         finally:
             store.close()

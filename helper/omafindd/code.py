@@ -58,7 +58,7 @@ def repository_files(root: Path) -> list[Path]:
         if meta.split()[0] not in (b"100644", b"100755"):
             continue
         path = root / os.fsdecode(name)
-        if classify_code(path) and path.is_file() and not path.is_symlink():
+        if classify_code(path.relative_to(root)) and path.is_file() and not path.is_symlink():
             files.add(path)
     return sorted(files)
 
@@ -106,6 +106,11 @@ def lines(text: str, size: int = 1800) -> list[Piece]:
             start += 1
         if start == len(rows):
             break
+        if len(rows[start]) > size:
+            pieces.extend(Piece(rows[start][offset:offset + size], start + 1, start + 1)
+                          for offset in range(0, len(rows[start]), size))
+            start += 1
+            continue
         end = start + 1
         while end < len(rows) and offsets[end + 1] - offsets[start] <= size:
             end += 1
@@ -124,7 +129,7 @@ def lines(text: str, size: int = 1800) -> list[Piece]:
         last = end
         while last > start + 1 and blank(last - 1):
             last -= 1
-        pieces.append(Piece("\n".join(rows[start:last])[:4000], start + 1, last))
+        pieces.append(Piece("\n".join(rows[start:last]), start + 1, last))
         start = end if natural else max(end - 2, start + 1)
     return pieces
 

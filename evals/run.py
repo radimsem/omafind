@@ -24,13 +24,18 @@ from omafindd.store import Store, volume_for  # noqa: E402
 
 
 async def evaluate(searcher, queries, base, gate=1.0):
+    return await evaluate_sets(searcher, [(queries, base)], gate)
+
+
+async def evaluate_sets(searcher, query_sets, gate=1.0):
     counts = defaultdict(lambda: [0, 0])
-    for query in queries:
-        reply = await searcher.search(query["q"], limit=1)
-        expected = {(base / path).resolve() for path in query["expect"]}
-        first = bool(reply["items"] and Path(reply["items"][0]["path"]).resolve() in expected)
-        counts[query["tag"]][0] += int(first)
-        counts[query["tag"]][1] += 1
+    for queries, base in query_sets:
+        for query in queries:
+            reply = await searcher.search(query["q"], limit=1)
+            expected = {(base / path).resolve() for path in query["expect"]}
+            first = bool(reply["items"] and Path(reply["items"][0]["path"]).resolve() in expected)
+            counts[query["tag"]][0] += int(first)
+            counts[query["tag"]][1] += 1
     total = [sum(value[index] for value in counts.values()) for index in (0, 1)]
     for tag, (hits, size) in [*sorted(counts.items()), ("total", total)]:
         print(f"first-hit {tag} {hits}/{size} ({100 * hits / max(size, 1):.1f}%)")
@@ -38,8 +43,11 @@ async def evaluate(searcher, queries, base, gate=1.0):
 
 
 async def run(args):
-    config = json.loads(args.queries.read_text())
-    base = Path(config["base"]).expanduser().resolve()
+    query_paths = [args.queries] if isinstance(args.queries, Path) else args.queries
+    configs = [json.loads(path.read_text()) for path in query_paths]
+    query_sets = [(config["queries"], Path(config["base"]).expanduser().resolve())
+                  for config in configs]
+    base = query_sets[0][1]
     stores = []
     code_directory, code_roots = None, ()
     embedder = (
@@ -53,6 +61,7 @@ async def run(args):
                 base = Path(
                     shutil.copytree(ROOT / "tests/fixtures/corpus", Path(temporary) / "corpus")
                 )
+                query_sets = [(queries, base) for queries, _ in query_sets]
                 store = Store(
                     Path(temporary) / "index/fixture.sqlite", volume="fixture", mount=base
                 )
@@ -83,7 +92,7 @@ async def run(args):
                 )
             searcher = Searcher(stores, embedder, code_directory=code_directory,
                                 code_roots=code_roots)
-            return 0 if await evaluate(searcher, config["queries"], base, args.gate) else 1
+            return 0 if await evaluate_sets(searcher, query_sets, args.gate) else 1
     finally:
         await embedder.stop()
         for store in stores:
@@ -95,7 +104,8 @@ def main():
         description="First-hit evals; without --index uses offline fixtures"
     )
     parser.add_argument("--index", type=Path)
-    parser.add_argument("--queries", type=Path, required=True)
+    parser.add_argument("--queries", type=Path, action="append", required=True,
+                        help="Query file; repeat to score one combined set")
     parser.add_argument("--gate", type=float, default=0.9,
                         help="Minimum total first-hit fraction (default: 0.9)")
     args = parser.parse_args()
