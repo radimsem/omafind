@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -141,3 +142,89 @@ def test_media_size_caps(tmp_path, name, kind, cap):
     with path.open("ab") as stream:
         stream.write(b"x")
     assert list(keep([path], root=tmp_path)) == [Skip(path, "size-cap")]
+
+
+def test_datasets_never_stat(monkeypatch):
+    from omafindd.rules import datasets
+
+    def stat(*args, **kwargs):
+        raise AssertionError('dataset detection must read names only')
+
+    monkeypatch.setattr(Path, 'stat', stat)
+    monkeypatch.setattr(os, 'stat', stat)
+    paths = [Path(f'/h/data/clip_{n:06}.png') for n in range(300)]
+    assert datasets(paths, root=Path('/h')) == {Path('/h/data')}
+
+
+def test_explain_unchanged_after_refactor(tmp_path):
+    from omafindd.rules import explain, removed, rule_dirs
+
+    for name in ('a.txt', '.hidden/a.txt', '.hidden/deeper/b.txt', 'build/a.txt', 'secret.md'):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    assert explain(tmp_path) == {'dot': 2, 'heavy': 1, 'secrets': 1}
+    assert rule_dirs(removed(tmp_path, 'dot'), 'dot', root=tmp_path) == 1
+    assert rule_dirs(removed(tmp_path, 'heavy'), 'heavy', root=tmp_path) == 1
+
+
+@pytest.mark.parametrize('name,family', [('.env.md', '.env'), ('.ENV.local.md', '.env'),
+                                      ('ID_RSA.txt', 'id_rsa'), ('passwords.kdbx', '.kdbx'),
+                                      ('Certificate.PEM', '.pem'), ('secrets.md', 'secret')])
+def test_secret_family_names(name, family):
+    from omafindd.rules import secret_family
+
+    assert secret_family(name) == family
+
+
+def test_explain_keeps_existing_hidden_secret_counts(tmp_path):
+    from omafindd.rules import explain
+
+    (tmp_path / '.env.txt').touch()
+    assert explain(tmp_path) == {'dot': 0, 'heavy': 0, 'secrets': 0}
+
+
+def test_reason_matches_secret_globs_for_names_and_ancestors():
+    import fnmatch
+
+    from omafindd import rules
+
+    names = ['.ENV.local.md', 'Secret-notes.txt', 'id_ED25519.pub', 'x.PEM',
+             'normal.md', 'notsecret.md', '.hidden', 'build', 'a\n.env.md',
+             'credentials', 'x.kdbx', 'x.pem.bak']
+    for name in names:
+        for path in (Path(name), Path(name) / 'nested/note.md'):
+            expected = ('secrets' if any(fnmatch.fnmatchcase(part, glob)
+                                        for part in path.parts for glob in rules.SECRET_GLOBS)
+                        else 'heavy' if any(p in rules.HEAVY_GLOBS for p in path.parts)
+                        else 'dot' if any(p.startswith('.') for p in path.parts) else None)
+            assert rules.reason(path) == expected
+
+
+@pytest.mark.parametrize('name', ['.md', '..md', '...pdf', 'note.MD', 'note.',
+                                  '.note.md', 'no-extension', 'a..png'])
+def test_classify_name_matches_path_suffix(name):
+    from omafindd import rules
+
+    assert rules.classify_name(name) == rules.classify(Path(name))
+
+
+def test_rule_directory_counts_do_not_need_a_baseline(tmp_path):
+    from omafindd import rules
+
+    for name in ('visible.md', '.hidden/note.md', 'build/note.md'):
+        path = tmp_path / name
+        path.parent.mkdir(exist_ok=True)
+        path.touch()
+    for rule in ('dot', 'heavy'):
+        actual = rules.rule_dirs(rules.removed(tmp_path, rule), rule, root=tmp_path)
+        relaxed = rules.removed(tmp_path, rule, as_paths=False, baseline=())
+        assert rules.rule_dirs(relaxed, rule, root=tmp_path) == actual == 1
+
+
+def test_reason_handles_deep_paths_without_recursion():
+    from omafindd import rules
+
+    parent = Path(*(['a'] * 1200))
+    assert rules.reason(parent / 'note.md') is None
+    assert rules.reason(parent / '.env.md') == 'secrets'

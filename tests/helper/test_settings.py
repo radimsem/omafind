@@ -149,3 +149,26 @@ def test_media_and_code_settings(tmp_path, budget, expected):
     write_settings(path, imageBudget=budget, codeRoots=["/repo", "relative", None, 42])
     assert load(path).image_budget == expected
     assert load(path).code_roots == ("/repo",)
+
+
+def test_roots_code_roots_and_setup_done_round_trip(tmp_path):
+    path = tmp_path / 'shell.json'
+    root = {'path': '/h/Documents', 'volume': 'u', 'excludes': ['tax/2024']}
+    write_settings(path, setupDone=True, roots=[root], codeRoots=['/h/p/omaone'])
+    settings = load(path)
+    assert settings.setup_done is True
+    assert settings.roots == [root]
+    assert settings.code_roots == ('/h/p/omaone',)
+
+
+@pytest.mark.parametrize('fields', [
+    {'roots': '[{"path":"/h/Documents","volume":"u","excludes":[]}]'},
+    {'roots': [{'path': '/h/Documents', 'excludes': []}]},
+    {'roots': [{'path': '/h/Documents', 'volume': 'u', 'excludes': 'tax/2024'}]},
+    {'roots': [{'path': 'Documents', 'volume': 'u', 'excludes': []}]},
+    {'codeRoots': ['relative']}, {'setupDone': 'true'},
+])
+def test_bad_root_shapes_give_defaults(tmp_path, fields):
+    path = tmp_path / 'shell.json'
+    write_settings(path, **fields)
+    assert load(path) == Settings()

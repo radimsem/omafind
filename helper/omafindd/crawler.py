@@ -1,11 +1,14 @@
 import os
+from collections import Counter
 from pathlib import Path
 
 from . import rules
 from .store import Store
 
 
-def crawl(store: Store, roots: list[dict], *, force=False) -> list[int]:
+def crawl(
+    store: Store, roots: list[dict], *, force=False, skipped: Counter | None = None
+) -> list[int]:
     candidates = {}
     for setting in roots:
         root = Path(setting["path"]).absolute()
@@ -13,6 +16,8 @@ def crawl(store: Store, roots: list[dict], *, force=False) -> list[int]:
             rules.walk(root, excludes=setting.get("excludes", [])), root=root
         ):
             if isinstance(candidate, rules.Skip):
+                if skipped is not None:
+                    skipped[candidate.rule] += 1
                 continue
             try:
                 stat = candidate.stat()

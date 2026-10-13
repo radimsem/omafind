@@ -7,9 +7,11 @@ from pathlib import Path
 from . import paths
 from .embedder import Embedder
 from .embedding import Adapter
+from .install import RuntimeJob
 from .ipc import AlreadyRunning, IpcServer
 from .service import SearchService
 from .settings import SettingsReader
+from .setup import SetupService
 from .state import State
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,10 @@ async def _serve(manifest: Path | None = None, *, interval: float = 0.5) -> int:
     server = IpcServer(paths.socket_path())
     service = SearchService(directory / "index", settings.read, embedder, server.state)
     server.service = service
+    plugin_root = Path(__file__).resolve().parents[2]
+    runtime = RuntimeJob(data_dir=directory, plugin_root=plugin_root, broadcast=server.broadcast)
+    server.setup = SetupService(data_dir=directory, plugin_root=plugin_root, settings=settings.read,
+                                broadcast=server.broadcast, runtime=runtime)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     signals = (signal.SIGINT, signal.SIGTERM)

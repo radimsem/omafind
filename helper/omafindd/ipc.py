@@ -30,9 +30,10 @@ class AlreadyRunning(Exception):
 
 class IpcServer:
     def __init__(self, path: Path, state: State | None = None, *, peer_uid=peer_uid,
-                 service=None) -> None:
+                 service=None, setup=None) -> None:
         self.path = path
         self.service = service
+        self.setup = setup
         self._results = {}
         self._jumps = {}
         self._previews = {}
@@ -86,6 +87,8 @@ class IpcServer:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        if self.setup is not None:
+            await self.setup.stop()
         if self._server is not None:
             await self._server.wait_closed()
             self._server = None
@@ -127,7 +130,8 @@ class IpcServer:
                         return
                     await self._send(writer, self.state.message())
                     self._ready.add(writer)
-                elif message.get("t") in ("search", "warm", "preview", "open", "status") \
+                elif (message.get("t") in ("search", "warm", "preview", "open", "status")
+                      or (self.setup is not None and message.get("t") in self.setup.TYPES)) \
                         and writer in self._ready:
                     task = asyncio.create_task(self.dispatch(writer, message))
                     requests.add(task)
@@ -154,6 +158,16 @@ class IpcServer:
                 pass
 
     async def dispatch(self, writer, message: dict) -> None:
+        if self.setup is not None and message["t"] in self.setup.TYPES:
+            try:
+                reply = await self.setup.handle(message)
+            except Exception as error:
+                reply = {"t": "error", "for": message["t"], "reason": str(error)}
+            try:
+                await self._send(writer, reply)
+            except (ConnectionError, OSError):
+                writer.close()
+            return
         if message["t"] == "preview":
             pending = self._previews.setdefault(writer, {"lock": asyncio.Lock()})
             token = pending["latest"] = object()
@@ -295,6 +309,8 @@ class IpcServer:
         while True:
             if self._ready:
                 await self.push_status()
+                if self.setup is not None:
+                    await self.setup.poll()
             await asyncio.sleep(.5)
 
     async def _send(self, writer, message: dict) -> None:

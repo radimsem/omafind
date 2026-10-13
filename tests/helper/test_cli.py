@@ -318,3 +318,83 @@ def test_status_is_read_only(cli, env, monkeypatch, capsys):
     details = json.loads(capsys.readouterr().out)
     assert details["runtime"]["present"] is False
     assert not (Path(env["XDG_DATA_HOME"]) / "omafind").exists()
+
+
+def test_discover_json_prints_body_and_exits_0(cli, env, monkeypatch, capsys):
+    from omafindd import discovery
+
+    python = Path(env['HOME']) / '.local/share/omafind/venv/bin/python'
+    monkeypatch.setattr(sys, 'prefix', str(python.parent.parent))
+    body = {'home': env['HOME'], 'candidates': []}
+    calls = []
+
+    def scan(**kwargs):
+        calls.append(kwargs)
+        return discovery.Scan(body, {}, 1)
+
+    monkeypatch.setattr(discovery, 'scan', scan)
+    assert cli.main(['discover', '--json', '--volume', 'u'], env) == 0
+    assert json.loads(capsys.readouterr().out) == body
+    assert calls == [{'home': Path(env['HOME']), 'volume': 'u'}]
+    assert cli.main(['discover'], env) == 2
+
+
+def test_discover_failure_exits_1_with_one_stderr_line(cli, env, monkeypatch, capsys):
+    from omafindd import discovery
+
+    python = Path(env['HOME']) / '.local/share/omafind/venv/bin/python'
+    monkeypatch.setattr(sys, 'prefix', str(python.parent.parent))
+
+    def scan(**kwargs):
+        raise OSError('scan failed\nmore details')
+
+    monkeypatch.setattr(discovery, 'scan', scan)
+    assert cli.main(['discover', '--json'], env) == 1
+    assert capsys.readouterr().err.splitlines() == ['scan failed more details']
+
+
+def test_reindex_incremental_passes_force_false(cli, env, monkeypatch):
+    from omafindd import indexing
+    from omafindd.settings import Settings
+
+    python = Path(env['HOME']) / '.local/share/omafind/venv/bin/python'
+    monkeypatch.setattr(sys, 'prefix', str(python.parent.parent))
+    monkeypatch.setattr('omafindd.settings.load', lambda p: Settings(
+        roots=[{'path': '/docs', 'volume': 'u', 'excludes': []}]))
+    calls = []
+
+    async def index(roots, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(indexing, 'reindex', index)
+    assert cli.main(['reindex', '--incremental'], env) == 0
+    assert calls[0]['force'] is False
+
+
+def test_discover_reexecs_into_installed_interpreter(cli, env):
+    python = Path(env['HOME']) / '.local/share/omafind/venv/bin/python'
+    python.parent.mkdir(parents=True)
+    python.touch()
+    calls = []
+
+    def execve(path, argv, environment):
+        calls.append((path, argv, environment))
+        return 0
+
+    assert cli.main(['discover', '--json', '--volume', 'u'], env, execve=execve) == 0
+    assert calls == [(str(python), [str(python), str(ROOT / 'bin/omafind'),
+                                   'discover', '--json', '--volume', 'u'], env)]
+
+
+def test_discover_missing_interpreter_reports_one_line(cli, env, capsys):
+    assert cli.main(['discover', '--json'], env) == 1
+    assert capsys.readouterr().err.splitlines() == ['venv missing. Run bin/omafind setup.']
+
+
+def test_discovery_modules_import_with_only_stdlib(env):
+    result = subprocess.run([sys.executable, '-S', '-c',
+                             'import sys; sys.path.insert(0, sys.argv[1]); '
+                             'from omafindd import discovery, leftout, selection, rules',
+                             str(ROOT / 'helper')],
+                            env=env, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr

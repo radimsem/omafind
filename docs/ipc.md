@@ -160,4 +160,114 @@ mtimes stay unchanged; the root count still follows current settings.
 {"t":"status","files":3880,"roots":4,"offline":[],"done":1204,"total":1209}
 ```
 
+## Setup (issue #5)
+
+| Request t | Reply t | Fields |
+|---|---|---|
+| `runtime_status`, `runtime_install`, `runtime_pause` | `runtime_progress` | none |
+| `discover_start` | `discover_result` | optional `volume` UUID |
+| `discover_tree` | `discover_tree` | `root` absolute path or `~/...` |
+| `fs_list` | `fs_list` | `path` absolute path or `~`/`~/...` |
+| `index_start` | `progress` | none; rereads current settings |
+
+All paths on the wire are absolute, except `excludes` and left-out entry paths, which are POSIX paths relative to their root. Requests may pass `"~"` or `"~/x"`; the daemon expands them and echoes the request string in `root`/`path` and the absolute path in `abs`. Every `counts` object always carries all five keys `text, pdf, image, video, audio` (zeros included). Every request below gets exactly one reply; failures reply `{"t":"error","for":"<request t>","code":"<code>","reason":"<sentence>"}` and never carry `seq` or `id` (Service.qml routes errors on `for` first).
+
+New messages are accepted only after `hello`, like `search`.
+
+```
+plugin: {"t":"runtime_status"}
+plugin: {"t":"runtime_install"}
+plugin: {"t":"runtime_pause"}
+daemon: {"t":"runtime_progress","state":"idle|running|paused|failed|done",
+         "step":"build|download|null","file":"model|mmproj|null","done":512,"total":865,"unit":"MB",
+         "left_seconds":60|null,"reason":null|"<sentence>",
+         "build":{"state":"wait|run|ok|failed","seconds":192|null,"tag":"b11461","backend":"Vulkan","gpu":"RTX 3060 12 GB"|null},
+         "files":{"model":{"name":"embeddinggemma-2-Q8_0.gguf","state":"wait|run|verify|ok","done":310,"total":310},
+                  "mmproj":{"name":"mmproj-embeddinggemma-2-Q8_0.gguf","state":"wait|run|verify|ok","done":202,"total":555}}}
+```
+- Reply to all three requests is a `runtime_progress` snapshot. While a job runs the daemon also broadcasts it to every ready client, at most twice per second, plus once on every state change.
+- MB are decimal and rounded: 309,855,456 B is 310, 554,821,024 B is 555, `total` is `round(sum bytes / 1e6)` = 865. `done` sums both files.
+- `state:"done"` means the runtime is built and both digests verified. `files.*.state:"ok"` means sha256 verified (cached by size and mtime, so `runtime_status` hashes at most once per daemon start, in a thread). `build.seconds` is null when the runtime existed before this daemon started.
+- `runtime_install` while `running` is a no-op snapshot. While `paused` or `failed` it resumes.
+
+```
+plugin: {"t":"discover_start"}                      // $HOME plus every non-system volume
+plugin: {"t":"discover_start","volume":"<uuid>"}    // one volume only (#6 new-drive flow)
+daemon: {"t":"discover_result", ...body of bin/omafind discover --json}
+```
+`discover --json` body (A1 produces it, the CLI prints it, the daemon caches and sends it):
+```json
+{"home":"/home/u","device":"gpu",
+ "scan":{"seconds":0.8,"dirs":4812,"volumes":0,"roots":["$HOME"],"scanned_at":1760000000.0},
+ "rates":{"gpu":{"text":0.07,"pdf":0.37,"image":0.14,"video":3.2,"audio":1.5,"code":0.042},
+          "cpu":{"text":0.13,"pdf":0.54,"image":1.36,"video":18.0,"audio":11.1,"code":0.084},
+          "bytes":{"text":11000,"pdf":48000,"image":7000,"video":40000,"audio":12000,"code":10000}},
+ "candidates":[{"path":"/home/u/Documents","section":"home","checked":true,"volume":"<uuid>","git":false,
+   "dirs":1550,"found":899,"kept":838,
+   "found_counts":{"text":806,"pdf":67,"image":26,"video":0,"audio":0},
+   "counts":{"text":745,"pdf":67,"image":26,"video":0,"audio":0},
+   "exts":[[".md",412],[".pdf",67]],
+   "excludes":["vault/exports","archive/old-backups"],
+   "left_out":[{"path":"vault/exports","rule":"generated","files":58,"counts":{"text":58,"pdf":0,"image":0,"video":0,"audio":0},
+                "evidence":{"pattern":"inv-YYYYMMDD.txt","match":[58,58],"dataset_limit":300}},
+               "...no-kind archive/old-backups (0 files), then secrets ** (3 files)"],
+   "index_bytes":10000000,"seconds":120}],
+ "repos":[{"path":"/home/u/personal/projects/omaone","tracked":1842,"code_files":1700,"rules":["secrets","generated"],
+           "index_bytes":17000000,"seconds":71}],
+ "not_proposed":{"no_kind":["/home/u/Music"],"dot":212,"heavy":14,"dataset":2}}
+```
+- `section` is `home` (XDG dir with at least one content file) or `elsewhere`. `checked` is true only for `home`.
+- Discovery never has user excludes, so the Documents sample is the board's state before `tax/2024` is left out: kept 838 (745, 67, 26), left out 61 (58 generated, 0 no-kind, 3 secrets). After the user exclude the client ledger gives 793 (731, 45, 17), and the step 2 total goes from 1,254 to 1,209 (MotionSetup `TOT`).
+- `excludes` is the pre-applied exclude list for that root (proposed `generated` and `no-kind` paths). `left_out` lists entries in order: excludes in list order, then the `secrets` entry (path `"**"`) last when it has any match. `found - sum(left_out[].files) == kept` always holds.
+- `index_bytes` and `seconds` estimate the kept files at `device` rates (section A1.4). `rates` lets the client recompute estimates for any counts.
+- `exts`: top extensions of kept content files, descending, at most 3.
+
+```
+plugin: {"t":"discover_tree","root":"~/Documents"}
+daemon: {"t":"discover_tree","root":"~/Documents","abs":"/home/u/Documents","scanned_at":1760000000.0,
+         "candidate":{ ...same shape as a discover_result candidate... },
+         "secrets":{"files":3,"counts":{...},"evidence":{"exts":[[".env",3],[".kdbx",1]],"in":["tax/2024","work/clients"]}},
+         "dirs":[{"path":"","own":{...},"all_own":2,"sub":{...},"all_sub":905,"dirs":1550,"exts":[[".md",412]],"rule":null,"evidence":null},
+                 {"path":"tax/2024","own":{"text":14,"pdf":22,"image":9,"video":0,"audio":0},"all_own":46,
+                  "sub":{"text":14,"pdf":22,"image":9,"video":0,"audio":0},"all_sub":46,"dirs":1,
+                  "exts":[[".pdf",22],[".md",14],[".png",9]],"rule":null,"evidence":null},
+                 {"path":"vault/exports","own":{"text":58,...},"all_own":58,"sub":{...},"all_sub":58,"dirs":1,
+                  "exts":[[".txt",58]],"rule":"generated","evidence":{"pattern":"inv-YYYYMMDD.txt","match":[58,58],"dataset_limit":300}},
+                 {"path":"archive/old-backups","own":{all zero},"all_own":37,"sub":{all zero},"all_sub":37,"dirs":1,
+                  "exts":[],"rule":"no-kind","evidence":{"files":37,"exts":[[".zip",31],[".tar.gz",6]],"searchable":0}}]}
+```
+- `dirs` holds every directory under the root that holds any non-secret, non-dot file in its subtree, root itself as `""`, sorted by path. `own`/`sub` count content files directly in / under the dir, secrets excluded (secrets live only in `secrets`). `all_own`/`all_sub` count every listed file of any extension (no secrets, no dot paths). `dirs` is the subtree directory count including itself. `exts` for a dir with content: top 3 content extensions in its subtree; for no-kind: `[]` (evidence holds the histogram). `rule` is `generated`, `no-kind` or null (the proposal; user excludes live in the client).
+- A root outside the cached scan (a picked folder) is scanned on demand and cached. No cached scan: the daemon runs `discover_start` first.
+
+```
+plugin: {"t":"fs_list","path":"~"}
+daemon: {"t":"fs_list","path":"~","abs":"/home/u","dirs":["Documents","Pictures"],"error":null}
+```
+- Sorted case-insensitively, dot dirs and `rules.HEAVY_GLOBS` names left out, at most 500 names. `error` is `"missing"`, `"not-a-directory"` or `"denied"` (with `dirs:[]`) instead of an `error` reply.
+
+```
+plugin: {"t":"index_start"}
+daemon: {"t":"progress","running":true,"done":612,"queued":597,"volume":"<uuid>","device":"gpu","vram_gb":0.9,
+         "kinds":{"text":{"done":734,"total":734},"pdf":{"done":31,"total":49,"pages":412},
+                  "image":{"done":51,"total":420,"ocr":63},"video":{"done":0,"total":6},"audio":{"done":0,"total":0}},
+         "skipped":{"secrets":4,"size-cap":2},"failed":{"encrypted-pdf":1},
+         "problems":[{"path":"/home/u/Documents/a.pdf","reason":"encrypted-pdf"}]}
+```
+- Reply to `index_start` is a `progress` snapshot. Then the daemon broadcasts `progress` at most twice per second while the index job runs, and once more when it exits (`running:false`). `status` keeps working unchanged for the #4 footer.
+- When the child exits non-zero, the final `progress` includes `exit:<code>` (negative for termination by a signal). The daemon then broadcasts exactly one `error` with `for:"index_start"`, `code:"runtime-failed"`, and a `reason` naming the exit code and the absolute `<data>/index/reindex.log` path. These broadcasts report failure after the initial reply; they carry no `seq` or `id`. Successful completion omits `exit` and sends no error.
+- `device` is `gpu`, `cpu` or null; `vram_gb` is a float or null (unknown is null, the client hides the token). `skipped` and `failed` omit zero keys. `problems` lists at most 50 failed files.
+- `kinds.image.ocr` counts ready images with a non-empty OCR text segment (`kind:"ocr"`); filename and parent-folder text in `name` segments does not count.
+- Error codes: `no-roots` (settings have no roots and no codeRoots), `bad-request`, `scan-failed`, `runtime-failed`.
+
+The daemon owns the runtime job: closing a view or disconnecting a client does
+not pause it. Build pause terminates the build process group; resume reruns the
+idempotent script. Download pause leaves `.part` files for HTTP Range resume.
+The daemon refuses to build without a systemd user memory scope.
+
+Indexing runs as a `bin/omafind reindex --incremental` child in a new session.
+The daemon holds no index lock and reads committed store counts every 0.5 s.
+The child logs to `<data>/index/reindex.log` (0600, replaced for each run), writes
+skip counts to `run.json`, and is terminated when the daemon stops. Code stores
+are excluded from setup kind counts. `status` retains the issue #4 footer shape.
+
 Later issues append their messages here.

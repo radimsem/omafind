@@ -1,0 +1,46 @@
+{
+  "t": "progress",
+  "running": true,
+  "done": 612,
+  "queued": 597,
+  "volume": "home-volume",
+  "device": "gpu",
+  "vram_gb": 0.9,
+  "kinds": {
+    "text": {
+      "done": 734,
+      "total": 734
+    },
+    "pdf": {
+      "done": 31,
+      "total": 49,
+      "pages": 412
+    },
+    "image": {
+      "done": 51,
+      "total": 420,
+      "ocr": 63
+    },
+    "video": {
+      "done": 0,
+      "total": 6
+    },
+    "audio": {
+      "done": 0,
+      "total": 0
+    }
+  },
+  "skipped": {
+    "secrets": 4,
+    "size-cap": 2
+  },
+  "failed": {
+    "encrypted-pdf": 1
+  },
+  "problems": [
+    {
+      "path": "/home/u/Documents/a.pdf",
+      "reason": "encrypted-pdf"
+    }
+  ]
+}
