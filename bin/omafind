@@ -15,6 +15,7 @@ from pathlib import Path
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PLUGIN_ROOT / "helper"))
 paths = importlib.import_module("omafindd.paths")
+build = importlib.import_module("omafindd.build")
 MODEL_NAMES = ("embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf")
 MODEL_DOWNLOAD = '''
 import sys
@@ -140,6 +141,22 @@ def _index_status(env, run):
             "verified": report.get("model", {}).get("verified", False)}
 
 
+def _venv(env, run):
+    path = Path(env["HOME"]) / ".local/share/omafind/venv"
+    check = ["uv", "sync", "--project", str(PLUGIN_ROOT / "helper"), "--frozen", "--no-dev",
+             "--offline", "--check"]
+    try:
+        if not (path / "bin/python").is_file():
+            state = "missing"
+        else:
+            result = run(check, env=dict(env, UV_PROJECT_ENVIRONMENT=str(path)),
+                         capture_output=True, text=True)
+            state = "ready" if result.returncode == 0 else "stale"
+    except OSError:
+        state = "unknown"
+    return {"path": str(path), "state": state}
+
+
 def _print_presence(details):
     print("runtime ready" if details["runtime"]["present"] else "runtime missing")
     files = details["model"]["files"]
@@ -222,7 +239,7 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
     answers = bool(probe(path, 0.2))
     details = {"unit": {"enabled": enabled, "active": active},
                "socket": {"path": str(path), "answers": answers},
-               "tools": {"missing": missing}, **_presence(env)}
+               "tools": {"missing": missing}, "venv": _venv(env, run), **_presence(env)}
     index = _index_status(env, run)
     details["model"]["verified"] = index.pop("verified")
     details.update(index)
@@ -233,6 +250,7 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
         print("unit active" if active else "unit inactive")
         print("socket answering" if answers else "socket silent")
         _print_presence(details)
+        print(f"venv {details['venv']['state']}")
         for item in details["permissions"]:
             print(f"permission {item['path']} {item['actual']} want {item['expected']}")
         for item in details["volumes"]:
@@ -242,6 +260,8 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
         print(f"recovery {details['recovery'].get('mode', 'none')}")
         for item in details["problems"]:
             print(f"problem {item['volume']} {item['problem']} {item['action']}")
+    if details["venv"]["state"] != "ready":
+        print("next bin/omafind setup", file=sys.stderr)
     if missing:
         print("sudo pacman -S --needed " + " ".join(missing), file=sys.stderr)
         return 1
@@ -249,7 +269,9 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
         return 1
     if not active:
         return 2
-    return 0 if answers else 3
+    if not answers:
+        return 3
+    return 0 if details["venv"]["state"] == "ready" else 4
 
 
 def build_runtime(env, run=subprocess.run, execve=os.execve):
@@ -480,12 +502,15 @@ def main(args=None, env=None, run=subprocess.run, probe=read_hello, request=requ
             return setup(env, run, probe)
         if args == ["build-runtime"]:
             return build_runtime(env, run, execve)
+        if args == ["fingerprint"]:
+            print(build.fingerprint(PLUGIN_ROOT))
+            return 0
         if args in (["status"], ["status", "--json"]):
             return status(env, run, probe, as_json="--json" in args)
     except (OSError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 1
-    print("Usage: omafind setup | status [--json] | build-runtime | "
+    print("Usage: omafind setup | status [--json] | fingerprint | build-runtime | "
           "search [--json] [--limit N] QUERY | "
           "reindex [--root PATH]... [--volume UUID] [--incremental] | "
           "discover --json [--volume UUID] | "
