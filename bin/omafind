@@ -307,11 +307,74 @@ def reindex(args, env, execve=os.execve):
     return 0
 
 
+def bindings(args, env, run=subprocess.run):
+    from omafindd import bindings as module
+    from omafindd.settings import load
+
+    parser = argparse.ArgumentParser(prog="omafind bindings")
+    parser.add_argument("action", choices=("check", "write", "remove", "menu"))
+    parser.add_argument("menu_action", nargs="?", choices=("add", "remove"))
+    parser.add_argument("--chord")
+    try:
+        parsed = parser.parse_args(args)
+    except SystemExit as error:
+        return error.code
+    if (parsed.action == "menu") != (parsed.menu_action is not None):
+        parser.print_usage(sys.stderr)
+        return 2
+    config = Path(env.get("XDG_CONFIG_HOME") or Path(env["HOME"]) / ".config")
+    path = config / "hypr/bindings.lua"
+    if parsed.action == "menu":
+        menu = config / "omarchy/extensions/omarchy-menu.jsonc"
+        writer = module.write_menu_row if parsed.menu_action == "add" else module.remove_menu_row
+        writer(menu)
+        return 0
+    chord = parsed.chord or load(config / "omarchy/shell.json").shortcut
+    try:
+        module.parse_key(chord)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    if parsed.action == "check":
+        values = module.parse_binds(path.read_text()) if path.exists() else []
+        try:
+            live = run(["hyprctl", "binds", "-j"], env=env, capture_output=True,
+                       text=True, timeout=5)
+        except FileNotFoundError:
+            live = None
+        if live is not None:
+            if live.returncode:
+                print(live.stderr or "hyprctl binds failed", file=sys.stderr)
+                return 1
+            values.extend(module.parse_binds(live.stdout))
+        result = module.check(chord, values)
+        display = " ".join(part.strip().title() if part.strip() in module.MODIFIERS
+                           else part.strip() for part in chord.split("+"))
+        if result == "conflict":
+            holder = next(bind for bind in module.matching(chord, values) if not bind.ours)
+            fallback = module.first_free(values)
+            suggestion = f" Try {fallback.replace('SUPER + ', 'Super ')}." if fallback else ""
+            print(f"{display} is taken by {holder.description or holder.key}.{suggestion}")
+            return 2
+        print(f"{display} is {'free' if result == 'free' else 'bound by omafind'}.")
+        return 0
+    changed = (module.write_block(path, chord) if parsed.action == "write"
+               else module.remove_block(path))
+    if changed:
+        result = run(["hyprctl", "reload"], env=env, capture_output=True, text=True, timeout=5)
+        if result.returncode:
+            print(result.stderr or "Hyprland reload failed", file=sys.stderr)
+            return 1
+    return 0
+
+
 def main(args=None, env=None, run=subprocess.run, probe=read_hello, request=request_search,
          execve=os.execve):
     args = sys.argv[1:] if args is None else args
     env = os.environ if env is None else env
     try:
+        if args and args[0] == "bindings":
+            return bindings(args[1:], env, run)
         if args and args[0] == "search":
             return search(args[1:], env, request)
         if args and args[0] == "reindex":
@@ -326,7 +389,8 @@ def main(args=None, env=None, run=subprocess.run, probe=read_hello, request=requ
         print(str(error), file=sys.stderr)
         return 1
     print("Usage: omafind setup | status [--json] | build-runtime | "
-          "search [--json] [--limit N] QUERY | reindex [--root PATH]... [--volume UUID]",
+          "search [--json] [--limit N] QUERY | reindex [--root PATH]... [--volume UUID] | "
+          "bindings check|write [--chord C] | bindings remove | bindings menu add|remove",
           file=sys.stderr)
     return 2
 

@@ -44,6 +44,7 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
 | `imageBudget` | 70, 140 or 280 | `140` |
 | `maxResults` | int, clamped to 10..200 | `40` |
 | `warmMinutes` | int, clamped to 0..60 | `5` |
+| `shortcut` | uppercase `MODS + KEY`; mods: SUPER, SHIFT, CTRL, ALT | `"SUPER + E"` |
 
 Index data, snippets, OCR text and thumbnails are stored unencrypted inside the user's home. On the target host, LUKS protects them while the disk is locked. External-drive indexes live on the internal disk. omafind sends no telemetry; network access is limited to user-started runtime builds and model downloads.
 
@@ -96,6 +97,22 @@ Results are a flat list in score order, with page, source-line or second locatio
 and a `weak` flag. Missing
 models degrade to keyword results. CLI search exits 0 for a reply (even empty),
 1 for no index or a service error, 2 for invalid arguments, and 3 for a silent socket.
+
+Manage the overlay shortcut and optional menu row with:
+
+```bash
+bin/omafind bindings check [--chord "SUPER + E"]
+bin/omafind bindings write [--chord "SUPER + E"]
+bin/omafind bindings remove
+bin/omafind bindings menu add
+bin/omafind bindings menu remove
+```
+
+`check` reports conflicts and suggests a free shortcut. `check` and `write`
+use the `shortcut` setting when `--chord` is omitted. `write` and `remove`
+manage only omafind's marked block in `$XDG_CONFIG_HOME/hypr/bindings.lua` and
+reload Hyprland when it changes. The menu commands manage a marked Find files
+row in `$XDG_CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc`.
 
 Images use `imageBudget`; screenshots use 280 tokens and video frames use 70.
 Screenshot names (Screenshot, Screen Shot, CleanShot or SCR-, case-insensitive)

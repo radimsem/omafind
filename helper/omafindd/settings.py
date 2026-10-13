@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,6 +21,17 @@ class Settings:
     warm_minutes: int = 5
     code_roots: tuple[str, ...] = ()
     image_budget: int = 140
+    shortcut: str = "SUPER + E"
+
+
+def valid_shortcut(value) -> bool:
+    if not isinstance(value, str) or not re.fullmatch(
+        r"(?:SUPER|SHIFT|CTRL|ALT)(?:\s*\+\s*(?:SUPER|SHIFT|CTRL|ALT))*"
+        r"\s*\+\s*[A-Z0-9_]+", value
+    ):
+        return False
+    parts = [part.strip() for part in value.split("+")]
+    return len(set(parts)) == len(parts) and parts[-1] not in ("SUPER", "SHIFT", "CTRL", "ALT")
 
 
 def find_entry(config: dict, plugin_id: str) -> dict | None:
@@ -61,6 +73,7 @@ def _load(path: Path) -> Settings:
     audio = entry.get("audio", True)
     repositories = entry.get("codeRoots", [])
     budget = entry.get("imageBudget", 140)
+    shortcut = entry.get("shortcut", "SUPER + E")
     return Settings(
         setup_done=setup_done if type(setup_done) is bool else False,
         gpu=gpu if gpu in ("auto", "never") else "auto",
@@ -72,6 +85,7 @@ def _load(path: Path) -> Settings:
                          if isinstance(path, str) and Path(path).is_absolute())
         if isinstance(repositories, list) else (),
         image_budget=budget if type(budget) is int and budget in (70, 140, 280) else 140,
+        shortcut=shortcut if valid_shortcut(shortcut) else "SUPER + E",
     )
 
 
