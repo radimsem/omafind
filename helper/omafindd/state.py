@@ -11,6 +11,8 @@ class State:
     runtime: str = "missing"
     model: str = "missing"
     embedder: str = "stopped"
+    # Fingerprint of the plugin code this daemon started from; set once at start.
+    build: str = ""
     on_change: Callable[[dict], Awaitable[None]] | None = field(
         default=None, repr=False, compare=False,
     )
@@ -29,7 +31,7 @@ class State:
 
     def message(self) -> dict:
         return {"t": "state", "v": 1, "runtime": self.runtime,
-                "model": self.model, "embedder": self.embedder}
+                "model": self.model, "embedder": self.embedder, "build": self.build}
 
     async def update(self, **fields) -> None:
         changed = False

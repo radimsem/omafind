@@ -29,6 +29,7 @@ Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON.
 | 1 | Unit not installed or not enabled |
 | 2 | Unit enabled but not active |
 | 3 | Unit active but socket silent |
+| 4 | Daemon answers, but the venv is `missing`, `stale` or `unknown` |
 
 `status --json` returns these fields. It reads indexes without opening them for writes.
 
@@ -37,6 +38,7 @@ Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON.
 | `unit` | `{enabled, active}` |
 | `socket` | `{path, answers}` |
 | `tools` | `{missing: [tool]}` |
+| `venv` | `{path, state}`; `state` is `ready`, `stale` (does not match `helper/uv.lock`, from `uv sync --check`), `missing` or `unknown` (uv not found or the venv unreadable) |
 | `runtime` | `{path, present}` |
 | `model` | `{path, files, verified}`; `files` maps pinned filenames to presence booleans; `verified` is the last daemon verdict, false before a report exists |
 | `volumes` | `[{uuid, label, files, online}]`; `files` counts rows with `indexed_at`, excluding `code.sqlite` |
@@ -45,11 +47,13 @@ Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON.
 | `recovery` | Last startup `{clean, mode, journal_retried}`, or `{}` before a report exists |
 | `problems` | Integrity rebuilds as `[{volume, problem, action, moved_to, at}]`, or `[]` |
 
-Text status prints `permission <path> <actual> want <expected>`,
+Text status prints `venv ready|stale|missing|unknown` (any state but `ready` also prints `next bin/omafind setup` on stderr, whatever the exit code), `permission <path> <actual> want <expected>`,
 `volume <label> <files> online|offline`, `queue <n>`, `recovery reconcile|none`
 and `problem <uuid> integrity rebuilt` when applicable.
 Unreadable or corrupt indexes retain a volume entry with zero counts until recovery rebuilds them.
 See [docs/ipc.md](docs/ipc.md) for the handshake.
+
+When the plugin code changes (a `git pull` in a dev checkout or a marketplace update), the plugin compares `bin/omafind fingerprint` with the `build` the daemon reports and reruns `bin/omafind setup` once, which syncs the venv and restarts the unit. A daemon that starts on a venv missing a dependency logs `omafindd cannot import <module>. Run bin/omafind setup.` to the unit journal and exits 1.
 
 Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell.json`. The plugin writes them through `updateEntryInline`; the daemon only reads them. Later issues add keys.
 

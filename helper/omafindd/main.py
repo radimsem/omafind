@@ -9,7 +9,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from . import health, paths, permissions, recovery
+from . import build, health, paths, permissions, recovery
 from .diskguard import DiskGuard
 from .install import RuntimeJob
 from .ipc import AlreadyRunning, IpcServer
@@ -416,10 +416,15 @@ async def _serve(manifest: Path | None = None, *, interval: float = 0.5) -> int:
             'verified': detected.model == 'ready', 'files': verifier.files_report()},
         problems=report.get('problems', []) + problems)
     health.write(directory / 'index/health.json', report)
+    plugin_root = Path(__file__).resolve().parents[2]
+    try:
+        detected.build = await asyncio.to_thread(build.fingerprint, plugin_root)
+    except (OSError, ValueError) as error:
+        # An empty build differs from every plugin build, so the plugin reruns setup once.
+        logger.warning('Cannot fingerprint %s: %s', plugin_root, error)
     server = IpcServer(paths.socket_path(), detected)
     service = SearchService(directory / 'index', settings.read, _LazyEmbedder(), server.state)
     server.service = service
-    plugin_root = Path(__file__).resolve().parents[2]
     runtime = RuntimeJob(data_dir=directory, plugin_root=plugin_root, broadcast=server.broadcast)
     freshness = _Freshness(directory, settings.read, server, service, report)
     async def push_status(**kwargs):

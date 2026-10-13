@@ -66,7 +66,7 @@ Hyprland bind / omarchy-menu row
 | `omafindd.store` | One SQLite file per volume plus `code.sqlite`: schema, migrations, transactions, vector loading. | sqlite3 |
 | `omafindd.search` | Query parsing, both legs, fusion, jump targets. The `code:` words leg runs `rg`. | `embedder`, `store`, `rg` |
 | `omafindd.opener` | Turns a result into the right opener command for the jump target. | `omarchy-launch-editor`, `omarchy-launch-browser`, `mpv`, `xdg-open`, `gdbus` |
-| `bin/omafind` | `setup`, `status [--json]`, `discover --json`, `search --json`, `reindex`, `bindings check`, `build-runtime`. Stdlib only, imports daemon modules for shared logic. | daemon modules |
+| `bin/omafind` | `setup`, `status [--json]`, `fingerprint`, `discover --json`, `search --json`, `reindex`, `bindings check`, `build-runtime`. Stdlib only, imports daemon modules for shared logic. | daemon modules |
 
 ### 2.2 Repo layout
 

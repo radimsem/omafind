@@ -32,6 +32,14 @@ def env(tmp_path, monkeypatch):
     return dict(os.environ)
 
 
+@pytest.fixture
+def venv(env):
+    python = Path(env["HOME"]) / ".local/share/omafind/venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    return python.parent.parent
+
+
 class FakeRun:
     def __init__(self, enabled="enabled", active="active"):
         self.enabled = enabled
@@ -59,7 +67,7 @@ class FakeRun:
     ("enabled", "active", True, 0),
     ("enabled-runtime", "active", True, 0),
 ])
-def test_status_exit_codes_and_json(cli, env, capsys, enabled, active, answers, code):
+def test_status_exit_codes_and_json(cli, env, venv, capsys, enabled, active, answers, code):
     run = FakeRun(enabled, active)
     assert cli.main(["status", "--json"], env, run=run,
                     probe=lambda path, timeout: answers) == code
@@ -69,6 +77,7 @@ def test_status_exit_codes_and_json(cli, env, capsys, enabled, active, answers, 
         "socket": {"path": str(Path(env["XDG_RUNTIME_DIR"]) / "omafind/ui.sock"),
                    "answers": answers},
         "tools": {"missing": []},
+        "venv": {"path": str(venv), "state": "ready"},
         "runtime": {"path": str(Path(env["XDG_DATA_HOME"]) / "omafind/runtime/bin/llama-server"),
                     "present": False},
         "model": {"path": str(Path(env["XDG_DATA_HOME"]) / "omafind/model"),
@@ -198,7 +207,7 @@ def test_build_runtime_builds_before_download_and_digest_check(
         assert "model invalid tiny.gguf" in output.err
 
 
-def test_status_reports_runtime_and_each_model_presence(cli, env, capsys):
+def test_status_reports_runtime_and_each_model_presence(cli, env, venv, capsys):
     from omafindd import models, paths
 
     assert set(MODEL_NAMES) == {file.name for file in models.FILES}
@@ -228,7 +237,7 @@ def test_status_reports_runtime_and_each_model_presence(cli, env, capsys):
     ([b"x" * 1_048_577], False),
     ([], False),
 ])
-def test_status_hello_framing(cli, env, monkeypatch, chunks, answers, capsys):
+def test_status_hello_framing(cli, env, venv, monkeypatch, chunks, answers, capsys):
     sent = []
     received = iter(chunks)
 
@@ -425,7 +434,7 @@ def test_discovery_modules_import_with_only_stdlib(env):
     assert result.returncode == 0, result.stderr
 
 
-def test_status_volumes_queue_and_health_are_read_only(cli, env, capsys):
+def test_status_volumes_queue_and_health_are_read_only(cli, env, venv, capsys):
     import sqlite3
 
     data = Path(env['XDG_DATA_HOME']) / 'omafind'
@@ -479,3 +488,54 @@ def test_status_modules_need_only_stdlib(env):
                              str(ROOT / 'bin/omafind')],
                             env=env, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_fingerprint_prints_the_plugin_build(cli, env, capsys):
+    from omafindd import build
+
+    assert cli.main(["fingerprint"], env) == 0
+    assert capsys.readouterr().out == build.fingerprint(ROOT) + "\n"
+
+
+@pytest.mark.parametrize("synced,state,code", [(True, "ready", 0), (False, "stale", 4)])
+def test_status_checks_venv_against_lock(cli, env, venv, capsys, synced, state, code):
+    class Run(FakeRun):
+        def __call__(self, command, **kwargs):
+            if command[0] == "uv":
+                self.calls.append((command, kwargs))
+                return subprocess.CompletedProcess(command, 0 if synced else 1, "", "outdated")
+            return super().__call__(command, **kwargs)
+
+    run = Run()
+    assert cli.main(["status"], env, run=run, probe=lambda path, timeout: True) == code
+    output = capsys.readouterr()
+    assert f"venv {state}" in output.out.splitlines()
+    assert output.err == ("" if synced else "next bin/omafind setup\n")
+    [(command, kwargs)] = [call for call in run.calls if call[0][0] == "uv"]
+    assert command == ["uv", "sync", "--project", str(ROOT / "helper"), "--frozen", "--no-dev",
+                       "--offline", "--check"]
+    assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"] == str(venv)
+    assert cli.main(["status", "--json"], env, run=run, probe=lambda path, timeout: True) == code
+    assert json.loads(capsys.readouterr().out)["venv"] == {"path": str(venv), "state": state}
+
+
+def test_status_reports_missing_venv_and_unknown_check(cli, env, capsys):
+    assert cli.main(["status"], env, run=FakeRun(), probe=lambda path, timeout: True) == 4
+    assert "venv missing" in capsys.readouterr().out.splitlines()
+    python = Path(env["HOME"]) / ".local/share/omafind/venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+
+    def no_uv(command, **kwargs):
+        if command[0] == "uv":
+            raise FileNotFoundError("uv")
+        return FakeRun()(command, **kwargs)
+
+    assert cli.main(["status"], env, run=no_uv, probe=lambda path, timeout: True) == 4
+    assert "venv unknown" in capsys.readouterr().out.splitlines()
+
+
+def test_status_unit_codes_win_over_venv_but_keep_the_hint(cli, env, capsys):
+    assert cli.main(["status"], env, run=FakeRun(active="inactive"),
+                    probe=lambda path, timeout: False) == 2
+    assert capsys.readouterr().err == "next bin/omafind setup\n"

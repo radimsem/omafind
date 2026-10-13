@@ -6,10 +6,11 @@ import socket
 import sqlite3
 import subprocess
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from omafindd import main
+from omafindd import build, main
 from omafindd.main import _Freshness
 from omafindd.reconcile import Reconciled
 from omafindd.store import Store
@@ -104,9 +105,12 @@ async def test_serve_loop_wakes_on_dirty_before_tick_timeout(tmp_path, monkeypat
             reconciled.set()
             return Reconciled([], 0, 0, 0)
 
+    servers = []
+
     class Server:
         def __init__(self, path, state):
             self.state = state
+            servers.append(self)
 
         async def start(self):
             pass
@@ -128,6 +132,7 @@ async def test_serve_loop_wakes_on_dirty_before_tick_timeout(tmp_path, monkeypat
     pending = asyncio.create_task(main._serve(manifest, interval=60))
     try:
         await asyncio.wait_for(waiting.wait(), .5)
+        assert servers[0].state.build == build.fingerprint(Path(main.__file__).parents[2])
         await instances[0].on_dirty({'volume': 'v'}, {tmp_path})
         await asyncio.wait_for(reconciled.wait(), .1)
         manifest.unlink()

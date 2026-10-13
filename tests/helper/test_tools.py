@@ -38,7 +38,7 @@ def test_setup_missing_tool_exits_before_installing(cli, env, capsys):
     ]
 
 
-def test_status_json_reports_tools(cli, env, capsys):
+def test_status_json_reports_tools(cli, env, venv, capsys):
     import json
 
     from test_cli import FakeRun

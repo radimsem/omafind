@@ -4,12 +4,14 @@ import stat
 from test_cli import FakeRun
 from test_cli import cli as cli_fixture
 from test_cli import env as env_fixture
+from test_cli import venv as venv_fixture
 
 cli = cli_fixture
 env = env_fixture
+venv = venv_fixture
 
 
-def test_0644_db_listed_in_status_json(cli, env, capsys):
+def test_0644_db_listed_in_status_json(cli, env, venv, capsys):
     from pathlib import Path
 
     data = Path(env['XDG_DATA_HOME']) / 'omafind'
@@ -139,7 +141,8 @@ def test_health_roundtrip_is_private_and_bad_data_is_empty(tmp_path):
         assert health.read(path) == {}
 
 
-def test_unreadable_directory_does_not_change_status_exit_code(cli, env, capsys, monkeypatch):
+def test_unreadable_directory_does_not_change_status_exit_code(cli, env, venv, capsys,
+                                                               monkeypatch):
     from pathlib import Path
 
     data = Path(env['XDG_DATA_HOME']) / 'omafind'
@@ -179,10 +182,14 @@ def test_verified_models_are_ready_only_while_both_files_exist(tmp_path, monkeyp
 
 
 def test_unreadable_runtime_and_model_paths_do_not_change_status_code(
-        cli, env, capsys, monkeypatch):
+        cli, env, venv, capsys, monkeypatch):
     from pathlib import Path
 
+    is_file = Path.is_file
+
     def denied(path):
+        if path.is_relative_to(venv):
+            return is_file(path)
         raise PermissionError('cannot inspect file')
 
     monkeypatch.setattr(Path, 'is_file', denied)

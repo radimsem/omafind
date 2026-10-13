@@ -5,6 +5,7 @@ import "lib/Backoff.js" as Backoff
 import "lib/Protocol.js" as Protocol
 import "lib/Connection.js" as Connection
 import "lib/Settings.js" as Settings
+import "lib/Update.js" as Update
 import "lib/volumes.js" as Volumes
 import "ui" as Parts
 
@@ -43,6 +44,12 @@ Item {
   property var bindingChecks: ({})
   property string setupError: ""
   property bool helperRunning: false
+  // Issue #16: the lib/Update.js state. `updateRun` marks a helperSetup run started by an update;
+  // `updateQueued` holds one back while a setup the user started is still running.
+  property var update: Update.initial()
+  property bool updateRun: false
+  property bool updateQueued: false
+  property string updateLine: ""
   property bool runtimeAsked: false
   property string indexVolume: ""
 
@@ -161,6 +168,28 @@ Item {
     reduceVolumes({type: "dismiss", id: id})
   }
 
+  function reduceUpdate(event) {
+    var result = Update.reduce(update, event)
+    update = result.state
+    for (var i = 0; i < result.effects.length; i++) {
+      if (result.effects[i].type === "setup") runUpdate()
+    }
+  }
+
+  function retryUpdate() { reduceUpdate({type: "retry"}) }
+
+  // bin/omafind setup syncs the venv to the lock file and restarts the unit.
+  function runUpdate() {
+    if (helperRunning) {
+      updateQueued = !updateRun
+      return
+    }
+    updateRun = true
+    updateLine = ""
+    helperRunning = true
+    helperSetup.running = true
+  }
+
   function runtimeInstall() { return send({t: "runtime_install"}) }
   function runtimePause() { return send({t: "runtime_pause"}) }
   function requestRuntimeStatus() { return send({t: "runtime_status"}) }
@@ -255,6 +284,9 @@ Item {
     driveScanning = false
     connection = Connection.reduce(connection, {type: "attempt-failed"})
     closeSocket()
+    // A daemon that dies on import never sends `state`; status tells whether its venv is behind.
+    if (connection.failures === 3 && update.phase === "idle" && !venvCheck.running)
+      venvCheck.running = true
     if (connection.unit === "enabled") reconnect.restart()
   }
 
@@ -364,6 +396,7 @@ Item {
         || ["ready", "missing"].indexOf(message.model) === -1
         || ["stopped", "text", "full"].indexOf(message.embedder) === -1) return
     daemonState = message
+    reduceUpdate({type: "daemon", build: typeof message.build === "string" ? message.build : ""})
     if (message.embedder !== "stopped") warmFailure = ""
     connection = Connection.reduce(connection, {type: "state"})
     if (ready && !runtimeProgress && !runtimeAsked) runtimeAsked = requestRuntimeStatus()
@@ -415,13 +448,56 @@ Item {
     stderr: SplitParser {
       splitMarker: "\n"
       onRead: data => {
-        if (data.trim()) root.setupError = data.trim()
+        if (!data.trim()) return
+        if (root.updateRun) root.updateLine = data.trim()
+        else root.setupError = data.trim()
       }
     }
     onExited: (exitCode, exitStatus) => {
+      var ok = exitCode === 0 && exitStatus === 0
       root.helperRunning = false
-      if (exitCode === 0 && exitStatus === 0) root.setupError = ""
+      if (root.updateRun) {
+        root.updateRun = false
+        root.reduceUpdate({type: "setup-exited", ok: ok, line: root.updateLine})
+      } else if (ok) {
+        root.setupError = ""
+      }
+      if (root.updateQueued) {
+        root.updateQueued = false
+        root.runUpdate()
+      }
       root.checkUnit()
+    }
+  }
+
+  Process {
+    id: venvCheck
+    command: [root.pluginDir + "/bin/omafind", "status", "--json"]
+    stdout: StdioCollector { id: venvCheckOut; waitForEnd: true }
+    onExited: (exitCode, exitStatus) => {
+      var details = null
+      try {
+        details = JSON.parse(venvCheckOut.text)
+      } catch (error) {
+        return
+      }
+      if (details && details.venv && typeof details.venv.state === "string")
+        root.reduceUpdate({type: "venv", state: details.venv.state})
+    }
+  }
+
+  // The build of the plugin this shell loaded, compared with the daemon's `state.build`.
+  Process {
+    id: localBuild
+    command: [root.pluginDir + "/bin/omafind", "fingerprint"]
+    running: true
+    stdout: StdioCollector { id: localBuildOut; waitForEnd: true }
+    stderr: StdioCollector { id: localBuildErr; waitForEnd: true }
+    onExited: (exitCode, exitStatus) => {
+      if (exitCode === 0 && exitStatus === 0 && localBuildOut.text.trim())
+        root.reduceUpdate({type: "local", build: localBuildOut.text.trim()})
+      else
+        console.warn("omafind: no plugin build, so the daemon is not updated: " + localBuildErr.text.trim())
     }
   }
 
