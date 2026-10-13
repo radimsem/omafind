@@ -17,6 +17,32 @@ Item {
   readonly property string embedder: daemonState.embedder
   property var socket: null
   property bool attemptOpen: false
+  readonly property bool ready: connection.socket === "ready"
+  // The latest reply per message type. `results` keeps every seq; the view drops stale ones.
+  property var results: null
+  property var preview: null
+  property var status: null
+  property string warmFailure: ""
+
+  signal resultsReceived(var reply)
+  signal previewReceived(var reply)
+  signal itemFailed(var reply)
+  signal itemOpened(var reply)
+  signal openFailed(var reply)
+  signal warmFailed(string reason)
+  signal statusReceived(var reply)
+
+  function warm() {
+    warmFailure = ""
+    return send({t: "warm"})
+  }
+
+  function send(message) {
+    if (!socket || !socket.connected || !ready) return false
+    socket.write(Protocol.encode(message))
+    socket.flush()
+    return true
+  }
 
   function checkUnit() {
     unitCheck.running = true
@@ -48,11 +74,50 @@ Item {
 
   function receive(line) {
     var message = Protocol.decode(line)
-    if (!message || message.t !== "state") return
+    if (!message) return
+    switch (message.t) {
+    case "state":
+      receiveState(message)
+      break
+    case "results":
+      results = message
+      resultsReceived(message)
+      break
+    case "error":
+      // Search errors echo `seq`; preview and open errors echo `id`.
+      if (message.id !== undefined) itemFailed(message)
+      else {
+        results = message
+        resultsReceived(message)
+      }
+      break
+    case "preview":
+      preview = message
+      previewReceived(message)
+      break
+    case "opened":
+      itemOpened(message)
+      break
+    case "open_failed":
+      openFailed(message)
+      break
+    case "warm_failed":
+      warmFailure = typeof message.reason === "string" ? message.reason : ""
+      warmFailed(warmFailure)
+      break
+    case "status":
+      status = message
+      statusReceived(message)
+      break
+    }
+  }
+
+  function receiveState(message) {
     if (["ready", "missing"].indexOf(message.runtime) === -1
         || ["ready", "missing"].indexOf(message.model) === -1
         || ["stopped", "text", "full"].indexOf(message.embedder) === -1) return
     daemonState = message
+    if (message.embedder !== "stopped") warmFailure = ""
     connection = Connection.reduce(connection, {type: "state"})
   }
 

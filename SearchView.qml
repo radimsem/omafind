@@ -1,0 +1,455 @@
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import qs.Commons
+import "." as Plugin
+import "ui" as Parts
+import "lib/keys.js" as KeyMap
+import "lib/results.js" as Results
+import "lib/searchState.js" as SearchState
+
+// The search overlay body: query row, banner, result list, preview and footer.
+Item {
+  id: root
+
+  property var service: null
+  property var search: SearchState.initial()
+  property bool expanded: false
+  property var rows: []
+  property int selectedIndex: -1
+  // True once the user moves the selection, so a re-rank keeps it on its row instead of the top hit.
+  property bool userMoved: false
+  property int shownSeq: -1
+  property var preview: null
+  property var pending: null
+  property string flash: ""
+  property string editorCommand: "nvim"
+
+  readonly property var parsed: SearchState.parse(search.query)
+  readonly property bool idle: search.query.trim() === ""
+  readonly property bool noText: parsed.text.trim() === ""
+  readonly property var reply: search.reply
+  readonly property var selectedRow: rows[selectedIndex] || null
+  readonly property var selectedItem: selectedRow && selectedRow.type === "item" ? selectedRow.item : null
+  readonly property string editorName: KeyMap.editorName(editorCommand)
+  readonly property var connection: service ? service.connection : null
+  readonly property bool daemonDown: !service || (!service.ready && !!connection
+    && (connection.unit === "missing" || connection.failures > 0))
+  readonly property string degradedReason: reply && reply.degraded ? String(reply.degraded)
+    : service && service.warmFailure ? service.warmFailure : ""
+
+  // The daemon sends either a phrase ("indexing in progress", "embedding model unavailable",
+  // "the embedding server did not start") or the bare cause of a server failure.
+  function degradedClause(reason) {
+    if (/^(the embedding server|embedding model|indexing)/.test(reason)) return reason
+    return "the embedding server did not start (" + reason + ")"
+  }
+
+  signal closeRequested()
+  signal toastRequested(string title, var tokens, bool error)
+  signal openStarted(var item, string how)
+
+  function reset() {
+    previewTimer.stop()
+    wordsTimer.stop()
+    meaningTimer.stop()
+    player.stop()
+    flash = ""
+    expanded = false
+    userMoved = false
+    shownSeq = -1
+    preview = null
+    search = SearchState.initial()
+    rows = []
+    selectedIndex = -1
+    list.reset()
+    query.setText("")
+  }
+
+  function stopPlayback() {
+    player.stop()
+  }
+
+  function focusQuery() {
+    query.input.forceActiveFocus()
+  }
+
+  function typed(text) {
+    if (text === search.query) return
+    var next = SearchState.reduce(search, {type: "typed", query: text, now: Date.now()})
+    search = next.state
+    expanded = false
+    userMoved = false
+    if (SearchState.parse(text).text.trim() === "") {
+      wordsTimer.stop()
+      meaningTimer.stop()
+      rows = []
+      selectedIndex = -1
+      shownSeq = -1
+      preview = null
+      player.stop()
+      list.reset()
+      return
+    }
+    wordsTimer.restart()
+    meaningTimer.restart()
+  }
+
+  function due(type) {
+    var next = SearchState.reduce(search, {type: type, now: Date.now()})
+    if (next.send && (!service || !service.send(next.send))) {
+      next.state.sentWords = search.sentWords
+      next.state.sentMeaning = search.sentMeaning
+    }
+    search = next.state
+  }
+
+  function received(message) {
+    var next = SearchState.reduce(search, {type: "reply", reply: message})
+    var changed = next.state.reply !== search.reply
+    search = next.state
+    if (changed) regroup()
+  }
+
+  function regroup() {
+    var result = reply && reply.items ? Results.group(reply.items, {expanded: expanded}).rows : []
+    var index = -1
+    var sameSet = reply && reply.seq === shownSeq
+    if (sameSet && (userMoved || expanded)) index = Results.selectionAfterRegroup(rows, selectedIndex, result)
+    else index = Results.firstSelection(result)
+    shownSeq = reply ? reply.seq : -1
+    rows = result
+    selectedIndex = index
+  }
+
+  function expand() {
+    var weakAt = selectedIndex
+    expanded = true
+    var result = Results.group(reply.items, {expanded: true}).rows
+    rows = result
+    // The first unfolded hit takes the place of the fold row.
+    selectedIndex = weakAt < result.length ? weakAt : Results.firstSelection(result)
+    userMoved = true
+  }
+
+  function move(delta) {
+    var next = Results.move(rows, selectedIndex, delta)
+    if (next !== selectedIndex) {
+      selectedIndex = next
+      userMoved = true
+    }
+  }
+
+  function select(index) {
+    if (index < 0) return
+    selectedIndex = index
+    userMoved = true
+    focusQuery()
+  }
+
+  // Footer hints from lib/keys.js, with the editor named for code and the play label following playback.
+  function hintsFor(row) {
+    var hints = KeyMap.hints(row, row && row.type === "item" ? jumpFor(row.item) : null)
+    if (!row || row.type !== "item") return hints
+    var item = row.item
+    for (var i = 0; i < hints.length; i++) {
+      var hint = hints[i]
+      if (hint.keys.length === 1 && hint.keys[0] === "Enter" && item.kind === "code")
+        hint.label = hint.label.replace(/^open at line/, "open in " + editorName + " at line")
+      if (hint.keys.join(" ") === "Ctrl Space" && player.playback.id === item.id)
+        hint.label = player.playing ? "pause" : "resume"
+    }
+    return hints
+  }
+
+  // The preview names the line the opener jumps to, so labels use it once it arrives.
+  function jumpFor(item) {
+    if (!item || !preview || preview.id !== item.id) return null
+    return item.kind === "text" || item.kind === "code" ? preview.jump : null
+  }
+
+  function folder(item) {
+    var path = item.dir || ""
+    var home = Quickshell.env("HOME") || ""
+    if (home && (path === home || path.indexOf(home + "/") === 0)) return "~" + path.slice(home.length)
+    return path
+  }
+
+  function markersFor(item) {
+    if (!item || item.kind !== "video" || !reply || !reply.items) return []
+    var total = item.info && item.info.duration ? item.info.duration : 0
+    if (!total) return []
+    var out = []
+    for (var i = 0; i < reply.items.length; i++) {
+      var other = reply.items[i]
+      if (other.kind === "video" && other.path === item.path && other.loc != null)
+        out.push(Math.max(0, Math.min(1, other.loc / total)))
+    }
+    return out
+  }
+
+  function act(how) {
+    var item = selectedItem
+    if (!item) return
+    if (item.offline && how !== "copy") return
+    if (how === "copy") {
+      Quickshell.execDetached(["wl-copy", "--", item.path])
+      toastRequested("Path copied", [{k: "path", v: folder(item) + "/" + item.name, tone: "plain"}], false)
+      return
+    }
+    if (pending || !service || !service.send({t: "open", id: item.id, how: how})) return
+    player.stop()
+    flash = how === "open" ? "acc" : "sec"
+    openStarted(item, how)
+  }
+
+  function handleKey(event) {
+    if (event.key === Qt.Key_U && event.modifiers === Qt.ControlModifier) {
+      query.setText("")
+      event.accepted = true
+      return
+    }
+    var action = KeyMap.action({key: event.key, text: event.text, modifiers: event.modifiers},
+      {query: search.query, row: selectedRow})
+    switch (action) {
+    case "clear":
+      query.setText("")
+      break
+    case "close":
+      closeRequested()
+      break
+    case "up":
+      move(-1)
+      break
+    case "down":
+      move(1)
+      break
+    case "open":
+    case "reveal":
+      act(action)
+      break
+    case "expand":
+      expand()
+      break
+    case "play":
+      player.toggle(selectedItem)
+      break
+    case "copy":
+      act("copy")
+      break
+    default:
+      // Enter on an offline row and Ctrl Space off audio and video do nothing, and never reach the field.
+      var enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+      var ctrlSpace = event.key === Qt.Key_Space && (event.modifiers & Qt.ControlModifier)
+      if (!enter && !ctrlSpace) return
+    }
+    event.accepted = true
+  }
+
+  readonly property string selectedId: selectedItem ? selectedItem.id : ""
+  // Hit lines depend on the query, so a new seq asks again; the meaning leg of the same seq does not.
+  readonly property string previewKey: selectedId ? selectedId + "@" + shownSeq : ""
+
+  onSelectedIdChanged: {
+    player.select(selectedId || null)
+    if (preview && preview.id !== selectedId) preview = null
+  }
+  onPreviewKeyChanged: {
+    if (previewKey) previewTimer.restart()
+    else previewTimer.stop()
+  }
+
+  Connections {
+    target: root.service
+    function onResultsReceived(message) { root.received(message) }
+    function onPreviewReceived(message) {
+      if (root.selectedItem && message.id === root.selectedItem.id) {
+        root.preview = message
+        if (message.editor) root.editorCommand = message.editor
+      }
+    }
+    function onReadyChanged() {
+      if (root.service && root.service.ready) {
+        root.due("words-due")
+        root.due("meaning-due")
+      }
+    }
+  }
+
+  // The editor that `omarchy-launch-editor` starts, until a preview reports it.
+  FileView {
+    path: (Quickshell.env("HOME") || "") + "/.local/state/omarchy/defaults/editor"
+    printErrors: false
+    onLoaded: {
+      var first = text().split("\n")[0].trim().split(/\s+/)[0]
+      if (first) root.editorCommand = first
+    }
+  }
+
+  Timer {
+    id: wordsTimer
+    interval: SearchState.wordsDelay
+    onTriggered: root.due("words-due")
+  }
+
+  Timer {
+    id: meaningTimer
+    interval: SearchState.meaningDelay
+    onTriggered: root.due("meaning-due")
+  }
+
+  Timer {
+    id: previewTimer
+    interval: 60
+    onTriggered: {
+      if (root.selectedItem && root.service)
+        root.service.send({t: "preview", id: root.selectedItem.id, q: root.parsed.text})
+    }
+  }
+
+  Parts.Player {
+    id: player
+    videoOutput: pane.videoOutput
+  }
+
+  Parts.QueryRow {
+    id: query
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    prefix: root.parsed.prefix || ""
+    code: root.parsed.code
+    status: SearchState.status(root.search, root.reply).text
+    spinning: SearchState.status(root.search, root.reply).spinner
+    onTextChanged: root.typed(text)
+    onKeyPressed: event => root.handleKey(event)
+  }
+
+  Parts.Banner {
+    id: banner
+    anchors.top: query.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    visible: root.daemonDown || root.degradedReason !== "" || (!!root.reply && root.reply.t === "error")
+    height: visible ? implicitHeight : 0
+    lead: root.daemonDown ? "" : root.degradedReason !== "" ? "Semantic search unavailable:" : ""
+    text: root.daemonDown ? "omafindd is not running. Run systemctl --user start omafind, then retry."
+      : root.degradedReason !== "" ? root.degradedClause(root.degradedReason) + ". Showing keyword matches."
+      : root.reply && root.reply.reason ? String(root.reply.reason) : ""
+    onTriggered: {
+      if (root.daemonDown) {
+        if (root.service) {
+          root.service.checkUnit()
+          root.service.connectSocket()
+        }
+      } else if (root.degradedReason !== "") {
+        root.service.warm()
+      } else {
+        root.search = SearchState.reduce(root.search, {type: "typed", query: root.search.query, now: Date.now()}).state
+        meaningTimer.restart()
+      }
+    }
+  }
+
+  Rectangle {
+    id: separator
+    anchors.top: banner.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 1
+    color: Plugin.Tokens.sep
+  }
+
+  Item {
+    id: main
+    anchors.top: separator.bottom
+    anchors.bottom: footer.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+
+    Parts.EmptyState {
+      anchors.fill: parent
+      opacity: root.idle ? 1 : 0
+      visible: opacity > 0
+      Behavior on opacity { NumberAnimation { duration: 140 } }
+      onPrefixChosen: prefix => {
+        query.setText(prefix + " ")
+        root.focusQuery()
+      }
+    }
+
+    Item {
+      id: results
+      anchors.fill: parent
+      opacity: root.idle ? 0 : 1
+      visible: opacity > 0
+      Behavior on opacity {
+        SequentialAnimation {
+          PauseAnimation { duration: root.idle ? 0 : 30 }
+          NumberAnimation { duration: 140 }
+        }
+      }
+
+      Item {
+        id: listPane
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        width: Plugin.Tokens.listWidth
+
+        Parts.ResultList {
+          id: list
+          anchors.fill: parent
+          anchors.margins: Style.space(10)
+          rows: root.rows
+          selectedIndex: root.selectedIndex
+          onPicked: index => root.select(index)
+        }
+
+        Rectangle {
+          anchors.right: parent.right
+          width: 1
+          height: parent.height
+          color: Plugin.Tokens.sep
+        }
+      }
+
+      Parts.PreviewPane {
+        id: pane
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: listPane.right
+        anchors.right: parent.right
+        item: root.selectedItem
+        preview: root.preview
+        player: player
+        markers: root.markersFor(root.selectedItem)
+        editorName: root.editorName
+        flash: root.flash
+        onPrimaryClicked: root.act("open")
+        onSecondaryClicked: root.act(root.selectedItem && root.selectedItem.offline ? "copy" : "reveal")
+        onPlayClicked: if (root.selectedItem) player.toggle(root.selectedItem)
+      }
+    }
+  }
+
+  Parts.Footer {
+    id: footer
+    anchors.bottom: parent.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+
+    readonly property var idleFacts: root.service && root.service.status
+      ? Results.footerIdle({files: root.service.status.files || 0, roots: root.service.status.roots || 0,
+        offline: [], done: root.service.status.done || 0, total: root.service.status.total || 0}) : null
+
+    text: root.idle ? (idleFacts ? idleFacts.text : "")
+      : root.noText ? ""
+      : Results.footerLeft({reply: root.reply, query: root.search.query, prefix: root.parsed.prefix,
+        phase: root.reply ? root.search.phase : "words"})
+    offline: root.idle && root.service && root.service.status && root.service.status.offline
+      ? root.service.status.offline : []
+    progress: root.idle && idleFacts ? idleFacts.progress : null
+    hints: root.idle || !root.reply ? [{keys: ["Esc"], label: "close", dim: false}] : root.hintsFor(root.selectedRow)
+  }
+}

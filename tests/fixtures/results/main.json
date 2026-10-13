@@ -1,0 +1,653 @@
+{
+  "t": "results",
+  "seq": 7,
+  "legs": [
+    "words",
+    "meaning"
+  ],
+  "ms": {
+    "embed": 14,
+    "scan": 9,
+    "words": 4,
+    "total": 38
+  },
+  "total": 17,
+  "weaker": 3,
+  "degraded": null,
+  "items": [
+    {
+      "id": "image:1",
+      "kind": "image",
+      "path": "/home/u/Pictures/whiteboards/IMG_20261003_1742.jpg",
+      "name": "IMG_20261003_1742.jpg",
+      "dir": "/home/u/Pictures/whiteboards",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning",
+      "part": "image",
+      "z": 3.4,
+      "score": 7.4,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "image:2",
+      "kind": "image",
+      "path": "/home/u/Pictures/IMG_20261003_1744.jpg",
+      "name": "IMG_20261003_1744.jpg",
+      "dir": "/home/u/Pictures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning",
+      "part": "image",
+      "z": 3.4,
+      "score": 7.3,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "image:3",
+      "kind": "image",
+      "path": "/home/u/Pictures/Screenshot_2026-10-09.png",
+      "name": "Screenshot_2026-10-09.png",
+      "dir": "/home/u/Pictures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning",
+      "part": "image",
+      "z": 3.4,
+      "score": 7.2,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "image:4",
+      "kind": "image",
+      "path": "/home/u/Pictures/herd-router.png",
+      "name": "herd-router.png",
+      "dir": "/home/u/Pictures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning",
+      "part": "image",
+      "z": 3.4,
+      "score": 7.1,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "pdf:1",
+      "kind": "pdf",
+      "path": "/home/u/fixtures/Distributed Routing Notes.pdf",
+      "name": "Distributed Routing Notes.pdf",
+      "dir": "/home/u/fixtures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 12,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 7.0,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {
+        "pages": 412
+      }
+    },
+    {
+      "id": "pdf:2",
+      "kind": "pdf",
+      "path": "/home/u/Documents/scans/meeting-2026-10-03-scan.pdf",
+      "name": "meeting-2026-10-03-scan.pdf",
+      "dir": "/home/u/Documents/scans",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 2,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 6.9,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {
+        "pages": 412
+      }
+    },
+    {
+      "id": "text:1",
+      "kind": "text",
+      "path": "/home/u/fixtures/2026-10-09-herd-router-architecture.md",
+      "name": "2026-10-09-herd-router-architecture.md",
+      "dir": "/home/u/fixtures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 41,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 6.8,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "text:2",
+      "kind": "text",
+      "path": "/home/u/Documents/notes/whiteboard-transcribed.txt",
+      "name": "whiteboard-transcribed.txt",
+      "dir": "/home/u/Documents/notes",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 1,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 6.7,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "image:5",
+      "kind": "image",
+      "path": "/home/u/Pictures/whiteboard-detail.jpg",
+      "name": "whiteboard-detail.jpg",
+      "dir": "/home/u/Pictures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning",
+      "part": "image",
+      "z": 3.4,
+      "score": 6.6,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "text:3",
+      "kind": "text",
+      "path": "/home/u/Documents/routing-notes-3.txt",
+      "name": "routing-notes-3.txt",
+      "dir": "/home/u/Documents",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 41,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 6.5,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "text:4",
+      "kind": "text",
+      "path": "/home/u/Documents/routing-notes-4.txt",
+      "name": "routing-notes-4.txt",
+      "dir": "/home/u/Documents",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 41,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 6.4,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "text:5",
+      "kind": "text",
+      "path": "/home/u/Documents/routing-notes-5.txt",
+      "name": "routing-notes-5.txt",
+      "dir": "/home/u/Documents",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 41,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 6.3,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "text:6",
+      "kind": "text",
+      "path": "/home/u/Documents/routing-notes-6.txt",
+      "name": "routing-notes-6.txt",
+      "dir": "/home/u/Documents",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 41,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 6.2,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "text:7",
+      "kind": "text",
+      "path": "/home/u/Documents/routing-notes-7.txt",
+      "name": "routing-notes-7.txt",
+      "dir": "/home/u/Documents",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 41,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 6.1,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "image:6",
+      "kind": "image",
+      "path": "/home/u/fixtures/archived-whiteboard.jpg",
+      "name": "archived-whiteboard.jpg",
+      "dir": "/home/u/fixtures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning",
+      "part": "image",
+      "z": 3.4,
+      "score": 2.0,
+      "weak": true,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "pdf:3",
+      "kind": "pdf",
+      "path": "/home/u/fixtures/routing-draft.pdf",
+      "name": "routing-draft.pdf",
+      "dir": "/home/u/fixtures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 12,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 2.0,
+      "weak": true,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {
+        "pages": 412
+      }
+    },
+    {
+      "id": "text:8",
+      "kind": "text",
+      "path": "/home/u/fixtures/routing-old.txt",
+      "name": "routing-old.txt",
+      "dir": "/home/u/fixtures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 41,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 2.0,
+      "weak": true,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    }
+  ]
+}

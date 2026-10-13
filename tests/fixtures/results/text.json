@@ -1,0 +1,63 @@
+{
+  "t": "results",
+  "seq": 7,
+  "legs": [
+    "words",
+    "meaning"
+  ],
+  "ms": {
+    "embed": 14,
+    "scan": 9,
+    "words": 4,
+    "total": 38
+  },
+  "total": 1,
+  "weaker": 0,
+  "degraded": null,
+  "items": [
+    {
+      "id": "text:1",
+      "kind": "text",
+      "path": "/home/u/fixtures/2026-10-09-herd-router-architecture.md",
+      "name": "2026-10-09-herd-router-architecture.md",
+      "dir": "/home/u/fixtures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 41,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning + words",
+      "part": "text",
+      "z": 3.4,
+      "score": 7.4,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    }
+  ]
+}

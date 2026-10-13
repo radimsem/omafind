@@ -14,7 +14,7 @@ test('encoding escapes embedded newlines', () => {
 
 for (const line of ['', '   ', 'nope', '[1]', 'null', '1', 'true', '"text"',
   '{}', '{"t":"state","v":2}', '{"t":"state","v":"1"}']) {
-  test(`decode rejects invalid or unversioned rows: ${JSON.stringify(line)}`, () => {
+  test(`decode rejects invalid rows and other versions: ${JSON.stringify(line)}`, () => {
     assert.equal(load('Protocol.js').decode(line), null);
   });
 }
@@ -24,4 +24,9 @@ test('decode accepts a versioned state row', () => {
     '{"t":"state","v":1,"runtime":"ready","model":"missing","embedder":"text"}\n');
   assert.deepEqual(JSON.parse(JSON.stringify(reply)),
     { t: 'state', v: 1, runtime: 'ready', model: 'missing', embedder: 'text' });
+});
+
+test('decode accepts an unversioned results row', () => {
+  const reply = load('Protocol.js').decode('{"t":"results","seq":3,"items":[]}');
+  assert.deepEqual(JSON.parse(JSON.stringify(reply)), { t: 'results', seq: 3, items: [] });
 });

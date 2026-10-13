@@ -1,0 +1,114 @@
+import QtQuick
+import qs.Commons
+import ".." as Plugin
+
+// `.sp-f`: the count on the left and the keys for the selection on the right.
+// With no query it shows the index facts and indexing progress instead.
+Item {
+  id: root
+
+  property string text: ""
+  // Labels of offline drives, shown in yellow after `text` while idle.
+  property var offline: []
+  property var hints: []
+  property var progress: null
+
+  implicitHeight: Plugin.Tokens.footerHeight
+
+  Rectangle {
+    anchors.top: parent.top
+    width: parent.width
+    height: 1
+    color: Plugin.Tokens.sep
+  }
+
+  Text {
+    anchors.left: parent.left
+    anchors.leftMargin: Style.space(18)
+    anchors.right: right.left
+    anchors.rightMargin: Style.space(16)
+    anchors.verticalCenter: parent.verticalCenter
+    elide: Text.ElideRight
+    textFormat: Text.StyledText
+    text: {
+      var out = root.text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      for (var i = 0; i < root.offline.length; i++)
+        out += " · <font color=\"" + Plugin.Palette.yellow + "\">"
+          + String(root.offline[i]).replace(/&/g, "&amp;").replace(/</g, "&lt;") + " offline</font>"
+      return out
+    }
+    color: Plugin.Tokens.dim
+    font.family: Style.font.family
+    font.pixelSize: Style.font.bodySmall
+  }
+
+  Row {
+    id: right
+    anchors.right: parent.right
+    anchors.rightMargin: Style.space(18)
+    anchors.verticalCenter: parent.verticalCenter
+    spacing: Style.space(16)
+
+    Row {
+      visible: !!root.progress
+      spacing: Style.space(6)
+      anchors.verticalCenter: parent.verticalCenter
+
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.progress ? root.progress.text : ""
+        textFormat: Text.PlainText
+        color: Plugin.Tokens.dim
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+
+      Rectangle {
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(120)
+        height: Style.space(4)
+        color: Style.hoverFill
+        clip: true
+
+        Rectangle {
+          height: parent.height
+          width: parent.width * (root.progress ? Math.max(0, Math.min(1, root.progress.fraction)) : 0)
+          color: Color.accent
+          Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.Linear } }
+        }
+      }
+    }
+
+    Repeater {
+      model: root.hints
+
+      delegate: Row {
+        required property var modelData
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(6)
+        opacity: modelData.dim ? 0.4 : 1
+
+        Row {
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(4)
+          Repeater {
+            model: modelData.keys
+            delegate: KeyCap {
+              required property var modelData
+              text: modelData
+            }
+          }
+        }
+
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          text: modelData.label
+          textFormat: Text.PlainText
+          color: Plugin.Tokens.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+    }
+  }
+}
