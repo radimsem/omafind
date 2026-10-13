@@ -137,13 +137,33 @@ async def test_words_ranking_scope_and_identifier(repo, tmp_path):
         assert reply["items"][0]["snippet"]
         identifier = await searcher.search("code: retry_with_backoff", legs=["words"])
         assert [item["name"] for item in identifier["items"]] == ["both.py"]
-        assert identifier["items"][0]["score"] == 4
+        assert identifier["items"][0]["score"] == 5
         assert (await searcher.search("retry backoff"))["items"] == []
         both.write_text("PRIVATE KEY-----\nretry backoff")
         assert all(item["path"] != str(both) for item in
                    (await searcher.search("code: retry backoff", legs=["words"]))["items"])
     finally:
         store.close()
+
+
+async def test_identifier_prefers_definition_over_calls(repo, tmp_path):
+    from omafindd.code import index_code
+    from omafindd.search import Searcher
+
+    source = tracked(repo, "src/sessions.py", "def build_sessions():\n    return []\n")
+    caller = tracked(repo, "tests/test_build_sessions.py", "build_sessions()\n" * 3)
+    await index_code([repo], tmp_path / "index", FakeEmbedder())
+    searcher = Searcher([], FakeEmbedder(), code_directory=tmp_path / "index", code_roots=[repo])
+    result = await searcher.search("code: build_sessions")
+    assert [item["path"] for item in result["items"]] == [str(source), str(caller)]
+    defining, mentioning = result["items"]
+    assert defining["z"] < mentioning["z"]
+    assert defining["score"] == pytest.approx(4 + max(defining["z"], 0) * 0.5 + 1)
+    assert mentioning["score"] == pytest.approx(4 + max(mentioning["z"], 0) * 0.5)
+
+    plain = await searcher.search("code: build sessions", legs=["words"])
+    assert {item["path"] for item in plain["items"]} == {str(source), str(caller)}
+    assert [item["score"] for item in plain["items"]] == [2, 2]
 
 
 async def test_code_only_index_and_meaning(repo, tmp_path):
@@ -490,3 +510,28 @@ async def test_words_leg_skips_a_line_over_the_reader_limit(tmp_path):
     hits = await words_leg([tmp_path], ["retry", "backoff"], files)
     assert hits[str(small)]["words"] == {"retry", "backoff"}
     assert hits[str(huge)]["line"] == 2
+
+
+@pytest.mark.parametrize("name", ["run", "run$"])
+async def test_definitions_leg_matches_last_component_and_respects_scope(repo, tmp_path, name):
+    from omafindd.search_code import definitions_leg
+
+    keywords = "def class fn func function const let var type struct interface".split()
+    expected = {str(tracked(repo, f"{keyword}.py", f"{keyword} {name.upper()}()\n"))
+                for keyword in keywords}
+    huge = tracked(repo, "huge.py", f"def {name}(): " + "x" * (3 << 20) + "\n")
+    expected.add(str(huge))
+    excluded = {str(tracked(repo, path, body)) for path, body in [
+        ("longer.py", f"def {name}Extra(): pass\n"),
+        ("keyword.py", f"undef {name}(): pass\n"),
+        ("calls.py", f"{name}()\n"),
+        ("CERT.PEM", f"def {name}(): pass\n"),
+        ("ignored.py", f"def {name}(): pass\n"),
+    ]}
+    tracked(repo, ".gitignore", "ignored.py\n")
+    outside = tmp_path / "outside.py"
+    outside.write_text(f"def {name}(): pass\n")
+    excluded.add(str(outside))
+    tracked(repo, "unindexed.py", f"def {name}(): pass\n")
+    files = dict.fromkeys(expected | excluded)
+    assert await definitions_leg([repo], f"RetryPolicy.{name}()", files) == expected

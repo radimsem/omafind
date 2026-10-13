@@ -16,10 +16,15 @@ from .rules import SECRET_GLOBS
 from .search_text import snippet_parts
 
 
+def _definition_pattern(name: str) -> str:
+    name = re.split(r"\.|::|->|#", name.strip().removesuffix("()"))[-1]
+    return (r"\b(?:def|class|fn|func|function|const|let|var|type|struct|interface)\s+"
+            + re.escape(name) + r"(?:$|[^A-Za-z0-9_$])")
+
+
 def open_line(name: str, words: Sequence[str], text: str, first: int = 1) -> int | None:
     name = re.split(r"\.|::|->|#", name.strip().removesuffix("()"))[-1]
-    pattern = (r"\b(?:def|class|fn|func|function|const|let|var|type|struct|interface)\s+"
-               + re.escape(name) + r"(?:$|[^A-Za-z0-9_$])")
+    pattern = _definition_pattern(name)
     rows = text.replace("\r\n", "\n").split("\n")
     code = "\n".join(line if not line.strip().startswith(COMMENT_STARTS) else "" for line in rows)
     result = subprocess.run(["rg", "-n", "-m1", "-i", "-e", pattern], input=code,
@@ -102,6 +107,42 @@ async def words_leg(roots: Sequence[Path], words: Sequence[str], files: dict) ->
     return hits
 
 
+async def definitions_leg(roots: Sequence[Path], name: str | None, files: dict) -> set[str]:
+    if not roots or name is None:
+        return set()
+    args = ["rg", "-l", "-i", "-e", _definition_pattern(name)]
+    for glob in SECRET_GLOBS:
+        args.extend(["-g", f"!{glob}"])
+    args.extend(["--", *(str(root) for root in roots)])
+    hits = set()
+    with tempfile.TemporaryFile() as errors:
+        process = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=errors, limit=1 << 20,
+        )
+        try:
+            while True:
+                try:
+                    line = await process.stdout.readline()
+                except ValueError:
+                    continue
+                if not line:
+                    break
+                path = os.path.abspath(os.fsdecode(line.rstrip(b"\n")))
+                if path in files:
+                    hits.add(path)
+            if await process.wait() not in (0, 1):
+                errors.seek(0)
+                raise OSError(errors.read().decode(errors="replace").strip())
+        finally:
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
+    return hits
+
+
 def _marked(text: str, words: Sequence[str]) -> list[dict]:
     if words:
         pattern = "|".join(re.escape(word) for word in words)
@@ -129,10 +170,13 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
                      if any((store.mount / row["path"]).is_relative_to(root) for root in roots)}
             async def timed_words():
                 word_begun = time.monotonic()
-                hits = await words_leg(roots, words if "words" in legs else [], files)
-                return hits, (time.monotonic() - word_begun) * 1000
+                hits, definitions = await asyncio.gather(
+                    words_leg(roots, words if "words" in legs else [], files),
+                    definitions_leg(roots, q if named and "words" in legs else None, files),
+                )
+                return hits, definitions, (time.monotonic() - word_begun) * 1000
 
-            query_result, (hits, words_ms) = await asyncio.gather(
+            query_result, (hits, definitions, words_ms) = await asyncio.gather(
                 searcher._query(q, "meaning" in legs), timed_words(),
             )
             vector, reply["degraded"], embed_ms = query_result
@@ -177,7 +221,7 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
                 if segment is None:
                     continue
                 score = fused_score(z, coverage, lookup=named is not None or is_lookup(q),
-                                    hinted=False)
+                                    hinted=False) + int(filename in definitions)
                 item = {"id": f"code:{file['id']}:{segment['id']}", "kind": "code",
                         "path": filename, "name": live.name, "dir": str(live.parent),
                         "volume": "code", "label": "code", "offline": False,
@@ -223,7 +267,7 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
                         id=f"code:{segment['file']}:{segment['id']}",
                         loc=segment["loc"], loc_end=segment["loc_end"],
                         score=fused_score(z, coverage, lookup=named is not None or is_lookup(q),
-                                          hinted=False),
+                                          hinted=False) + int(item["path"] in definitions),
                         leg="meaning + words" if z >= 2 and hit else
                             "meaning" if z >= 2 else "words",
                         hits=[word for word in words if hit and word in hit["words"]],
