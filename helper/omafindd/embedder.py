@@ -21,6 +21,22 @@ Mode = Literal["text", "full"]
 Device = Literal["gpu", "cpu"]
 
 
+def loopback_url(url):
+    """Return url when it names a llama-server on this host's loopback, else None."""
+    if not url:
+        return None
+    try:
+        parsed = httpx.URL(url)
+        port = parsed.port
+    except (httpx.InvalidURL, ValueError):
+        return None
+    if parsed.scheme != "http" or parsed.host != "127.0.0.1" or port is None:
+        return None
+    if parsed.path not in ("", "/") or parsed.query or parsed.userinfo:
+        return None
+    return url
+
+
 class EmbeddingError(Exception):
     pass
 

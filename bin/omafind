@@ -354,12 +354,13 @@ def reindex(args, env, execve=os.execve):
             return 1
         return execve(str(python), [str(python), str(PLUGIN_ROOT / "bin/omafind"),
                                   "reindex", *args], env)
-    from omafindd.embedder import Embedder, EmbeddingError
+    from omafindd.embedder import Embedder, EmbeddingError, loopback_url
     from omafindd.embedding import Adapter
     from omafindd.indexing import reindex as index
 
     directory = Path(env.get("XDG_DATA_HOME") or Path(env["HOME"]) / ".local/share") / "omafind"
-    shared_url = env.get('OMAFIND_EMBED_URL') if parsed.incremental else None
+    # File text goes to this server, so only the daemon's loopback server is accepted.
+    shared_url = loopback_url(env.get('OMAFIND_EMBED_URL')) if parsed.incremental else None
     embedder = Adapter(Embedder(binary=directory / "runtime/bin/llama-server",
                                 model_dir=directory / "model", base_url=shared_url,
                                 api_key=env.get('OMAFIND_EMBED_KEY')))

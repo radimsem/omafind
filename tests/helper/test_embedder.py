@@ -519,3 +519,20 @@ async def test_lease_reuses_daemon_server_while_it_is_starting(memory_runtime, m
         await asyncio.gather(*tasks, return_exceptions=True)
         await service.release_indexer()
         await service.stop()
+
+
+@pytest.mark.parametrize('url', [
+    None, '', 'https://127.0.0.1:8080', 'http://example.com:8080', 'http://10.0.0.2:8080',
+    'http://127.0.0.1', 'http://localhost:8080', 'http://u:p@127.0.0.1:8080',
+    'http://127.0.0.1:8080/v1', 'http://127.0.0.1:8080?x=1', 'http://[::1]:8080', 'not a url',
+])
+def test_shared_server_url_must_be_loopback(url):
+    from omafindd.embedder import loopback_url
+
+    assert loopback_url(url) is None
+
+
+def test_shared_server_url_accepts_daemon_loopback():
+    from omafindd.embedder import loopback_url
+
+    assert loopback_url('http://127.0.0.1:42065') == 'http://127.0.0.1:42065'
