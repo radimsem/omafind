@@ -199,12 +199,10 @@ def read(path: Path) -> list[Piece]:
 class CodeStore:
     def __init__(self, path: Path):
         from .models import REVISION
-        from .store import RUNTIME_TAG, SCHEMA
+        from .store import RUNTIME_TAG, SCHEMA, create_private
 
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
-        os.close(descriptor)
-        path.chmod(0o600)
+        create_private(path)
         self.path, self.mount, self.volume, self.label = path, Path("/"), "code", "code"
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row

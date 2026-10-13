@@ -13,6 +13,8 @@ Item {
   property var byKey: ({})
   property var indexByKey: ({})
   property real contentHeight: 0
+  // Keys of files that landed while the list was open. Set before `rows` so they enter as fresh rows.
+  property var freshKeys: []
 
   signal picked(int index)
 
@@ -44,21 +46,25 @@ Item {
       var slot = slots.get(j)
       known[slot.key] = true
       if (place[slot.key] !== undefined) {
-        slots.set(j, {ty: place[slot.key], shown: true, delay: 0, leaving: false})
+        slots.set(j, {ty: place[slot.key], shown: true, delay: 0, leaving: false, slow: false})
       } else if (!slot.leaving) {
         slots.set(j, {ty: slot.ty + Style.space(8), shown: false, delay: 0, leaving: true})
       }
     }
     var arriving = 0
+    var appeared = false
     for (var k = 0; k < rows.length; k++) {
       var key = rows[k].key
       if (known[key]) continue
-      // Rows that appear start 10 px above their place and stagger by 20 ms.
-      slots.append({key: key, ty: place[key] - Style.space(10), target: place[key], shown: false,
-        delay: arriving * 20, leaving: false, fresh: true})
-      arriving += 1
+      // Rows that appear start 10 px above their place and stagger by 20 ms. A new file (M4)
+      // slides 18 px over 240 ms.
+      var landed = freshKeys.indexOf(key) >= 0
+      slots.append({key: key, ty: place[key] - Style.space(landed ? 18 : 10), target: place[key], shown: false,
+        delay: landed ? 0 : arriving * 20, leaving: false, fresh: true, slow: landed})
+      if (!landed) arriving += 1
+      appeared = true
     }
-    if (arriving) Qt.callLater(reveal)
+    if (appeared) Qt.callLater(reveal)
     if (rows.length !== slots.count) prune.restart()
     Qt.callLater(ensureVisible)
   }
@@ -136,6 +142,7 @@ Item {
         required property real ty
         required property bool shown
         required property int delay
+        required property bool slow
 
         readonly property var row: root.byKey[key] || null
         readonly property string type: row ? row.type : ""
@@ -150,13 +157,13 @@ Item {
         Behavior on y {
           SequentialAnimation {
             PauseAnimation { duration: slot.delay }
-            NumberAnimation { duration: 220; easing.type: Easing.BezierSpline; easing.bezierCurve: Plugin.Tokens.ease }
+            NumberAnimation { duration: slot.slow ? 240 : 220; easing.type: Easing.BezierSpline; easing.bezierCurve: Plugin.Tokens.ease }
           }
         }
         Behavior on opacity {
           SequentialAnimation {
             PauseAnimation { duration: slot.delay }
-            NumberAnimation { duration: 160 }
+            NumberAnimation { duration: slot.slow ? 240 : 160 }
           }
         }
 
@@ -172,6 +179,7 @@ Item {
           visible: slot.type === "item"
           row: slot.type === "item" ? slot.row : null
           selected: slot.key === root.selectedKey
+          fresh: root.freshKeys.indexOf(slot.key) >= 0
           onClicked: root.picked(slot.rowIndex)
         }
 

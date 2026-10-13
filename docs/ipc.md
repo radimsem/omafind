@@ -52,7 +52,20 @@ The daemon probes both files without blocking on each 0.5 s tick. When
 `index.want` is held, it stops its server and releases the shared lock. Reindex
 keeps `index.want` held through server shutdown and the end of the run, so the daemon stays
 words-only until indexing ends.
+Incremental reindexes that the daemon starts share its server instead. The daemon
+warms it in `full` mode, keeps its shared locks, and passes the server address to
+the child, which takes `index.lock` shared and never starts or stops a server.
+Searches keep the meaning leg during such a run, and the idle timeout waits for
+the child to exit. A standalone `omafind reindex` still waits for exclusive
+ownership as above.
 Words-only searches do not wait for server startup or embedding requests.
+When a meaning query needs a cold server, it starts warming in the background
+and replies immediately with `legs:["words"]` and
+`degraded:"the embedding server is starting"`, including requests for meaning
+only. This also applies while an explicit `warm` request is still starting the
+server, and after reindex releases its lock. A later identical query returns
+the requested legs once the server is warm. Startup failures still use
+`warm_failed.reason` for `warm`, or `results.degraded` for a query.
 After the `hello` reply, requests on one connection run concurrently. Search
 replies may arrive in any order; clients use `seq` to match them to requests.
 
@@ -70,11 +83,15 @@ whose `legs` include `meaning` supersedes words-only regardless of arrival order
 Results are flat in score order; grouping is client-side in #4.
 
 ```json
-{"t":"results","seq":7,"legs":["words","meaning"],"ms":{"embed":14,"scan":9,"words":4,"total":31},"total":17,"weaker":3,"degraded":null,"items":[{"id":"b81e:812:900","kind":"pdf","path":"/home/u/a.pdf","name":"a.pdf","dir":"/home/u","volume":"<uuid>","label":"root","offline":false,"loc":12,"loc_end":null,"open_line":null,"leg":"meaning + words","part":"text","z":3.4,"score":7.4,"weak":false,"hits":["invoice","4412"],"snippet":[{"t":"due on ","m":false},{"t":"invoice","m":true}],"thumb":null,"mtime":1760000000,"size":48211,"info":{}}]}
+{"t":"results","seq":7,"legs":["words","meaning"],"ms":{"embed":14,"scan":9,"words":4,"total":31},"total":17,"weaker":3,"degraded":null,"items":[{"id":"b81e:812:900","kind":"pdf","path":"/home/u/a.pdf","name":"a.pdf","dir":"/home/u","volume":"<uuid>","label":"root","drive":false,"offline":false,"loc":12,"loc_end":null,"open_line":null,"leg":"meaning + words","part":"text","z":3.4,"score":7.4,"weak":false,"hits":["invoice","4412"],"snippet":[{"t":"due on ","m":false},{"t":"invoice","m":true}],"thumb":null,"mtime":1760000000,"size":48211,"info":{}}]}
 ```
 
 `id` is opaque, resolved only against that connection's latest results.
-`offline` is false until #6; `open_line` is null until #3. `loc` is a 1-based
+`drive` is true for content volumes other than the volume holding `$HOME`.
+Drive items carry their stored `label` and a `dir` relative to the mount,
+prefixed by `/`, whether online or offline. Internal-volume items carry
+`drive:false` and an absolute `dir`. Online `path` remains the absolute file path.
+`offline` reflects the volume mount state; code results carry `open_line`. `loc` is a 1-based
 line or PDF page, or seconds for video and audio; images have a null location.
 `loc_end` is the next kept frame's second or the audio window's end second.
 Extracted HTML/docx/odt set `info.extracted:true`. `part` is `text`, `image`
@@ -142,7 +159,7 @@ Indexing runs in a separate CLI process. The daemon polls committed store counts
 every 0.5 seconds: `files` counts non-null `indexed_at`, `total` counts tracked
 files and `done` excludes pending files and partial files with no failure detail.
 With no queued work, `done` equals `total`. `roots` counts configured `roots`;
-`offline` stays empty until #6. No text is retained by previews; extracted text
+`offline` lists labels of unmounted content volumes. No text is retained by previews; extracted text
 temporaries are deleted after rendering. PDF/video images are cached under
 `$XDG_RUNTIME_DIR/omafind/preview/`, keyed by source path, mtime and page/second.
 Images are rendered to temporary paths and atomically published. Audio bars
@@ -216,7 +233,7 @@ daemon: {"t":"discover_result", ...body of bin/omafind discover --json}
            "index_bytes":17000000,"seconds":71}],
  "not_proposed":{"no_kind":["/home/u/Music"],"dot":212,"heavy":14,"dataset":2}}
 ```
-- `section` is `home` (XDG dir with at least one content file) or `elsewhere`. `checked` is true only for `home`.
+- `section` is `home` (XDG dir with at least one content file) or `elsewhere`. `checked` is true for `home` and for every candidate of a volume scan.
 - Discovery never has user excludes, so the Documents sample is the board's state before `tax/2024` is left out: kept 838 (745, 67, 26), left out 61 (58 generated, 0 no-kind, 3 secrets). After the user exclude the client ledger gives 793 (731, 45, 17), and the step 2 total goes from 1,254 to 1,209 (MotionSetup `TOT`).
 - `excludes` is the pre-applied exclude list for that root (proposed `generated` and `no-kind` paths). `left_out` lists entries in order: excludes in list order, then the `secrets` entry (path `"**"`) last when it has any match. `found - sum(left_out[].files) == kept` always holds.
 - `index_bytes` and `seconds` estimate the kept files at `device` rates (section A1.4). `rates` lets the client recompute estimates for any counts.
@@ -265,9 +282,88 @@ idempotent script. Download pause leaves `.part` files for HTTP Range resume.
 The daemon refuses to build without a systemd user memory scope.
 
 Indexing runs as a `bin/omafind reindex --incremental` child in a new session.
-The daemon holds no index lock and reads committed store counts every 0.5 s.
+The daemon reads committed store counts every 0.5 s.
 The child logs to `<data>/index/reindex.log` (0600, replaced for each run), writes
 skip counts to `run.json`, and is terminated when the daemon stops. Code stores
 are excluded from setup kind counts. `status` retains the issue #4 footer shape.
 
 Later issues append their messages here.
+
+## Volumes, freshness and disk (issue #6)
+
+After hello, the daemon sends state, then one `volume` for each online unknown,
+non-ignored drive, then `paused` if disk indexing is paused. Known drives are
+never replayed. Mount changes are broadcast to all ready clients. Labels fall
+back to the mount basename, then the UUID. `size` is bytes; `fs` is the filesystem
+name from lsblk. Offline mounts are null.
+
+```json
+{"t":"volume","uuid":"6BFF-B220","label":"Photos2024","fs":"exfat","size":1800000000000,"mount":"/run/media/u/Photos2024","online":true,"known":false}
+{"t":"drive_decision","uuid":"6BFF-B220","choice":"scan"}
+{"t":"drive_decision","uuid":"6BFF-B220","choice":"ignore"}
+{"t":"reconcile","uuid":"6BFF-B220","label":"Photos2024","done":120,"total":900}
+{"t":"paused","reason":"disk","free_gb":1.4,"need_gb":2}
+{"t":"resumed"}
+```
+
+`drive_decision` is a plugin request with `choice:"scan"|"ignore"`. The daemon
+replies once with the same three fields. Scan leaves discovery to the dialog;
+ignore suppresses further announcements for this session. The client persists
+`ignoredVolumes`, an array of non-empty filesystem UUID strings, default `[]`.
+The daemon rereads that setting; it does not write shell.json.
+
+A returning known drive gets `volume` with `known:true`, followed by size/mtime
+reconciliation. `reconcile` is pushed at most twice per second, plus a final
+snapshot with `done == total`. An unplugged known drive gets `online:false` and
+`mount:null`, followed by a fresh status. Internal roots use watchdog and a two
+second directory coalescing window. Removable drives reconcile on mount.
+
+Disk free space is checked every 30 seconds and before every indexing kick;
+the child checks it before each batch. Below 2,000,000,000 bytes it pauses;
+at or above the threshold it resumes. `free_gb` is decimal GB rounded to one
+place. Paused and unverified-model kicks do not start a child. Changes arriving
+while a child runs are deferred and processed after it exits.
+
+```json
+{"t":"discover_start","volume":"6BFF-B220"}
+{"t":"discover_result","volume":"6BFF-B220","scan":{"roots":["/run/media/u/Photos2024"],"seconds":0.8,"dirs":100,"volumes":1,"scanned_at":1760000000},"candidates":[],"not_proposed":{"no_kind":[],"dot":0,"heavy":0,"dataset":1,"datasets":[{"path":"/run/media/u/Photos2024/dataset","files":41880,"match":[41880,41880]}]}}
+{"t":"index_start","volume":"6BFF-B220"}
+{"t":"progress","running":true,"done":612,"queued":597,"volume":"6BFF-B220","volumes":{"6BFF-B220":{"label":"Photos2024","done":612,"total":1209}},"device":null,"vram_gb":null,"kinds":{"text":{"done":612,"total":1209},"pdf":{"done":0,"total":0,"pages":0},"image":{"done":0,"total":0,"ocr":0},"video":{"done":0,"total":0},"audio":{"done":0,"total":0}},"skipped":{},"failed":{},"problems":[]}
+{"t":"status","files":3880,"roots":4,"offline":["Photos2024"],"done":1204,"total":1209}
+```
+
+`discover_result` retains all issue #5 fields and echoes `volume`, null for an
+unscoped request. Every candidate from a volume scan has `checked:true`.
+`scan.roots[0]` is the drive mount. `not_proposed.datasets` lists absolute paths,
+file counts and `[machine_named,total]` evidence; `dataset` remains the count of
+excluded folders. The abbreviated discovery example above omits home, device,
+rates and repos, whose shapes remain as in issue #5.
+
+`index_start.volume` is optional and selects `reindex --incremental --volume
+<uuid>`; omission runs all configured volumes. `progress.volumes` holds one
+`{label,done,total}` object per content store keyed by UUID. Code stores remain
+excluded from these counts. Progress and status are pushed while counts advance
+and on child exit, so the indexed footer and open list follow watcher updates.
+`status.offline` lists stored labels for known content volumes absent from the
+current mounts; status still includes code in its file counts.
+
+Offline stores stay searchable, including meaning search when the verified
+model is ready. Their items retain the cached thumbnail and carry these fields:
+
+```json
+{"offline":true,"drive":true,"label":"Photos2024","volume":"6BFF-B220","path":"/run/media/u/Photos2024/docs/note.txt","dir":"/docs"}
+```
+
+`path` is last mount plus stored relative path; drive `dir` is the relative
+parent prefixed by `/`. Online drive items use their current mount for `path`
+and keep the same relative `dir`. Internal-volume `dir` stays absolute.
+Mount aliases in health.json rebase configured roots and absolute excludes at
+read time before DB mount metadata advances, including child settings reads.
+
+If `state.model` is not `ready`, every search uses `legs:["words"]` and
+`degraded:"embedding model failed verification"`, including meaning-only
+requests. Startup verifies
+both model sizes and digests, checks volume DBs with `PRAGMA quick_check`,
+quarantines corrupt stores as `<uuid>.sqlite.bad`, and reconciles online roots
+when recovery is needed. health.json records verification, recovery and rebuild
+facts for `omafind status --json`.

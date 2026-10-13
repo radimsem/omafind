@@ -6,8 +6,6 @@ import subprocess
 import time
 from pathlib import Path
 
-import numpy as np
-
 from .models import REVISION
 from .search_text import normalized
 
@@ -112,6 +110,39 @@ def _mount_target(path: Path, fields: list[str]) -> Path:
     return mount
 
 
+def quick_check(path: Path) -> bool:
+    try:
+        db = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+        try:
+            return [row[0] for row in db.execute('PRAGMA quick_check')] == ['ok']
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return False
+
+
+def create_private(path: Path):
+    """Create the database file as 0600 if it is missing.
+
+    Closing any descriptor on an open SQLite file drops every POSIX lock this
+    process holds on it, so an existing file is never opened outside SQLite.
+    """
+    try:
+        os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600))
+    except FileExistsError:
+        pass
+    path.chmod(0o600)
+
+
+def quarantine(path: Path) -> Path:
+    bad = path.with_name(path.name + '.bad')
+    path.replace(bad)
+    bad.chmod(0o600)
+    for suffix in ('-wal', '-shm'):
+        path.with_name(path.name + suffix).unlink(missing_ok=True)
+    return bad
+
+
 class Store:
     def __init__(
         self,
@@ -124,11 +155,10 @@ class Store:
         runtime_tag: str = RUNTIME_TAG,
     ):
         self.path, self.volume, self.mount, self.label = path, volume, mount, label
+        self.last_mount, self.online = mount, True
         path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
         path.parent.chmod(0o700)
-        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
-        os.close(descriptor)
-        path.chmod(0o600)
+        create_private(path)
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -155,6 +185,7 @@ class Store:
                     ("runtime_tag", runtime_tag),
                     ("volume_uuid", volume),
                     ("volume_label", label),
+                    ("volume_mount", str(mount)),
                 ],
             )
 
@@ -193,6 +224,8 @@ class Store:
 
     def write(self, file: int, segments, vectors, *, state: str, info: dict, append=False,
               ocr_text="", detail=None):
+        import numpy as np
+
         if len(segments) != len(vectors):
             raise ValueError("embedding precision fault")
         if not info.get("thumb"):
@@ -261,11 +294,14 @@ class Store:
     def open_existing(cls, path: Path, mount: Path):
         store = cls.__new__(cls)
         store.path, store.mount = path, mount
-        store.db = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
+        # WAL readers need write access to rebuild the wal-index after a writer exits.
+        store.db = sqlite3.connect(path.absolute().as_uri() + "?mode=rw", uri=True, timeout=5)
         try:
             store.db.row_factory = sqlite3.Row
             meta = dict(store.db.execute("SELECT key,value FROM meta"))
             store.volume, store.label = meta["volume_uuid"], meta["volume_label"]
+            store.last_mount = Path(meta['volume_mount']) if meta.get('volume_mount') else None
+            store.online = True
         except BaseException:
             store.close()
             raise

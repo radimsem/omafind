@@ -9,8 +9,10 @@ from pathlib import Path
 
 from .code import index_code
 from .crawler import crawl
+from .diskguard import DiskGuard, wait_for_space
 from .jobs import Jobs
-from .store import Store, volume_for
+from .store import Store, mounted_volumes, volume_for
+from .volumes import is_drive, lsblk, parse_lsblk, remap_root
 
 
 async def reindex(
@@ -24,6 +26,8 @@ async def reindex(
     settings=None,
     code_roots: Sequence[Path] = (),
     force=True,
+    label_resolver=None,
+    pause=None,
 ):
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     directory.chmod(0o700)
@@ -34,24 +38,63 @@ async def reindex(
     intent = os.open(directory / "index.want", os.O_CREAT | os.O_RDWR, 0o600)
     with os.fdopen(descriptor, "w") as lock, os.fdopen(intent, "w") as want:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # A daemon client shares server ownership; standalone runs own it exclusively.
+            mode = fcntl.LOCK_SH if getattr(embedder, 'shared', False) else fcntl.LOCK_EX
+            fcntl.flock(lock, mode | fcntl.LOCK_NB)
         except BlockingIOError:
             print("waiting index.lock", file=sys.stderr)
             fcntl.flock(want, fcntl.LOCK_EX)
             fcntl.flock(lock, fcntl.LOCK_EX)
         try:
-            groups, mounts = defaultdict(list), {}
+            groups, mounts = defaultdict(list), mounted_volumes()
+            last_mounts, labels = {}, {}
             for root in roots:
                 path = Path(root["path"]).expanduser().absolute()
-                uuid, mount = volume_resolver(path)
-                if volume is None or uuid == volume:
-                    groups[uuid].append(dict(root, path=str(path)))
+                uuid = root.get('volume')
+                if uuid:
+                    if volume is not None and uuid != volume:
+                        continue
+                    if uuid not in mounts:
+                        continue
+                else:
+                    try:
+                        uuid, mount = volume_resolver(path)
+                    except FileNotFoundError:
+                        continue
                     mounts[uuid] = mount
-            if volume is not None and not groups:
-                raise ValueError(f"No selected root is on volume {volume}")
+                if volume is None or uuid == volume:
+                    db_path = directory / 'index' / f'{uuid}.sqlite'
+                    if uuid not in labels and db_path.exists():
+                        existing = Store.open_existing(db_path, mounts[uuid])
+                        try:
+                            labels[uuid] = existing.label
+                            if existing.last_mount is not None:
+                                last_mounts[uuid] = existing.last_mount
+                        finally:
+                            existing.close()
+                    mapped = remap_root(
+                        dict(root, path=str(path), volume=uuid), mounts, last_mounts)
+                    if mapped is not None:
+                        groups[uuid].append(mapped)
+            if label_resolver is None:
+                facts = parse_lsblk(lsblk()) if groups else {}
+
+                def label_resolver(uuid):
+                    fact = facts.get(uuid)
+                    if fact is not None:
+                        return fact.label if is_drive(fact) else 'root'
+                    return labels.get(uuid, 'root')
+
+            if pause is None:
+                guard = DiskGuard(directory)
+
+                async def pause():
+                    await wait_for_space(guard)
+
             for uuid, selected in groups.items():
                 store = Store(
-                    directory / "index" / f"{uuid}.sqlite", volume=uuid, mount=mounts[uuid]
+                    directory / "index" / f"{uuid}.sqlite", volume=uuid, mount=mounts[uuid],
+                    label=label_resolver(uuid)
                 )
                 stores.append(store)
                 crawl(store, selected, force=force, skipped=skipped)
@@ -65,7 +108,8 @@ async def reindex(
                            "skipped": dict(skipped)}, stream)
             temporary.replace(index_dir / "run.json")
             for store in stores:
-                jobs = Jobs(store, embedder, journal=directory / "journal", settings=settings)
+                jobs = Jobs(store, embedder, journal=directory / "journal", settings=settings,
+                            pause=pause)
                 await jobs.drain(progress=progress or _progress)
             if code_roots:
                 await index_code(code_roots, directory / "index", embedder)

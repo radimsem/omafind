@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
     "numpy>=2.2",
+    "watchdog>=6.0",
 ]
 
 [build-system]

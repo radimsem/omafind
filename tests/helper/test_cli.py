@@ -72,7 +72,8 @@ def test_status_exit_codes_and_json(cli, env, capsys, enabled, active, answers, 
         "runtime": {"path": str(Path(env["XDG_DATA_HOME"]) / "omafind/runtime/bin/llama-server"),
                     "present": False},
         "model": {"path": str(Path(env["XDG_DATA_HOME"]) / "omafind/model"),
-                  "files": dict.fromkeys(MODEL_NAMES, False)},
+                  "files": dict.fromkeys(MODEL_NAMES, False), "verified": False},
+        "volumes": [], "queue": 0, "permissions": [], "problems": [], "recovery": {},
     }
 
 
@@ -209,7 +210,7 @@ def test_status_reports_runtime_and_each_model_presence(cli, env, capsys):
     directory.mkdir()
     (directory / MODEL_NAMES[0]).touch()
     assert cli.main(["status"], env, run=FakeRun(), probe=lambda path, timeout: True) == 0
-    assert capsys.readouterr().out.splitlines() == [
+    assert capsys.readouterr().out.splitlines()[:7] == [
         "unit enabled", "unit active", "socket answering", "runtime ready", "model missing",
         f"model {MODEL_NAMES[0]} ready", f"model {MODEL_NAMES[1]} missing",
     ]
@@ -367,8 +368,32 @@ def test_reindex_incremental_passes_force_false(cli, env, monkeypatch):
         calls.append(kwargs)
 
     monkeypatch.setattr(indexing, 'reindex', index)
-    assert cli.main(['reindex', '--incremental'], env) == 0
+    assert cli.main(['reindex', '--incremental', '--volume', 'u'], env) == 0
     assert calls[0]['force'] is False
+    assert calls[0]['volume'] == 'u'
+
+
+@pytest.mark.parametrize('incremental,shared', [(True, True), (True, False), (False, False)])
+def test_reindex_uses_shared_client_only_for_daemon_incremental(
+        cli, env, monkeypatch, incremental, shared):
+    from omafindd import indexing
+    from omafindd.settings import Settings
+
+    python = Path(env['HOME']) / '.local/share/omafind/venv/bin/python'
+    monkeypatch.setattr(sys, 'prefix', str(python.parent.parent))
+    monkeypatch.setattr('omafindd.settings.load', lambda p: Settings(
+        roots=[{'path': '/docs', 'volume': 'u', 'excludes': []}]))
+    if shared or not incremental:
+        env.update(OMAFIND_EMBED_URL='http://127.0.0.1:1234', OMAFIND_EMBED_KEY='fixture-key')
+    clients = []
+
+    async def index(roots, **kwargs):
+        clients.append(kwargs['embedder'])
+
+    monkeypatch.setattr(indexing, 'reindex', index)
+    args = ['reindex', '--volume', 'u', *(['--incremental'] if incremental else [])]
+    assert cli.main(args, env) == 0
+    assert clients[0].shared is shared
 
 
 def test_discover_reexecs_into_installed_interpreter(cli, env):
@@ -397,4 +422,60 @@ def test_discovery_modules_import_with_only_stdlib(env):
                              'from omafindd import discovery, leftout, selection, rules',
                              str(ROOT / 'helper')],
                             env=env, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+
+
+def test_status_volumes_queue_and_health_are_read_only(cli, env, capsys):
+    import sqlite3
+
+    data = Path(env['XDG_DATA_HOME']) / 'omafind'
+    index = data / 'index'
+    index.mkdir(parents=True)
+    for uuid, label in (('u', 'Photos2024'), ('v', 'Backup'), ('code', 'code')):
+        with sqlite3.connect(index / f'{uuid}.sqlite') as db:
+            db.execute('CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)')
+            db.execute("INSERT INTO meta VALUES('volume_label', ?)", (label,))
+            db.execute('CREATE TABLE files(state TEXT, indexed_at REAL, detail TEXT)')
+            db.executemany('INSERT INTO files VALUES(?, ?, ?)',
+                           [('done', 1, None), ('partial', 2, None), ('pending', None, None),
+                            ('partial', 3, 'permanent partial')])
+    body = {'model': {'verified': True}, 'recovery': {'mode': 'reconcile'},
+            'problems': [{'volume': 'v', 'problem': 'integrity', 'action': 'rebuilt'}]}
+    (index / 'health.json').write_text(json.dumps(body))
+    original = FakeRun()
+
+    def run(command, **kwargs):
+        if command == ['findmnt', '-rno', 'UUID']:
+            return subprocess.CompletedProcess(command, 0, 'u\nu\n', '')
+        return original(command, **kwargs)
+
+    assert cli.main(['status', '--json'], env, run=run,
+                    probe=lambda path, timeout: True) == 0
+    details = json.loads(capsys.readouterr().out)
+    assert details['volumes'] == [
+        {'uuid': 'u', 'label': 'Photos2024', 'files': 3, 'online': True},
+        {'uuid': 'v', 'label': 'Backup', 'files': 3, 'online': False}]
+    assert details['queue'] == 4
+    assert details['model']['verified'] is True
+    assert details['recovery'] == body['recovery']
+    assert details['problems'] == body['problems']
+    assert cli.main(['status'], env, run=run, probe=lambda path, timeout: True) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert 'volume Photos2024 3 online' in lines
+    assert 'volume Backup 3 offline' in lines
+    assert 'queue 4' in lines
+    assert 'recovery reconcile' in lines
+    assert 'problem v integrity rebuilt' in lines
+
+
+def test_status_modules_need_only_stdlib(env):
+    result = subprocess.run([sys.executable, '-S', '-c',
+                             'import runpy, sys; m = runpy.run_path(sys.argv[1]); '
+                             'm["_index_status"](__import__("os").environ, '
+                             'lambda *a, **k: __import__("subprocess").'
+                             'CompletedProcess(a, 0, "", "")); '
+                             'assert not any(n in sys.modules for n in '
+                             '("omafindd.store", "omafindd.models", "numpy", "httpx"))',
+                             str(ROOT / 'bin/omafind')],
+                            env=env, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

@@ -43,7 +43,7 @@ Item {
   function folder(value) {
     var dir = value.dir || ""
     var home = Quickshell.env("HOME") || ""
-    if (value.offline && value.label) return value.label + " · " + dir
+    if ((value.offline || value.drive) && value.label) return value.label + " · " + dir
     if (home && (dir === home || dir.indexOf(home + "/") === 0)) return "~" + dir.slice(home.length)
     return dir
   }

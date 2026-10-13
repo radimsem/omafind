@@ -1,0 +1,62 @@
+{
+   "blockdevices": [
+      {
+         "name": "sda",
+         "uuid": null,
+         "label": null,
+         "fstype": null,
+         "size": "894.3G",
+         "rm": false,
+         "hotplug": false,
+         "mountpoints": [],
+         "children": [
+            {
+               "name": "sda1",
+               "uuid": "A7E1-3FC1",
+               "label": null,
+               "fstype": "vfat",
+               "size": "2G",
+               "rm": false,
+               "hotplug": false,
+               "mountpoints": [
+                   "/boot"
+               ]
+            },{
+               "name": "sda2",
+               "uuid": "4a71e4db-c0cc-4577-82ac-889b43f5ff67",
+               "label": null,
+               "fstype": "crypto_LUKS",
+               "size": "892.3G",
+               "rm": false,
+               "hotplug": false,
+               "mountpoints": [],
+               "children": [
+                  {
+                     "name": "root",
+                     "uuid": "44f71d06-fee5-4932-97a3-55af7d7d5ad0",
+                     "label": null,
+                     "fstype": "btrfs",
+                     "size": "892.2G",
+                     "rm": false,
+                     "hotplug": false,
+                     "mountpoints": [
+                         "/var/log", "/home", "/var/cache/pacman/pkg", "/"
+                     ]
+                  }
+               ]
+            }
+         ]
+      },{
+         "name": "zram0",
+         "uuid": "baa3d2e5-64c6-407b-be79-5e3d338c31d4",
+         "label": "zram0",
+         "fstype": "swap",
+         "size": "31.1G",
+         "rm": false,
+         "hotplug": false,
+         "mountpoints": [
+             "[SWAP]"
+         ]
+      }
+   ]
+}

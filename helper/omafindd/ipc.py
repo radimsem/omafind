@@ -11,7 +11,7 @@ from contextlib import closing
 from pathlib import Path
 from threading import Lock
 
-from . import opener, preview
+from . import opener
 from .state import State
 
 PROTOCOL_VERSION = 1
@@ -34,6 +34,7 @@ class IpcServer:
         self.path = path
         self.service = service
         self.setup = setup
+        self.replay = lambda: []
         self._results = {}
         self._jumps = {}
         self._previews = {}
@@ -129,6 +130,8 @@ class IpcServer:
                     if type(version) is not int or version != PROTOCOL_VERSION:
                         return
                     await self._send(writer, self.state.message())
+                    for event in self.replay():
+                        await self._send(writer, event)
                     self._ready.add(writer)
                 elif (message.get("t") in ("search", "warm", "preview", "open", "status")
                       or (self.setup is not None and message.get("t") in self.setup.TYPES)) \
@@ -215,6 +218,8 @@ class IpcServer:
         item_id = message.get("id")
         item = self.resolve(writer, item_id)
         if message["t"] == "preview":
+            from . import preview
+
             if item is None or (not item.get("offline") and not Path(item["path"]).is_file()):
                 return {"t": "error", "id": item_id, "code": "missing", "reason": "File is missing"}
             query = message.get("q", "")
@@ -267,7 +272,14 @@ class IpcServer:
         if self.service is not None and hasattr(self.service, "directory"):
             roots = len(self.service.settings().roots)
             stores = sorted(self.service.directory.glob("*.sqlite"))
-        signature = []
+        mounts = {}
+        if self.service is not None:
+            if hasattr(self.service, "current_mounts"):
+                mounts = self.service.current_mounts()
+            elif hasattr(self.service, "mounts_resolver"):
+                mounts = self.service.mounts_resolver()
+        signature = [tuple(sorted((uuid, str(mount)) for uuid, mount in mounts.items()))]
+        offline = []
         for path in stores:
             for source in (path, Path(str(path) + "-wal")):
                 try:
@@ -285,6 +297,13 @@ class IpcServer:
                         "SELECT count(*),count(indexed_at),sum(state='pending' OR "
                         "(state='partial' AND detail IS NULL)) FROM files"
                     ).fetchone()
+                    if path.name != "code.sqlite":
+                        try:
+                            meta = dict(db.execute("SELECT key,value FROM meta"))
+                        except sqlite3.Error:
+                            meta = {}
+                        if meta.get("volume_uuid") and meta["volume_uuid"] not in mounts:
+                            offline.append(meta.get("volume_label", path.stem))
             except sqlite3.Error:
                 failed = True
                 continue
@@ -293,14 +312,14 @@ class IpcServer:
             done += count - (pending or 0)
         # A store that failed to read is retried on the next tick.
         self._status_signature = None if failed else signature
-        self._status_cached = {"t": "status", "files": files, "roots": roots, "offline": [],
+        self._status_cached = {"t": "status", "files": files, "roots": roots, "offline": offline,
                                "done": done, "total": total}
         return self._status_cached
 
-    async def push_status(self, *, now=None):
+    async def push_status(self, *, now=None, force=False):
         message = await asyncio.to_thread(self.status_message)
         now = time.monotonic() if now is None else now
-        if message == self._status or now - self._status_at < .5:
+        if not force and (message == self._status or now - self._status_at < .5):
             return
         await self.broadcast(message)
         self._status, self._status_at = message, now
@@ -309,8 +328,8 @@ class IpcServer:
         while True:
             if self._ready:
                 await self.push_status()
-                if self.setup is not None:
-                    await self.setup.poll()
+            if self.setup is not None:
+                await self.setup.poll()
             await asyncio.sleep(.5)
 
     async def _send(self, writer, message: dict) -> None:

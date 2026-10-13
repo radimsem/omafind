@@ -7,6 +7,7 @@ import "ui" as Parts
 import "lib/keys.js" as KeyMap
 import "lib/results.js" as Results
 import "lib/searchState.js" as SearchState
+import "lib/volumes.js" as Volumes
 
 // The search overlay body: query row, banner, result list, preview and footer.
 Item {
@@ -24,6 +25,11 @@ Item {
   property var pending: null
   property string flash: ""
   property string editorCommand: "nvim"
+  // M4: keys of files that landed while the list was open, marked for 2.8 s.
+  property var freshKeys: []
+  // The search sent again by refresh(): its seq, the items before it and the indexed count then.
+  property var refreshFrom: null
+  property int lastFiles: -1
 
   readonly property var parsed: SearchState.parse(search.query)
   readonly property bool idle: search.query.trim() === ""
@@ -58,6 +64,9 @@ Item {
     expanded = false
     userMoved = false
     shownSeq = -1
+    freshTimer.stop()
+    freshKeys = []
+    refreshFrom = null
     preview = null
     search = SearchState.initial()
     rows = []
@@ -108,14 +117,35 @@ Item {
     var next = SearchState.reduce(search, {type: "reply", reply: message})
     var changed = next.state.reply !== search.reply
     search = next.state
+    if (changed && refreshFrom && message.seq === refreshFrom.seq && message.items) {
+      var files = service && service.status ? service.status.files || 0 : refreshFrom.files
+      var keys = Volumes.freshKeys(refreshFrom.items, message.items, refreshFrom.files, files)
+      if (keys.length) {
+        freshKeys = keys
+        freshTimer.restart()
+      }
+    }
     if (changed) regroup()
+  }
+
+  // Sends the current query again without clearing the list, after new files land or a drive
+  // reconciles. The reply re-ranks the rows in place.
+  function refresh(files) {
+    if (noText || !service) return
+    var next = SearchState.reduce(search, {type: "typed", query: search.query, now: Date.now() - SearchState.meaningDelay})
+    next.state.phase = search.phase
+    next.state.reply = search.reply
+    refreshFrom = {seq: next.state.seq, items: reply && reply.items ? reply.items : [], files: files}
+    search = next.state
+    due("meaning-due")
   }
 
   function regroup() {
     var result = reply && reply.items ? Results.group(reply.items, {expanded: expanded}).rows : []
     var index = -1
     var sameSet = reply && reply.seq === shownSeq
-    if (sameSet && (userMoved || expanded)) index = Results.selectionAfterRegroup(rows, selectedIndex, result)
+    var refreshed = !!reply && !!refreshFrom && reply.seq === refreshFrom.seq
+    if ((sameSet || refreshed) && (userMoved || expanded)) index = Results.selectionAfterRegroup(rows, selectedIndex, result)
     else index = Results.firstSelection(result)
     shownSeq = reply ? reply.seq : -1
     rows = result
@@ -171,6 +201,7 @@ Item {
   function folder(item) {
     var path = item.dir || ""
     var home = Quickshell.env("HOME") || ""
+    if ((item.offline || item.drive) && item.label) return item.label + " · " + path
     if (home && (path === home || path.indexOf(home + "/") === 0)) return "~" + path.slice(home.length)
     return path
   }
@@ -261,6 +292,7 @@ Item {
 
   Connections {
     target: root.service
+    ignoreUnknownSignals: true
     function onResultsReceived(message) { root.received(message) }
     function onPreviewReceived(message) {
       if (root.selectedItem && message.id === root.selectedItem.id) {
@@ -268,6 +300,13 @@ Item {
         if (message.editor) root.editorCommand = message.editor
       }
     }
+    function onStatusReceived(message) {
+      var files = typeof message.files === "number" ? message.files : -1
+      var before = root.lastFiles
+      root.lastFiles = files
+      if (before >= 0 && files > before) root.refresh(before)
+    }
+    function onVolumesRefreshed() { root.refresh(root.lastFiles) }
     function onReadyChanged() {
       if (root.service && root.service.ready) {
         root.due("words-due")
@@ -296,6 +335,12 @@ Item {
     id: meaningTimer
     interval: SearchState.meaningDelay
     onTriggered: root.due("meaning-due")
+  }
+
+  Timer {
+    id: freshTimer
+    interval: 2800
+    onTriggered: root.freshKeys = []
   }
 
   Timer {
@@ -351,9 +396,24 @@ Item {
     }
   }
 
+  // Spec 6.5: indexing waits for disk space. The banner has no action; it clears on `resumed`.
+  Parts.Banner {
+    id: diskBanner
+    readonly property var info: root.service && root.service.volumes ? Volumes.diskBanner(root.service.volumes) : null
+    anchors.top: banner.bottom
+    anchors.left: parent.left
+    anchors.right: parent.right
+    visible: !!info
+    height: visible ? implicitHeight : 0
+    lead: info ? info.title : ""
+    tokens: info ? info.tokens.map(t => ({k: t.k, v: t.v, tone: "plain"})) : []
+    text: info ? info.text : ""
+    action: ""
+  }
+
   Rectangle {
     id: separator
-    anchors.top: banner.bottom
+    anchors.top: diskBanner.bottom
     anchors.left: parent.left
     anchors.right: parent.right
     height: 1
@@ -401,6 +461,7 @@ Item {
           id: list
           anchors.fill: parent
           anchors.margins: Style.space(10)
+          freshKeys: root.freshKeys
           rows: root.rows
           selectedIndex: root.selectedIndex
           onPicked: index => root.select(index)
@@ -450,6 +511,9 @@ Item {
     offline: root.idle && root.service && root.service.status && root.service.status.offline
       ? root.service.status.offline : []
     progress: root.idle && idleFacts ? idleFacts.progress : null
+    indexed: !root.idle && root.service && root.service.status && typeof root.service.status.files === "number"
+      ? root.service.status.files : -1
+    reconcile: root.service && root.service.volumes ? Volumes.footer(root.service.volumes, root.service.clock) : null
     hints: root.idle || !root.reply ? [{keys: ["Esc"], label: "close", dim: false}] : root.hintsFor(root.selectedRow)
   }
 }

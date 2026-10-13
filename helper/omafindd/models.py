@@ -4,8 +4,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
-
 REPO = "ggml-org/embeddinggemma-2-GGUF"
 REVISION = "bfcd298762cc34d0357ece5ebdd31791a3a374d8"
 BASE_URL = f"https://huggingface.co/{REPO}/resolve/{REVISION}"
@@ -35,10 +33,13 @@ def _directory(dest_dir: Path | str | None) -> Path:
 
 
 def _valid(path: Path, file: ModelFile) -> bool:
-    if not path.is_file() or path.stat().st_size != file.size:
+    try:
+        if not path.is_file() or path.stat().st_size != file.size:
+            return False
+        with path.open("rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest() == file.sha256
+    except OSError:
         return False
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest() == file.sha256
 
 
 def verify(dest_dir: Path | str | None = None, *, files: Sequence[ModelFile] = FILES
@@ -47,9 +48,38 @@ def verify(dest_dir: Path | str | None = None, *, files: Sequence[ModelFile] = F
     return {file.name: _valid(directory / file.name, file) for file in files}
 
 
+class Verifier:
+    def __init__(self, directory=None, files=FILES):
+        self.directory = _directory(directory)
+        self.files = tuple(files)
+        self._signatures = {}
+        self._report = {}
+
+    def check(self) -> bool:
+        for file in self.files:
+            path = self.directory / file.name
+            try:
+                info = path.stat()
+                signature = (info.st_size, info.st_mtime_ns, info.st_ino)
+            except OSError:
+                signature = None
+            if file.name not in self._report or self._signatures[file.name] != signature:
+                ok = signature is not None and _valid(path, file)
+                self._signatures[file.name] = signature
+                self._report[file.name] = {
+                    'size': signature[0] if signature else None,
+                    'mtime_ns': signature[1] if signature else None, 'ok': ok}
+        return all(item['ok'] for item in self._report.values())
+
+    def files_report(self) -> dict:
+        return {name: dict(item) for name, item in self._report.items()}
+
+
 def download(dest_dir: Path | str | None = None, files: Sequence[ModelFile] = FILES,
              base_url: str = BASE_URL,
              progress: Callable[[str, int, int], None] | None = None) -> None:
+    import httpx
+
     for file in files:
         if "F16" in file.name:
             raise ValueError("F16 models are unsupported")

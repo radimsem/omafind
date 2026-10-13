@@ -37,9 +37,11 @@ def _pool():
 
 
 class Jobs:
-    def __init__(self, store: Store, embedder: Embedder, *, journal: Path, settings=None):
+    def __init__(self, store: Store, embedder: Embedder, *, journal: Path, settings=None,
+                 pause=None):
         self.store, self.embedder, self.journal = store, embedder, journal
         self.settings = settings or Settings()
+        self.pause = pause
         self.queue = asyncio.Queue(maxsize=64)
         self.batch = 0
 
@@ -166,6 +168,8 @@ class Jobs:
                             group_vectors = []
                             try:
                                 for offset in range(0, len(group), 16):
+                                    if self.pause is not None:
+                                        await self.pause()
                                     self._begin(file)
                                     batch = [
                                         segment.image if segment.image is not None

@@ -1,8 +1,10 @@
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+from . import health, paths
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,7 @@ class Settings:
     code_roots: tuple[str, ...] = ()
     image_budget: int = 140
     shortcut: str = "SUPER + E"
+    ignored_volumes: tuple[str, ...] = ()
 
 
 def valid_shortcut(value) -> bool:
@@ -72,6 +75,7 @@ def _load(path: Path) -> Settings:
     gpu = entry.get("gpu", "auto")
     audio = entry.get("audio", True)
     repositories = entry.get("codeRoots", [])
+    ignored = entry.get("ignoredVolumes", [])
     budget = entry.get("imageBudget", 140)
     shortcut = entry.get("shortcut", "SUPER + E")
     return Settings(
@@ -86,12 +90,41 @@ def _load(path: Path) -> Settings:
         if isinstance(repositories, list) else (),
         image_budget=budget if type(budget) is int and budget in (70, 140, 280) else 140,
         shortcut=shortcut if valid_shortcut(shortcut) else "SUPER + E",
+        ignored_volumes=tuple(uuid for uuid in ignored if isinstance(uuid, str) and uuid)
+        if isinstance(ignored, list) else (),
     )
+
+
+def _remap(settings, mounts=None):
+    if not settings.roots:
+        return settings
+    if mounts is None:
+        mounts = health.read(paths.health_path()).get("mounts", {})
+    if not mounts:
+        return settings
+    mapped = []
+    for root in settings.roots:
+        mapping = mounts.get(root["volume"], {})
+        current = mapping.get("current")
+        path = Path(root["path"])
+        changed = dict(root)
+        if current and not path.is_relative_to(Path(current)):
+            for previous in sorted(mapping.get("previous", []), key=len, reverse=True):
+                old = Path(previous)
+                if path.is_relative_to(old):
+                    changed["path"] = str(Path(current) / path.relative_to(old))
+                    changed["excludes"] = [
+                        str(Path(current) / Path(exclude).relative_to(old))
+                        if Path(exclude).is_absolute() and Path(exclude).is_relative_to(old)
+                        else exclude for exclude in root["excludes"]]
+                    break
+        mapped.append(changed)
+    return replace(settings, roots=mapped) if mapped != settings.roots else settings
 
 
 def load(path: Path) -> Settings:
     try:
-        return _load(path)
+        return _remap(_load(path))
     except (OSError, ValueError, UnicodeError):
         logger.warning("Cannot read %s. Using default omafind settings.", path)
         return Settings()
@@ -102,6 +135,9 @@ class SettingsReader:
         self.path = path
         self._signature = None
         self._settings = Settings()
+        self._mapped = self._settings
+        self._health_signature = None
+        self._mounts = {}
 
     def read(self) -> Settings:
         try:
@@ -110,7 +146,8 @@ class SettingsReader:
         except OSError:
             self._signature = None
             self._settings = Settings()
-            return self._settings
+            self._mapped = self._settings
+            return self._mapped
         if signature != self._signature:
             self._signature = signature
             try:
@@ -120,4 +157,16 @@ class SettingsReader:
                                self.path)
             except (OSError, ValueError, UnicodeError):
                 logger.warning("Cannot read %s. Keeping the last good omafind settings.", self.path)
-        return self._settings
+        health_path = paths.health_path()
+        try:
+            info = health_path.stat()
+            health_signature = (info.st_mtime_ns, info.st_size, info.st_ino)
+        except OSError:
+            health_signature = None
+        if health_signature != self._health_signature:
+            self._health_signature = health_signature
+            self._mounts = health.read(health_path).get("mounts", {})
+        mapped = _remap(self._settings, self._mounts)
+        if mapped != self._mapped:
+            self._mapped = mapped
+        return self._mapped

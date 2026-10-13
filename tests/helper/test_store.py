@@ -76,7 +76,79 @@ def test_schema_pragmas_permissions_and_meta(store):
         "runtime_tag",
         "volume_uuid",
         "volume_label",
+        "volume_mount",
     }
+
+
+def test_existing_store_has_last_mount_and_online(store, tmp_path):
+    from omafindd.store import Store
+
+    reopened = Store.open_existing(store.path, tmp_path / 'new')
+    try:
+        assert reopened.last_mount == tmp_path
+        assert reopened.online is True
+        assert reopened.mount == tmp_path / 'new'
+    finally:
+        reopened.close()
+
+
+def test_open_existing_recovers_wal_after_writer_closes(store, tmp_path, monkeypatch):
+    import sqlite3
+
+    from omafindd.store import Store
+
+    connect = sqlite3.connect
+    modes = []
+
+    def opened(database, **kwargs):
+        modes.append(database)
+        return connect(database, **kwargs)
+
+    monkeypatch.setattr(sqlite3, 'connect', opened)
+    reader = Store.open_existing(store.path, tmp_path)
+    try:
+        assert '?mode=rw' in modes[0]
+        assert reader.db.execute('PRAGMA busy_timeout').fetchone()[0] > 0
+        with store.db:
+            store.db.execute("UPDATE meta SET value='updated' WHERE key='volume_label'")
+        store.close()
+        assert reader.db.execute(
+            "SELECT value FROM meta WHERE key='volume_label'").fetchone()[0] == 'updated'
+    finally:
+        reader.close()
+
+
+def test_open_existing_does_not_create_missing_database(tmp_path):
+    import sqlite3
+
+    from omafindd.store import Store
+
+    path = tmp_path / 'missing.sqlite'
+    with pytest.raises(sqlite3.OperationalError):
+        Store.open_existing(path, tmp_path)
+    assert not path.exists()
+
+
+def test_quick_check_and_quarantine(tmp_path):
+    from omafindd.store import Store, quarantine, quick_check
+
+    path = tmp_path / 'v.sqlite'
+    store = Store(path, volume='v', mount=tmp_path)
+    store.close()
+    assert quick_check(path)
+    path.write_bytes(b'broken database')
+    assert not quick_check(path)
+    assert not quick_check(tmp_path / 'missing.sqlite')
+    bad = tmp_path / 'v.sqlite.bad'
+    bad.write_text('old bad')
+    for suffix in ('-wal', '-shm'):
+        path.with_name(path.name + suffix).touch()
+    assert quarantine(path) == bad
+    assert bad.read_bytes() == b'broken database'
+    assert bad.stat().st_mode & 0o777 == 0o600
+    assert not path.exists()
+    assert not path.with_name(path.name + '-wal').exists()
+    assert not path.with_name(path.name + '-shm').exists()
 
 
 def test_existing_v5_index_keeps_content_when_reopened(store, tmp_path):
@@ -369,3 +441,42 @@ def test_mounts_without_uuid_use_mountinfo_device_without_stat(monkeypatch):
     monkeypatch.setattr(Path, "read_text", mountinfo)
     monkeypatch.setattr(Path, "stat", stat)
     assert mounted_volumes(run=run) == {"dev-2065": Path("/media/usb")}
+
+
+def test_opening_writer_keeps_cached_reader_locks_across_other_process_writes(tmp_path):
+    import sqlite3
+    import subprocess
+    import sys
+
+    from omafindd.store import Store
+
+    path = tmp_path / "v.sqlite"
+    Store(path, volume="v", mount=tmp_path).close()
+    reader = Store.open_existing(path, tmp_path)
+    child = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from omafindd.store import Store\n"
+        "path = Path(sys.argv[1])\n"
+        "store = Store(path, volume='v', mount=path.parent)\n"
+        "for i in range(50):\n"
+        "    with store.db:\n"
+        "        store.db.execute(\"INSERT INTO files(path,kind,size,mtime,inode,device) \"\n"
+        "                         \"VALUES(?,'text',0,0,0,0)\", (f'/c{sys.argv[2]}/{i}',))\n"
+        "store.close()\n"
+    )
+    try:
+        for turn in range(3):
+            reader.db.execute("SELECT count(*) FROM files").fetchone()
+            writer = Store(path, volume="v", mount=tmp_path)
+            with writer.db:
+                writer.db.execute("INSERT INTO files(path,kind,size,mtime,inode,device) "
+                                  "VALUES(?,'text',0,0,0,0)", (f"/d/{turn}",))
+            writer.close()
+            subprocess.run([sys.executable, "-c", child, str(path), str(turn)], check=True)
+        assert reader.db.execute("SELECT count(*) FROM files").fetchone()[0] == 153
+        assert [row[0] for row in reader.db.execute("PRAGMA quick_check")] == ["ok"]
+    except sqlite3.DatabaseError as error:
+        pytest.fail(f"cached reader saw a broken index: {error}")
+    finally:
+        reader.close()

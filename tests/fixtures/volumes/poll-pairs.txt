@@ -1,0 +1,2 @@
+ACTION="mount" TARGET="/run/media/radimsem/Photos2024" SOURCE="/dev/loop0" FSTYPE="exfat" UUID="6BFF-B220"
+ACTION="umount" TARGET="/run/media/radimsem/Photos2024" SOURCE="/dev/loop0" FSTYPE="exfat" UUID="6BFF-B220"

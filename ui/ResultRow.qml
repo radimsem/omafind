@@ -10,12 +10,19 @@ Rectangle {
 
   property var row: null
   property bool selected: false
+  // A file that landed while the list was open (M4) wears the `new` badge for 2.8 s.
+  property bool fresh: false
 
   signal clicked()
 
   readonly property var item: row && row.item ? row.item : ({})
   readonly property bool offline: item.offline === true
   readonly property bool weak: !!(row && row.weak)
+  readonly property bool newBadge: fresh && !offline
+  readonly property string badgeLabel: newBadge ? "new" : row && row.badge ? row.badge : ""
+  // The label stays drawn while the badge fades out.
+  property string shownBadge: ""
+  onBadgeLabelChanged: if (badgeLabel) shownBadge = badgeLabel
   // A keyword hit shows its snippet in place of the folder.
   readonly property bool hasSnippet: {
     if (item.leg !== "words") return false
@@ -26,11 +33,11 @@ Rectangle {
   readonly property string thumbSource: item.thumb ? Util.fileUrl(item.thumb)
     : item.kind === "image" && !offline && item.path ? Util.fileUrl(item.path) : ""
 
-  // An offline drive result reads `Label · /path`; a home path reads `~/path`.
+  // A drive result reads `Label · /path`, online or offline; a home path reads `~/path`.
   function folder(entry) {
     var dir = entry.dir || ""
     var home = Quickshell.env("HOME") || ""
-    if (entry.offline && entry.label) return entry.label + " · " + dir
+    if ((entry.offline || entry.drive) && entry.label) return entry.label + " · " + dir
     if (home && (dir === home || dir.indexOf(home + "/") === 0)) return "~" + dir.slice(home.length)
     return dir
   }
@@ -68,6 +75,7 @@ Rectangle {
     color: Plugin.Tokens.surface0
     clip: true
     opacity: root.offline ? 0.7 : 1
+    Behavior on opacity { NumberAnimation { duration: 240 } }
 
     Icon {
       anchors.centerIn: parent
@@ -93,8 +101,8 @@ Rectangle {
   Column {
     anchors.left: thumb.right
     anchors.leftMargin: Style.space(12)
-    anchors.right: badge.visible ? badge.left : parent.right
-    anchors.rightMargin: Style.space(badge.visible ? 12 : 10)
+    anchors.right: root.badgeLabel ? badge.left : parent.right
+    anchors.rightMargin: Style.space(root.badgeLabel ? 12 : 10)
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(4)
 
@@ -105,6 +113,7 @@ Rectangle {
       elide: Text.ElideRight
       color: Color.foreground
       opacity: root.offline ? 0.7 : root.weak ? 0.6 : 1
+      Behavior on opacity { NumberAnimation { duration: 240 } }
       font.family: Style.font.family
       font.pixelSize: Style.font.subtitle
       font.bold: true
@@ -128,18 +137,22 @@ Rectangle {
     anchors.right: parent.right
     anchors.rightMargin: Style.space(10)
     anchors.verticalCenter: parent.verticalCenter
-    visible: !!(root.row && root.row.badge)
+    visible: opacity > 0
+    opacity: root.badgeLabel ? 1 : 0
     width: badgeText.implicitWidth + 2 * Style.space(7)
     height: Style.space(20)
     radius: Style.cornerRadius
-    color: root.offline ? Util.alpha(Plugin.Palette.yellow, 0.12) : Style.hoverFill
+    color: root.offline ? Util.alpha(Plugin.Palette.yellow, 0.12)
+      : root.newBadge ? Util.alpha(Color.accent, 0.16) : Style.hoverFill
+    // M4: the `new` badge fades in over 700 ms; other badges change over 240 ms.
+    Behavior on opacity { NumberAnimation { duration: root.newBadge ? 700 : 240 } }
 
     Text {
       id: badgeText
       anchors.centerIn: parent
-      text: root.row && root.row.badge ? root.row.badge : ""
+      text: root.shownBadge
       textFormat: Text.PlainText
-      color: root.offline ? Plugin.Palette.yellow : Color.foreground
+      color: root.offline ? Plugin.Palette.yellow : root.newBadge ? Color.accent : Color.foreground
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
       font.bold: true

@@ -25,6 +25,14 @@ class Adapter:
     def mode(self):
         return self.runtime.mode
 
+    @property
+    def shared(self):
+        return self.runtime.shared
+
+    @property
+    def connection_env(self):
+        return self.runtime.connection_env
+
     async def start(self, mode):
         await self.runtime.start(mode)
 

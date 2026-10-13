@@ -131,6 +131,7 @@ class Searcher:
         self._loaded = {}
         self._volume_codes = {}
         self._modality_groups = []
+        self._home_volume = None
 
     def reload(self):
         signatures = [
@@ -367,9 +368,14 @@ class Searcher:
             for key in candidates
         ]
         scored.sort(key=lambda item: (-item[0], item[1]))
+        if scored and self._home_volume is None:
+            from .store import volume_for
+
+            self._home_volume, _ = volume_for(Path.home(), mounts={})
         items = []
         for score, key in scored[:limit]:
             store = stores[key[0]]
+            drive = store.volume != self._home_volume
             file = store.db.execute("SELECT * FROM files WHERE id=?", (key[1],)).fetchone()
             semantic, word = best.get(key), keyword.get(key)
             use_meaning = semantic is not None and (semantic[0] >= 2 or word is None)
@@ -406,10 +412,12 @@ class Searcher:
                     "kind": file["kind"],
                     "path": str(path),
                     "name": path.name,
-                    "dir": str(path.parent),
+                    "dir": str(Path("/") / Path(file["path"]).parent)
+                    if drive else str(path.parent),
                     "volume": store.volume,
                     "label": store.label,
-                    "offline": False,
+                    "drive": drive,
+                    "offline": not store.online,
                     "loc": segment["loc"],
                     "loc_end": segment["loc_end"],
                     "open_line": None,

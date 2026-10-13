@@ -16,6 +16,8 @@ Item {
   // Writable: the host assigns `service` on load.
   property var service: shell && manifest ? shell.serviceFor(manifest.id) : null
   property string view: "search"
+  // The volume UUID the drive view shows.
+  property string driveVolume: ""
   // The window stays mapped through the 120 ms close animation.
   property bool mapped: false
   property real openedAt: 0
@@ -28,7 +30,15 @@ Item {
     } catch (error) {
       parsed = {}
     }
-    view = parsed && parsed.view === "setup" || (service && !service.settings.setupDone) ? "setup" : "search"
+    var drive = !!parsed && parsed.view === "drive" && typeof parsed.volume === "string" && parsed.volume !== ""
+    // A dialog already showing this drive starts over; a new one scans when its uuid is set.
+    var again = drive && view === "drive" && driveVolume === parsed.volume && !!driveLoader.item
+    if (drive) driveVolume = parsed.volume
+    view = drive ? "drive" : parsed && parsed.view === "setup" || (service && !service.settings.setupDone) ? "setup" : "search"
+    if (again) {
+      driveLoader.item.reset()
+      driveLoader.item.begin()
+    }
     openedAt = Date.now()
     timing = true
     console.log("omafind open start " + openedAt)
@@ -47,7 +57,7 @@ Item {
     if (setup.item) setup.item.reset()
     if (service && view === "setup") {
       service.requestRuntimeStatus()
-    } else if (service) {
+    } else if (service && view !== "drive") {
       service.warm()
       service.send({t: "status"})
     }
@@ -92,7 +102,8 @@ Item {
   function focusView() {
     if (!opened) return
     if (view === "search") searchView.focusQuery()
-    else if (setup.item) setup.item.focusFirst()
+    else if (view === "drive" && driveLoader.item) driveLoader.item.focusFirst()
+    else if (view === "setup" && setup.item) setup.item.focusFirst()
     else keyCatcher.forceActiveFocus()
   }
 
@@ -140,9 +151,10 @@ Item {
 
     Rectangle {
       id: card
-      readonly property bool sized: root.view === "setup" && !!setup.item
-      width: Math.min(sized ? setup.item.panelWidth : Plugin.Tokens.overlayWidth, panel.width - Style.gapsOut * 2)
-      height: Math.min(sized ? setup.item.panelHeight : Plugin.Tokens.overlayHeight,
+      readonly property var panelItem: root.view === "setup" ? setup.item : root.view === "drive" ? driveLoader.item : null
+      readonly property bool sized: !!panelItem
+      width: Math.min(sized ? panelItem.panelWidth : Plugin.Tokens.overlayWidth, panel.width - Style.gapsOut * 2)
+      height: Math.min(sized ? panelItem.panelHeight : Plugin.Tokens.overlayHeight,
         panel.height - Style.bar.sizeHorizontal - Style.gapsOut * 2)
       // M3: the setup panel resizes over 240 ms between steps; the search card never animates.
       Behavior on width {
@@ -201,9 +213,9 @@ Item {
         id: keyCatcher
         anchors.fill: parent
         anchors.margins: card.border.width
-        visible: root.view === "setup"
+        visible: root.view !== "search"
         Keys.onPressed: event => {
-          if (setup.item) setup.item.handleKey(event)
+          if (card.panelItem) card.panelItem.handleKey(event)
         }
 
         Loader {
@@ -219,6 +231,24 @@ Item {
           ignoreUnknownSignals: true
           function onCloseRequested() { root.dismiss() }
           function onSearchRequested() { root.showSearch() }
+        }
+
+        Loader {
+          id: driveLoader
+          anchors.fill: parent
+          active: root.view === "drive" && root.driveVolume !== ""
+          source: "ui/DriveDialog.qml"
+          onLoaded: {
+            item.service = Qt.binding(() => root.service)
+            item.uuid = Qt.binding(() => root.driveVolume)
+            Qt.callLater(root.focusView)
+          }
+        }
+
+        Connections {
+          target: driveLoader.item
+          ignoreUnknownSignals: true
+          function onCloseRequested() { root.dismiss() }
         }
       }
 
