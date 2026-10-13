@@ -9,6 +9,7 @@ Item {
 
   // Exclusions shows a 6 px kind dot before each count header.
   property bool kindDots: false
+  property string folderLabel: "Folder"
 
   readonly property int gap: Plugin.Tokens.tableGap
   readonly property int padding: Plugin.Tokens.tablePadding
@@ -20,7 +21,7 @@ Item {
     return columns.map((w, i) => i === 1 ? flex : w)
   }
   readonly property var kinds: ["text", "pdf", "image", "video", "audio"]
-  readonly property var labels: ["", "Folder", "Text", "PDF", "Images", "Video", "Audio", "Index", "Time", ""]
+  readonly property var labels: ["", folderLabel, "Text", "PDF", "Images", "Video", "Audio", "Index", "Time", ""]
 
   function cellX(index) {
     var x = padding

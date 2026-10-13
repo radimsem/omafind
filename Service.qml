@@ -5,6 +5,8 @@ import "lib/Backoff.js" as Backoff
 import "lib/Protocol.js" as Protocol
 import "lib/Connection.js" as Connection
 import "lib/Settings.js" as Settings
+import "lib/volumes.js" as Volumes
+import "ui" as Parts
 
 Item {
   id: root
@@ -42,6 +44,20 @@ Item {
   property string setupError: ""
   property bool helperRunning: false
   property bool runtimeAsked: false
+  property string indexVolume: ""
+
+  // Drives (issue #6). `volumes` is the lib/volumes.js state; `clock` advances while a toast or the
+  // reconcile footer waits on a deadline. A drive scan lands in driveDiscover, never in discover.
+  property var volumes: Volumes.initial()
+  property real clock: Date.now()
+  property var driveDiscover: null
+  property bool driveScanning: false
+  property string driveError: ""
+  readonly property var ignoredVolumes: Array.isArray(settings.ignoredVolumes) ? settings.ignoredVolumes
+    : Array.isArray(settingsEntry.ignoredVolumes) ? settingsEntry.ignoredVolumes.filter(uuid => typeof uuid === "string" && uuid !== "")
+    : []
+  readonly property bool ticking: volumes.toasts.some(toast => toast.until !== null)
+    || (!!volumes.reconcile && volumes.reconcile.done_at !== null && clock < volumes.reconcile.done_at + 1250)
   readonly property string pluginDir: decodeURIComponent(Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")).replace(/\/$/, "")
 
   signal resultsReceived(var reply)
@@ -54,6 +70,8 @@ Item {
   signal treeReceived(var reply)
   signal fsListReceived(var reply)
   signal setupFailed(string forType, string reason)
+  // A reconciled drive changed what a search can find.
+  signal volumesRefreshed()
 
   function warm() {
     warmFailure = ""
@@ -78,13 +96,18 @@ Item {
   }
 
   // The daemon reads settings when index_start arrives, so the request waits for the shell's
-  // off-thread write to land in shell.json (or 2 s, whichever comes first).
-  function startIndexing(roots, codeRoots) {
+  // off-thread write to land in shell.json (or 2 s, whichever comes first). A drive passes its
+  // volume UUID and saves only the roots, so setup state stays as it was.
+  function startIndexing(roots, codeRoots, volume) {
     setupError = ""
-    if (!persist({roots: roots, codeRoots: codeRoots, setupDone: true})) {
-      setupError = "Could not save the folders to shell.json. Check that the omafind plugin is enabled, then press Start indexing again."
+    var changes = volume ? {roots: roots} : {roots: roots, codeRoots: codeRoots, setupDone: true}
+    if (!persist(changes)) {
+      setupError = volume
+        ? "Could not save the folders to shell.json. Check that the omafind plugin is enabled, then press Index this drive again."
+        : "Could not save the folders to shell.json. Check that the omafind plugin is enabled, then press Start indexing again."
       return false
     }
+    indexVolume = volume || ""
     indexPending = true
     indexTimer.restart()
     return true
@@ -94,7 +117,48 @@ Item {
     indexTimer.stop()
     if (!indexPending) return
     indexPending = false
-    send({t: "index_start"})
+    send(indexVolume ? {t: "index_start", volume: indexVolume} : {t: "index_start"})
+    indexVolume = ""
+  }
+
+  function scanDrive(uuid) {
+    driveError = ""
+    driveDiscover = null
+    driveScanning = send({t: "discover_start", volume: uuid})
+    return driveScanning
+  }
+
+  function reduceVolumes(event) {
+    var result = Volumes.reduce(volumes, event)
+    volumes = result.state
+    for (var i = 0; i < result.effects.length; i++) runEffect(result.effects[i])
+  }
+
+  function runEffect(effect) {
+    switch (effect.type) {
+    case "persist":
+      persist(effect.changes)
+      break
+    case "send":
+      send(effect.message)
+      break
+    case "summon":
+      if (shell && manifest && typeof shell.summon === "function")
+        shell.summon(manifest.id, JSON.stringify(effect.payload))
+      break
+    case "research":
+      volumesRefreshed()
+      break
+    }
+  }
+
+  // `choice` is "scan" or "ignore", from the New drive toast.
+  function decideDrive(uuid, choice) {
+    reduceVolumes({type: "decide", uuid: uuid, choice: choice, now: Date.now()})
+  }
+
+  function dismissToast(id) {
+    reduceVolumes({type: "dismiss", id: id})
   }
 
   function runtimeInstall() { return send({t: "runtime_install"}) }
@@ -159,7 +223,8 @@ Item {
       return
     }
     settingsEntry = (manifest ? Settings.findEntry(config, manifest.id) : null) || {}
-    if (indexPending && settings.setupDone) sendIndexStart()
+    if (indexPending && (indexVolume ? settings.roots.some(r => r.volume === indexVolume) : settings.setupDone))
+      sendIndexStart()
   }
 
   function checkUnit() {
@@ -187,6 +252,7 @@ Item {
     attemptOpen = false
     runtimeAsked = false
     scanning = false
+    driveScanning = false
     connection = Connection.reduce(connection, {type: "attempt-failed"})
     closeSocket()
     if (connection.unit === "enabled") reconnect.restart()
@@ -238,6 +304,12 @@ Item {
       runtimeProgress = message
       break
     case "discover_result":
+      if (message.volume) {
+        driveScanning = false
+        driveError = ""
+        driveDiscover = message
+        break
+      }
       scanning = false
       discoverError = ""
       discover = message
@@ -255,12 +327,30 @@ Item {
     case "progress":
       progress = message
       break
+    case "volume":
+      if (typeof message.uuid === "string" && message.uuid)
+        reduceVolumes({type: "volume", message: message, now: Date.now()})
+      break
+    case "reconcile":
+      if (typeof message.uuid === "string" && message.uuid)
+        reduceVolumes({type: "reconcile", message: message, now: Date.now()})
+      break
+    case "paused":
+      reduceVolumes({type: "paused", message: message})
+      break
+    case "resumed":
+      reduceVolumes({type: "resumed"})
+      break
     }
   }
 
   function receiveSetupError(message) {
     var reason = typeof message.reason === "string" ? message.reason : ""
-    if (message.for === "discover_start") {
+    // Errors carry no volume, so a failed discover_start is the drive scan's while one runs.
+    if (message.for === "discover_start" && driveScanning) {
+      driveScanning = false
+      driveError = reason
+    } else if (message.for === "discover_start") {
       scanning = false
       discoverError = reason
     } else {
@@ -279,7 +369,27 @@ Item {
     if (ready && !runtimeProgress && !runtimeAsked) runtimeAsked = requestRuntimeStatus()
   }
 
-  Component.onCompleted: checkUnit()
+  Component.onCompleted: {
+    reduceVolumes({type: "settings", ignoredVolumes: ignoredVolumes})
+    checkUnit()
+  }
+
+  onIgnoredVolumesChanged: reduceVolumes({type: "settings", ignoredVolumes: ignoredVolumes})
+
+  Timer {
+    interval: 100
+    repeat: true
+    running: root.ticking
+    onTriggered: {
+      root.clock = Date.now()
+      root.reduceVolumes({type: "tick", now: root.clock})
+    }
+  }
+
+  // Stays mapped while the overlay is closed, so the drive buttons work from the desktop.
+  Parts.DriveToast {
+    service: root
+  }
 
   FileView {
     id: shellConfig
