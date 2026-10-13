@@ -26,7 +26,14 @@ Item {
     chevron: "M9 6l6 6-6 6",
     warn: "M12 3l10 18H2zM12 10v5M12 18v.01",
     drive: "M3 6h18v12H3zM7 12h.01",
-    check: "M5 12l5 5 9-10"
+    check: "M5 12l5 5 9-10",
+    x: "M6 6l12 12M18 6L6 18",
+    lock: "M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4",
+    plus: "M12 5v14M5 12h14",
+    filter: "M4 6h16M7 12h10M10 18h4",
+    twistyOpen: "M7 10l5 5 5-5",
+    twisty: "M10 7l5 5-5 5",
+    dash: "M6 12h12"
   })
 
   implicitWidth: size

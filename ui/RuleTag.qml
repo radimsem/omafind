@@ -1,0 +1,49 @@
+import QtQuick
+import qs.Commons
+import ".." as Plugin
+
+// `.tg`: 16 px rule tag. user accent, generated yellow, secrets green with a lock, no-kind dim.
+Rectangle {
+  id: root
+
+  property string rule: ""
+
+  readonly property color tone: rule === "user" ? Color.accent
+    : rule === "generated" ? Plugin.Palette.yellow
+    : rule === "secrets" ? Plugin.Palette.green
+    : Plugin.Tokens.dim
+
+  implicitWidth: row.implicitWidth + 2 * Style.space(5)
+  implicitHeight: Style.space(16)
+  color: "transparent"
+  border.width: 1
+  border.color: rule === "user" ? Util.alpha(Color.accent, 0.5)
+    : rule === "generated" ? Util.alpha(Plugin.Palette.yellow, 0.42)
+    : rule === "secrets" ? Util.alpha(Plugin.Palette.green, 0.42)
+    : Plugin.Tokens.sep
+
+  Row {
+    id: row
+    anchors.centerIn: parent
+    spacing: Style.space(4)
+
+    Icon {
+      anchors.verticalCenter: parent.verticalCenter
+      visible: root.rule === "secrets"
+      name: "lock"
+      size: Style.space(9)
+      color: root.tone
+    }
+
+    Text {
+      anchors.verticalCenter: parent.verticalCenter
+      text: root.rule
+      textFormat: Text.PlainText
+      color: root.tone
+      font.family: Style.font.family
+      font.pixelSize: Plugin.Tokens.tiny
+      font.capitalization: Font.AllUppercase
+      font.letterSpacing: Plugin.Tokens.tiny * Plugin.Tokens.tagTracking
+    }
+  }
+}

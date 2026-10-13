@@ -28,7 +28,7 @@ Item {
     } catch (error) {
       parsed = {}
     }
-    view = parsed && parsed.view === "setup" ? "setup" : "search"
+    view = parsed && parsed.view === "setup" || (service && !service.settings.setupDone) ? "setup" : "search"
     openedAt = Date.now()
     timing = true
     console.log("omafind open start " + openedAt)
@@ -44,6 +44,20 @@ Item {
     }
     opened = true
     mapped = true
+    if (setup.item) setup.item.reset()
+    if (service && view === "setup") {
+      service.requestRuntimeStatus()
+    } else if (service) {
+      service.warm()
+      service.send({t: "status"})
+    }
+    Qt.callLater(focusView)
+  }
+
+  // "Save shortcut and open search" leaves setup for an empty search.
+  function showSearch() {
+    view = "search"
+    searchView.reset()
     if (service) {
       service.warm()
       service.send({t: "status"})
@@ -78,6 +92,7 @@ Item {
   function focusView() {
     if (!opened) return
     if (view === "search") searchView.focusQuery()
+    else if (setup.item) setup.item.focusFirst()
     else keyCatcher.forceActiveFocus()
   }
 
@@ -125,8 +140,19 @@ Item {
 
     Rectangle {
       id: card
-      width: Math.min(Plugin.Tokens.overlayWidth, panel.width - Style.gapsOut * 2)
-      height: Math.min(Plugin.Tokens.overlayHeight, panel.height - Style.bar.sizeHorizontal - Style.gapsOut * 2)
+      readonly property bool sized: root.view === "setup" && !!setup.item
+      width: Math.min(sized ? setup.item.panelWidth : Plugin.Tokens.overlayWidth, panel.width - Style.gapsOut * 2)
+      height: Math.min(sized ? setup.item.panelHeight : Plugin.Tokens.overlayHeight,
+        panel.height - Style.bar.sizeHorizontal - Style.gapsOut * 2)
+      // M3: the setup panel resizes over 240 ms between steps; the search card never animates.
+      Behavior on width {
+        enabled: card.sized && root.opened
+        NumberAnimation { duration: 240; easing.type: Easing.BezierSpline; easing.bezierCurve: Plugin.Tokens.ease }
+      }
+      Behavior on height {
+        enabled: card.sized && root.opened
+        NumberAnimation { duration: 240; easing.type: Easing.BezierSpline; easing.bezierCurve: Plugin.Tokens.ease }
+      }
       x: Math.round((panel.width - width) / 2)
       y: Math.round((panel.height - height) / 2 + Plugin.Tokens.overlayOffset)
       radius: Style.cornerRadius
@@ -192,6 +218,7 @@ Item {
           target: setup.item
           ignoreUnknownSignals: true
           function onCloseRequested() { root.dismiss() }
+          function onSearchRequested() { root.showSearch() }
         }
       }
 
