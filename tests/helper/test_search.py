@@ -354,3 +354,72 @@ async def test_meaning_reduces_segments_per_file_in_numpy(store, tmp_path, prefi
         assert len(accesses) <= 6, "meaning search accessed file metadata once per segment"
     finally:
         other.close()
+
+
+@pytest.mark.parametrize("kinds,names,total", [
+    (["pdf"], ["a.pdf"], 2), (["text", "pdf"], ["best.txt"], 3), ([], [], 0),
+])
+async def test_kinds_filter_before_limit_and_counts(store, tmp_path, kinds, names, total):
+    from omafindd.search import Searcher
+
+    await add(store, tmp_path / "best.txt", "needle haystack")
+    await add(store, tmp_path / "a.pdf", "needle", kind="pdf")
+    await add(store, tmp_path / "b.pdf", "needle", kind="pdf")
+    reply = await Searcher([store], None).search("needle haystack", legs=["words"],
+                                               kinds=kinds, limit=1)
+    assert [item["name"] for item in reply["items"]] == names
+    assert reply["total"] == total
+    assert reply["weaker"] == 0
+
+
+async def test_kinds_route_code_index_without_content_index(tmp_path, monkeypatch):
+    from omafindd import search_code
+    from omafindd.search import Searcher
+
+    calls = []
+
+    async def code(searcher, q, **kwargs):
+        calls.append((q, kwargs))
+        return {"t": "results", "seq": kwargs["seq"], "items": [], "total": 0,
+                "weaker": 0, "degraded": None, "legs": kwargs["legs"], "ms": {}}
+
+    monkeypatch.setattr(search_code, "search_code", code)
+    await Searcher([], None).search("needle", kinds=["code"], legs=["words"])
+    assert calls[0][0] == "needle"
+
+
+async def test_kinds_filter_before_keyword_candidate_budget(store, tmp_path):
+    from omafindd.search import Searcher
+
+    for i in range(101):
+        await add(store, tmp_path / f"note{i}.txt", "needle")
+    await add(store, tmp_path / "wanted.pdf", "needle", kind="pdf")
+    reply = await Searcher([store], None).search("needle", kinds=["pdf"], legs=["words"])
+    assert [item["name"] for item in reply["items"]] == ["wanted.pdf"]
+    assert reply["total"] == 1
+
+
+async def test_mixed_code_kinds_merge_before_global_limit(store, tmp_path, monkeypatch):
+    from omafindd import search_code
+    from omafindd.search import Searcher
+
+    await add(store, tmp_path / "note.txt", "needle")
+
+    async def code(searcher, q, **kwargs):
+        return {"t": "results", "seq": kwargs["seq"], "legs": list(kwargs["legs"]),
+                "items": [{"id": "code:1", "kind": "code", "score": 10, "weak": False}],
+                "total": 1, "weaker": 0, "degraded": None,
+                "ms": {"embed": 0, "scan": 0, "words": 0, "total": 0}}
+
+    monkeypatch.setattr(search_code, "search_code", code)
+    searcher = Searcher([store], None)
+    reply = await searcher.search("needle", kinds=["text", "code"], legs=["words"], limit=2)
+    assert [item["kind"] for item in reply["items"]] == ["code", "text"]
+    assert reply["total"] == 2
+    assert reply["weaker"] == 1
+    limited = await searcher.search("needle", kinds=["text", "code"], legs=["words"], limit=1)
+    assert limited["total"] == 2
+    assert len(limited["items"]) == 1
+    assert limited["weaker"] == 0
+    narrowed = await searcher.search("doc:needle", kinds=["code", "text"], legs=["words"])
+    assert [item["kind"] for item in narrowed["items"]] == ["text"]

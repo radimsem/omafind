@@ -3,10 +3,15 @@ import json
 import logging
 import os
 import socket
+import sqlite3
 import stat
 import struct
+import time
+from contextlib import closing
 from pathlib import Path
+from threading import Lock
 
+from . import opener, preview
 from .state import State
 
 PROTOCOL_VERSION = 1
@@ -29,6 +34,13 @@ class IpcServer:
         self.path = path
         self.service = service
         self._results = {}
+        self._jumps = {}
+        self._previews = {}
+        self._status = None
+        self._status_at = float("-inf")
+        self._status_signature = None
+        self._status_cached = None
+        self._status_lock = Lock()
         self.state = state if state is not None else State.detect()
         self.state.on_change = self.broadcast
         self.peer_uid = peer_uid
@@ -60,6 +72,9 @@ class IpcServer:
         finally:
             os.umask(old_umask)
         self.path.chmod(0o600)
+        task = asyncio.create_task(self._watch_status())
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     async def stop(self) -> None:
         if self._server is not None:
@@ -112,7 +127,8 @@ class IpcServer:
                         return
                     await self._send(writer, self.state.message())
                     self._ready.add(writer)
-                elif message.get("t") in ("search", "warm") and writer in self._ready:
+                elif message.get("t") in ("search", "warm", "preview", "open", "status") \
+                        and writer in self._ready:
                     task = asyncio.create_task(self.dispatch(writer, message))
                     requests.add(task)
                     self._tasks.add(task)
@@ -129,6 +145,8 @@ class IpcServer:
             self._clients.discard(writer)
             self._ready.discard(writer)
             self._results.pop(writer, None)
+            self._jumps.pop(writer, None)
+            self._previews.pop(writer, None)
             writer.close()
             try:
                 await writer.wait_closed()
@@ -136,21 +154,148 @@ class IpcServer:
                 pass
 
     async def dispatch(self, writer, message: dict) -> None:
-        if self.service is None:
+        if message["t"] == "preview":
+            pending = self._previews.setdefault(writer, {"lock": asyncio.Lock()})
+            token = pending["latest"] = object()
+            async with pending["lock"]:
+                if pending["latest"] is not token:
+                    return
+                try:
+                    reply = await self._overlay(writer, message)
+                except Exception as error:
+                    reply = {"t": "error", "id": message.get("id"), "reason": str(error)}
+                if pending["latest"] is not token:
+                    return
+                if reply["t"] == "preview":
+                    self._jumps.setdefault(writer, {})[reply["id"]] = reply["jump"]
+                try:
+                    await self._send(writer, reply)
+                except (ConnectionError, OSError):
+                    writer.close()
             return
         try:
-            reply = await self.service.handle(message)
+            if message["t"] == "status":
+                reply = await asyncio.to_thread(self.status_message)
+            elif message["t"] == "open":
+                reply = await self._overlay(writer, message)
+            elif self.service is not None:
+                reply = await self.service.handle(message)
+            else:
+                return
         except Exception as error:
             reply = {"t": "error", "seq": message.get("seq"), "reason": str(error)}
+            if message["t"] == "open":
+                reply.update({"id": message.get("id"), "for": "open"})
         if reply["t"] == "results":
             self._results[writer] = {item["id"]: item for item in reply["items"]}
+            self._jumps.pop(writer, None)
         try:
             await self._send(writer, reply)
         except (ConnectionError, OSError):
             writer.close()
 
     def resolve(self, writer, item_id):
-        return self._results.get(writer, {}).get(item_id)
+        return self._results.get(writer, {}).get(item_id) if isinstance(item_id, str) else None
+
+    async def _overlay(self, writer, message):
+        item_id = message.get("id")
+        item = self.resolve(writer, item_id)
+        if message["t"] == "preview":
+            if item is None or (not item.get("offline") and not Path(item["path"]).is_file()):
+                return {"t": "error", "id": item_id, "code": "missing", "reason": "File is missing"}
+            query = message.get("q", "")
+            if not isinstance(query, str):
+                return {"t": "error", "id": item_id, "code": "bad-request",
+                        "reason": "Invalid preview arguments"}
+            rendering = asyncio.create_task(asyncio.to_thread(preview.render, item, query))
+            try:
+                reply = await asyncio.shield(rendering)
+            except asyncio.CancelledError:
+                # Cancelling to_thread does not stop its renderer; retain the connection slot.
+                await asyncio.gather(rendering, return_exceptions=True)
+                raise
+            if self.resolve(writer, item_id) is not item:
+                reply = {"t": "error", "id": item_id, "code": "missing",
+                         "reason": "File is missing"}
+            return reply
+        if item is None:
+            reason = "missing"
+        elif item.get("offline"):
+            reason = "offline"
+        elif not Path(item["path"]).is_file():
+            reason = "missing"
+        else:
+            reason = None
+        if reason:
+            return {"t": "open_failed", "id": item_id, "reason": reason}
+        how = message.get("how", "open")
+        if how not in ("open", "reveal"):
+            return {"t": "error", "id": item_id, "for": "open", "code": "bad-request",
+                    "reason": "Invalid open arguments"}
+        target = dict(item)
+        jump = self._jumps.get(writer, {}).get(item_id)
+        if jump is not None:
+            target["loc"] = jump
+            if target["kind"] == "code":
+                target["open_line"] = jump
+        opener.launch(target, how=how)
+        return {"t": "opened", "id": item_id, **opener.description(target, how=how)}
+
+    def status_message(self):
+        with self._status_lock:
+            return self._read_status()
+
+    def _read_status(self):
+        files = done = total = 0
+        failed = False
+        roots = 0
+        stores = []
+        if self.service is not None and hasattr(self.service, "directory"):
+            roots = len(self.service.settings().roots)
+            stores = sorted(self.service.directory.glob("*.sqlite"))
+        signature = []
+        for path in stores:
+            for source in (path, Path(str(path) + "-wal")):
+                try:
+                    mtime = source.stat().st_mtime_ns
+                except FileNotFoundError:
+                    mtime = None
+                signature.append((source, mtime))
+        if signature == self._status_signature:
+            return {**self._status_cached, "roots": roots}
+        for path in stores:
+            try:
+                with closing(sqlite3.connect(path.absolute().as_uri() + "?mode=ro", uri=True,
+                                             timeout=.05)) as db:
+                    count, indexed, pending = db.execute(
+                        "SELECT count(*),count(indexed_at),sum(state='pending' OR "
+                        "(state='partial' AND detail IS NULL)) FROM files"
+                    ).fetchone()
+            except sqlite3.Error:
+                failed = True
+                continue
+            files += indexed
+            total += count
+            done += count - (pending or 0)
+        # A store that failed to read is retried on the next tick.
+        self._status_signature = None if failed else signature
+        self._status_cached = {"t": "status", "files": files, "roots": roots, "offline": [],
+                               "done": done, "total": total}
+        return self._status_cached
+
+    async def push_status(self, *, now=None):
+        message = await asyncio.to_thread(self.status_message)
+        now = time.monotonic() if now is None else now
+        if message == self._status or now - self._status_at < .5:
+            return
+        await self.broadcast(message)
+        self._status, self._status_at = message, now
+
+    async def _watch_status(self):
+        while True:
+            if self._ready:
+                await self.push_status()
+            await asyncio.sleep(.5)
 
     async def _send(self, writer, message: dict) -> None:
         line = json.dumps(message, separators=(",", ":"), ensure_ascii=False) + "\n"

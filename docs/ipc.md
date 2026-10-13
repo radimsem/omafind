@@ -59,6 +59,12 @@ replies may arrive in any order; clients use `seq` to match them to requests.
 A search gets exactly one reply. `seq` is an integer, `q` a string, `legs` a
 nonempty array of `words` and/or `meaning`, and `limit` an integer 1..200.
 Omitted legs mean both; an omitted limit uses `maxResults` (default 40).
+Optional `kinds` is an array of `text`, `pdf`, `image`, `video`, `audio` and/or
+`code`. Other types or unknown kinds return `bad-request`. Omission searches
+the content index; `code` explicitly includes the code index, using the same
+route as `code:`. An empty array matches nothing. Multiple kinds form a union;
+a textual prefix narrows it to that kind. Filtering happens before candidate
+budgets, the result limit, `total` and `weaker` are computed.
 A client may repeat `seq` with words-only then both legs. For one `seq`, a reply
 whose `legs` include `meaning` supersedes words-only regardless of arrival order.
 Results are flat in score order; grouping is client-side in #4.
@@ -99,5 +105,59 @@ Silent audio has detail `silent audio`. A failed soundtrack leaves frame vectors
 in state `partial`, with a failure detail; it is retried on an explicit reindex.
 `info.thumb` and `thumb` contain a cached JPEG path in `thumbs/<volume-uuid>/`.
 There is no editor setting; openers read the Omarchy default editor.
+`shortcut` is a string, default `"SUPER + E"`. It must have one or more uppercase
+modifiers (`SUPER`, `SHIFT`, `CTRL`, `ALT`) followed by `+` and an uppercase key
+name (letters, digits or underscores). Duplicate modifiers and a modifier used
+as the key are invalid. Invalid values fall back to the default.
+
+## Overlay (issue #4)
+
+After `hello`, the plugin may send:
+
+| t | Fields | Behavior |
+|---|---|---|
+| `preview` | `id`, `q` (string, default `""`) | Render the selected result on demand. Unknown IDs or missing online files reply with `error`, `code:"missing"`, `id` and `reason:"File is missing"`. |
+| `open` | `id`, `how:"open"\|"reveal"` (default `"open"`) | Open at the preview jump, or select the file with detached `nautilus --select`. Offline and missing files run nothing. |
+| `status` | none | Reply with current indexed-file and queue counts. |
+
+| t | Fields | Behavior |
+|---|---|---|
+| `preview` | `id`, `mode:"lines"\|"image"\|"bars"`, `lines:[{no,text,hit}]`, `jump`, `range:[first,last]\|null`, `image:path\|null`, `bars:[int]`, `opener`, `editor` (text/code only) | Text/code use a clamped ±8-line window. PDF/video render the selected page/second; images use their thumbnail or source. Audio has 64 RMS bars in 0..100. Unused arrays are empty. Offline items use mode `image` with their cached thumbnail or null. |
+| `opened` | `id`, `opener`, `at:string\|null` | Human command label and location: `mpv --start=872`/`14:32`, `omarchy-launch-browser`/`p. 37`, `nvim +212`/`L212`; images and reveals have null `at`. |
+| `open_failed` | `id`, `reason:"offline"\|"missing"` | The file cannot be opened; unknown IDs count as missing. |
+| `error` | `id`, `for:"open"`, `reason` | Opening raised an unexpected error. A failed preview replies `error` with `id` and no `for`. |
+| `status` | `files`, `roots`, `offline:[]`, `done`, `total` | Counts from all index stores, including code. Also pushed when changed, at most once every 0.5 seconds. |
+
+IDs resolve only against that connection's latest `results`; new results clear
+its remembered preview jumps. `editor` is the basename of the first command in
+`~/.local/state/omarchy/defaults/editor`, falling back to `nvim`. Opener labels
+come from the same command selection used to open the file. Extracted documents
+retain the existing opener behavior (no editor line argument).
+Each connection runs at most one preview render at a time. A newer preview
+supersedes pending requests and suppresses replies and jumps from older requests.
+Direct mpv, xdg-open and nautilus launches use `uwsm-app --`, falling back to
+`systemd-run --user --scope --quiet --collect --` when uwsm-app is absent.
+
+Indexing runs in a separate CLI process. The daemon polls committed store counts
+every 0.5 seconds: `files` counts non-null `indexed_at`, `total` counts tracked
+files and `done` excludes pending files and partial files with no failure detail.
+With no queued work, `done` equals `total`. `roots` counts configured `roots`;
+`offline` stays empty until #6. No text is retained by previews; extracted text
+temporaries are deleted after rendering. PDF/video images are cached under
+`$XDG_RUNTIME_DIR/omafind/preview/`, keyed by source path, mtime and page/second.
+Images are rendered to temporary paths and atomically published. Audio bars
+decode at 400 Hz and use a 32-entry memory cache keyed by path and nanosecond
+mtime. Status counts run off the event loop and are reused while store and WAL
+mtimes stay unchanged; the root count still follows current settings.
+
+```json
+{"t":"preview","id":"b81e:812","q":"where they tal"}
+{"t":"preview","id":"b81e:812","mode":"lines","lines":[{"no":212,"text":"where they talk","hit":true}],"jump":212,"range":[204,220],"image":null,"bars":[],"opener":"nvim +212","editor":"nvim"}
+{"t":"open","id":"b81e:812","how":"open"}
+{"t":"opened","id":"b81e:812","opener":"mpv --start=872","at":"14:32"}
+{"t":"open_failed","id":"b81e:812","reason":"offline"}
+{"t":"status"}
+{"t":"status","files":3880,"roots":4,"offline":[],"done":1204,"total":1209}
+```
 
 Later issues append their messages here.

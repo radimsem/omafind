@@ -13,6 +13,14 @@ def socket_path() -> Path:
     return runtime_dir() / "ui.sock"
 
 
+def preview_dir() -> Path:
+    path = runtime_dir() / "preview"
+    path.mkdir(parents=True, mode=0o700, exist_ok=True)
+    path.parent.chmod(0o700)
+    path.chmod(0o700)
+    return path
+
+
 def data_dir_path() -> Path:
     value = os.environ.get("XDG_DATA_HOME")
     base = Path(value) if value else Path.home() / ".local/share"
