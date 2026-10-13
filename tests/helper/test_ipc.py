@@ -8,14 +8,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
-from omafindd import paths
+from omafindd import build, paths
 from omafindd.ipc import AlreadyRunning, IpcServer
 from omafindd.main import _serve
 from omafindd.state import State
 
 HELLO = b'{"t":"hello","v":1}\n'
 INITIAL = {"t": "state", "v": 1, "runtime": "missing", "model": "missing",
-           "embedder": "stopped"}
+           "embedder": "stopped", "build": ""}
+# A daemon started by _serve reports the build of this checkout.
+DAEMON = {**INITIAL, "build": build.fingerprint(Path(__file__).resolve().parents[2])}
 
 
 @pytest.fixture
@@ -252,7 +254,7 @@ async def test_daemon_exits_zero_when_manifest_disappears(runtime):
         reader, writer = await asyncio.open_unix_connection(paths.socket_path())
         writer.write(HELLO)
         await writer.drain()
-        assert await reply(reader) == INITIAL
+        assert await reply(reader) == DAEMON
         manifest.unlink()
         assert await asyncio.wait_for(task, 1) == 0
         assert await asyncio.wait_for(reader.read(), 1) == b""
@@ -273,7 +275,7 @@ async def test_daemon_updates_readiness_after_install(runtime):
         reader, writer = await asyncio.open_unix_connection(paths.socket_path())
         writer.write(HELLO)
         await writer.drain()
-        assert await reply(reader) == INITIAL
+        assert await reply(reader) == DAEMON
         binary = paths.runtime_bin()
         binary.parent.mkdir(parents=True)
         binary.write_text("#!/bin/sh\n")
@@ -281,7 +283,7 @@ async def test_daemon_updates_readiness_after_install(runtime):
         paths.model_dir().mkdir()
         for name in ("embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf"):
             (paths.model_dir() / name).write_bytes(b"fixture")
-        assert await reply(reader) == {**INITIAL, "runtime": "ready", "model": "ready"}
+        assert await reply(reader) == {**DAEMON, "runtime": "ready", "model": "ready"}
         writer.close()
         await writer.wait_closed()
     finally:
@@ -448,7 +450,7 @@ async def test_daemon_polls_and_stops_with_fake_socket(runtime, monkeypatch, rem
         for name in ("embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf"):
             (paths.model_dir() / name).write_bytes(b"fixture")
         assert await asyncio.wait_for(published.get(), 1) == {
-            **INITIAL, "runtime": "ready", "model": "ready",
+            **DAEMON, "runtime": "ready", "model": "ready",
         }
         if remove_manifest:
             manifest.unlink()
