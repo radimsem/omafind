@@ -737,6 +737,9 @@ async def test_serve_tick_yields_to_reindex_without_client_message(tmp_path, mon
                 fcntl.flock(want, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self.state.on_change = changed
 
+            async def broadcast(self, message):
+                pass
+
             async def stop(self):
                 pass
 

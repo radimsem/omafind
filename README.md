@@ -17,7 +17,7 @@ bin/omafind setup
 bin/omafind build-runtime
 ```
 
-Setup creates `~/.local/share/omafind/venv`, copies the user unit into `~/.config/systemd/user/omafind.service`, enables it and waits for `hello`. Repeat setup to apply unit changes. Runtime building and model downloads happen only through `build-runtime`.
+Setup creates `~/.local/share/omafind/venv`, copies the user unit into `~/.config/systemd/user/omafind.service`, enables it and waits for `hello`. Repeat setup to apply unit changes. Runtime building and model downloads start through `build-runtime` or the setup view’s Download button. The daemon owns setup jobs, so closing the overlay leaves them running; Pause stops a job and Resume continues it.
 
 The Vulkan build needs `vulkan-headers` and `shaderc`. Prefer installing the remaining build tools with `sudo pacman -S cmake ninja spirv-headers`. The script can bootstrap private copies when those are missing. It runs in a memory-capped systemd user scope (12 GiB, no swap) when the user manager is available. It builds the pinned llama.cpp runtime, then downloads and verifies both pinned model files.
 
@@ -85,6 +85,14 @@ one `sudo pacman -S --needed ...` command.
 systemd-run --user --scope --quiet --collect -p MemoryMax=8G -p MemorySwapMax=0 -- bin/omafind reindex --root "$HOME/Documents"
 bin/omafind search --json --limit 40 "invoice 4412"
 ```
+
+`bin/omafind discover --json [--volume UUID]` prints the name-only setup scan.
+It exits 0 with JSON, 1 with one error line on stderr, or 2 without `--json`.
+The optional volume UUID scans only that mounted non-system volume.
+
+`reindex --incremental` keeps unchanged files and their vectors. The setup view
+starts this command after saving selected folders; progress remains available
+while you search. The daemon writes its child log to `index/reindex.log`.
 
 Without `--root`, reindex reads the plugin's `roots` setting. With no configured
 roots it exits 2. `--volume UUID` limits reindexing to selected roots on that volume.
