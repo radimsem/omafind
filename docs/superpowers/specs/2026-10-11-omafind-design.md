@@ -292,7 +292,7 @@ CREATE VIRTUAL TABLE fts USING fts5(name, body, original UNINDEXED,
 1. Normalize the query. Parse an optional prefix: `img:`, `pdf:`, `vid:`, `aud:`, `doc:`, `code:`. A kind prefix filters to that kind. `code:` searches `code.sqlite` only; no other query touches it.
 2. Run both legs in parallel:
    - **meaning**: embed the query with the search prompt, score every loaded vector.
-   - **words**: FTS5 match, up to 100 files, giving each file's coverage = share of query words it contains. For `code:` the words leg is `rg --json -F -i -e <word>…` over `codeRoots`, which honors `.gitignore`. Coverage comes from the submatches of each file, the snippet from its first matching line.
+   - **words**: FTS5 match, up to 100 files, giving each file's coverage = share of query words it contains. For `code:` the words leg is `rg --json -F -i -e <word>…` over `codeRoots`, which honors `.gitignore`. Coverage comes from the submatches of each file, the snippet from its first matching line. Identifier lookups add 1 to the score of a file that defines the name (a definition keyword followed by the name), so the definition ranks above its callers and tests.
 3. Fuse, as DigUp's `Searcher.swift` does:
    - subtract each modality's mean cosine (a modality with fewer than 20 vectors uses the global mean), then compute one global z-score with a deviation floor of 0.02
    - lookup queries (identifier-like or quoted terms) use weights (meaning 0.5, words 4); others use (1, 2)

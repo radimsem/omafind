@@ -79,6 +79,70 @@ def test_schema_pragmas_permissions_and_meta(store):
     }
 
 
+def test_existing_v5_index_keeps_content_when_reopened(store, tmp_path):
+    from omafindd.crawler import crawl
+    from omafindd.extractors import Segment
+    from omafindd.store import Store
+
+    (tmp_path / "a.txt").write_text("fixture")
+    file, = crawl(store, [{"path": str(tmp_path)}])
+    store.write(file, [Segment("chunk", "text", "fixture")], [np.eye(1, 768)[0]],
+                state="done", info={})
+    with store.db:
+        store.db.execute("PRAGMA user_version=5")
+    reopened = Store(store.path, volume="v", mount=tmp_path)
+    try:
+        assert reopened.db.execute("SELECT state FROM files").fetchone()[0] == "done"
+        count = reopened.db.execute(
+            "SELECT count(*) FROM segments WHERE vec IS NOT NULL"
+        ).fetchone()[0]
+        assert count == 1
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize("operation", ["delete", "fail", "write"])
+@pytest.mark.parametrize("thumbnail_exists", [False, True])
+def test_thumbnail_removed_without_relying_on_file_info(
+    store, tmp_path, operation, thumbnail_exists
+):
+    from pathlib import Path
+
+    from omafindd.crawler import crawl
+
+    path = tmp_path / "a.txt"
+    path.write_text("fixture")
+    roots = [{"path": str(tmp_path)}]
+    file, = crawl(store, roots)
+    thumb = Path(store.thumbnail(file, b"jpeg"))
+    store.write(file, [], [], state="done", info={"thumb": str(thumb)})
+    if not thumbnail_exists:
+        thumb.unlink()
+    crawl(store, roots, force=True)
+    assert store.db.execute("SELECT info FROM files").fetchone()[0] is None
+    if operation == "delete":
+        path.unlink()
+        crawl(store, roots)
+    elif operation == "fail":
+        store.fail(file, "extract-failed")
+    else:
+        store.write(file, [], [], state="done", info={})
+    assert not thumb.exists()
+
+
+def test_thumbnail_survives_append_with_preserved_info(store, tmp_path):
+    from pathlib import Path
+
+    from omafindd.crawler import crawl
+
+    (tmp_path / "a.txt").write_text("fixture")
+    file, = crawl(store, [{"path": str(tmp_path)}])
+    thumb = Path(store.thumbnail(file, b"jpeg"))
+    store.write(file, [], [], state="partial", info={"thumb": str(thumb)})
+    store.write(file, [], [], state="done", info={"thumb": str(thumb)}, append=True)
+    assert thumb.read_bytes() == b"jpeg"
+
+
 def test_model_change_clears_vectors_and_requeues(store, tmp_path):
     from omafindd.crawler import crawl
     from omafindd.extractors import Segment

@@ -111,8 +111,11 @@ def meaning(
 
 
 class Searcher:
-    def __init__(self, stores: Sequence[Store], embedder: Embedder | None, *, start=None):
-        self.stores, self.embedder = stores, embedder
+    def __init__(self, stores: Sequence[Store], embedder: Embedder | None, *, start=None,
+                 code_directory: Path | None = None, code_roots: Sequence[Path] = ()):
+        self.stores = [store for store in stores if store.path.name != "code.sqlite"]
+        self.embedder = embedder
+        self.code_directory, self.code_roots = code_directory, code_roots
         self.start = start
         self._signatures = None
         self.matrix = np.empty((0, 768), dtype=np.float32)
@@ -268,13 +271,18 @@ class Searcher:
 
     async def search(self, q: str, *, legs=("words", "meaning"), limit=40, seq=1) -> dict:
         begun = time.monotonic()
-        if not self.stores:
-            raise FileNotFoundError("No index exists. Run omafind reindex --root PATH.")
         kind = None
         prefix = re.match(r"^\s*(img|pdf|vid|aud|doc|code):", q, re.IGNORECASE)
         if prefix:
             kind, q = PREFIXES[prefix[1].lower()], q[prefix.end() :].strip()
         q = normalized(q).strip()
+        if kind == "code":
+            from .search_code import search_code
+
+            return await search_code(self, q, roots=self.code_roots, directory=self.code_directory,
+                                     legs=legs, limit=limit, seq=seq, begun=begun)
+        if not self.stores:
+            raise FileNotFoundError("No index exists. Run omafind reindex --root PATH.")
         query_result = await self._query(q, bool(q) and "meaning" in legs and kind != "code")
         opened = []
         try:
@@ -347,6 +355,8 @@ class Searcher:
             file = store.db.execute("SELECT * FROM files WHERE id=?", (key[1],)).fetchone()
             semantic, word = best.get(key), keyword.get(key)
             use_meaning = semantic is not None and (semantic[0] >= 2 or word is None)
+            if word and word["kind"] == "ocr":
+                use_meaning = False
             segment_id = int(self.columns["id"][semantic[1]]) if use_meaning else word["id"]
             segment = store.db.execute(
                 "SELECT id,kind,loc,loc_end,excerpt FROM segments WHERE id=?", (segment_id,)
@@ -388,8 +398,10 @@ class Searcher:
                     "leg": leg,
                     "part": "image"
                     if segment["kind"] == "page_image"
-                    else "name"
-                    if segment["kind"] == "name"
+                    else "speech"
+                    if segment["kind"] == "audio" and file["kind"] == "video"
+                    else segment["kind"]
+                    if segment["kind"] in ("name", "ocr", "frame", "image", "audio")
                     else "text",
                     "z": semantic[0] if semantic else None,
                     "score": score,

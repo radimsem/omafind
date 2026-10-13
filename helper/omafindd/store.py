@@ -170,6 +170,7 @@ class Store:
         self.db.execute(f"DELETE FROM segments WHERE file=?{suffix}", (file,))
 
     def delete(self, file: int):
+        self._thumbnail_path(file).unlink(missing_ok=True)
         self.clear_segments(file)
         self.db.execute("DELETE FROM files WHERE id=?", (file,))
 
@@ -190,9 +191,12 @@ class Store:
             (normalized(Path(path).name), normalized(" ".join(Path(path).parent.parts)), file),
         )
 
-    def write(self, file: int, segments, vectors, *, state: str, info: dict, append=False):
+    def write(self, file: int, segments, vectors, *, state: str, info: dict, append=False,
+              ocr_text="", detail=None):
         if len(segments) != len(vectors):
             raise ValueError("embedding precision fault")
+        if not info.get("thumb"):
+            self._thumbnail_path(file).unlink(missing_ok=True)
         with self.db:
             if not append:
                 self.clear_segments(file, keeping_name=True)
@@ -216,12 +220,39 @@ class Store:
                         "INSERT INTO fts(rowid,name,body,original) VALUES(?,'',?,?)",
                         (row, body, segment.text if body != segment.text else None),
                     )
+            if ocr_text:
+                row = self.db.execute(
+                    "INSERT INTO segments(file,kind,modality,excerpt) VALUES(?,'ocr','none',?)",
+                    (file, ocr_text[:400]),
+                ).lastrowid
+                self.db.execute(
+                    "INSERT INTO fts(rowid,name,body,original) VALUES(?,'',?,?)",
+                    (row, normalized(ocr_text), ocr_text),
+                )
             self.db.execute(
-                "UPDATE files SET state=?,detail=NULL,info=?,indexed_at=? WHERE id=?",
-                (state, json.dumps(info), time.time(), file),
+                "UPDATE files SET state=?,detail=?,info=?,indexed_at=? WHERE id=?",
+                (state, detail, json.dumps(info), time.time(), file),
             )
 
+    def skip(self, file: int, detail: str):
+        self.write(file, [], [], state="skipped", info={}, detail=detail)
+
+    def _thumbnail_path(self, file: int) -> Path:
+        return self.path.parent.parent / "thumbs" / self.volume / f"{file}.jpg"
+
+    def thumbnail(self, file: int, data: bytes) -> str:
+        path = self._thumbnail_path(file)
+        directory = path.parent
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
+        descriptor = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+        path.chmod(0o600)
+        return str(path)
+
     def fail(self, file: int, detail: str):
+        self._thumbnail_path(file).unlink(missing_ok=True)
         with self.db:
             self.clear_segments(file, keeping_name=True)
             self.db.execute("UPDATE files SET state='failed',detail=? WHERE id=?", (detail, file))

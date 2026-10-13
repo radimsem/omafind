@@ -11,6 +11,9 @@ TOOLS = {
     "pdftoppm": "poppler",
     "git": "git",
     "findmnt": "util-linux",
+    "ffmpeg": "ffmpeg",
+    "ffprobe": "ffmpeg",
+    "tesseract": "tesseract",
 }
 
 

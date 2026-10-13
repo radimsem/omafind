@@ -40,6 +40,8 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
 | `gpu` | `"auto"` or `"never"` | `"auto"` |
 | `audio` | bool | `true` |
 | `roots` | `[{path, volume, excludes: [path]}]` | `[]` |
+| `codeRoots` | list of absolute repository paths | `[]` |
+| `imageBudget` | 70, 140 or 280 | `140` |
 | `maxResults` | int, clamped to 10..200 | `40` |
 | `warmMinutes` | int, clamped to 0..60 | `5` |
 
@@ -71,9 +73,10 @@ omafind is [MIT licensed](LICENSE), copyright 2026 radimsem.
 
 The reference inputs `photo.jpg`, `screen.png` and `speech.wav` in `tests/fixtures/reference` come from [DigUp](https://github.com/ARahim3/DigUp), copyright 2026 Abdur Rahim, under the [MIT license](https://github.com/ARahim3/DigUp/blob/main/LICENSE).
 
-## Text and PDF indexing
+## Content indexing
 
-Required tools: fd 10+, rg, magick, pdfinfo, pdftotext, pdftoppm, git and findmnt.
+Required tools: fd 10+, rg, magick, pdfinfo, pdftotext, pdftoppm, git, findmnt,
+ffmpeg, ffprobe and tesseract.
 `omafind setup` checks them before installing the daemon. Missing tools produce
 one `sudo pacman -S --needed ...` command.
 
@@ -85,11 +88,32 @@ bin/omafind search --json --limit 40 "invoice 4412"
 Without `--root`, reindex reads the plugin's `roots` setting. With no configured
 roots it exits 2. `--volume UUID` limits reindexing to selected roots on that volume.
 A `--root` matching a configured root keeps that root's excludes and volume.
-Search accepts `img:`, `pdf:`, `vid:`, `aud:`, `doc:` and `code:`. Only text and PDFs
-are indexed so far, so the other prefixes return no hits. Results are a flat list
-in score order, with page or source-line locations and a `weak` flag. Missing
+Search accepts `img:`, `pdf:`, `vid:`, `aud:`, `doc:` and `code:`. Text, PDFs, images,
+video frames and audio windows are indexed. `codeRoots` selects git repositories
+indexed through `git ls-files`, searched only by `code:` queries, with `rg` reading
+the files live.
+Results are a flat list in score order, with page, source-line or second locations
+and a `weak` flag. Missing
 models degrade to keyword results. CLI search exits 0 for a reply (even empty),
 1 for no index or a service error, 2 for invalid arguments, and 3 for a silent socket.
+
+Images use `imageBudget`; screenshots use 280 tokens and video frames use 70.
+Screenshot names (Screenshot, Screen Shot, CleanShot or SCR-, case-insensitive)
+and common screen dimensions enable OCR. OCR reads English only (`-l eng`), since
+only `eng` and `osd` traineddata ship by default, so non-English screenshot text
+reads badly.
+OCR text is searchable without a vector. JPEG thumbnails live in `thumbs/<uuid>/`.
+Video and audio results open through `mpv --start=<seconds>`.
+
+Audio uses 30 s windows with a 25 s hop, skips RMS at or below 0.003, and keeps
+tails with at least 2 s of new audio. `audio:false` skips audio files with detail
+`audio search is off` and indexes videos as frames only. Silent files are skipped.
+Video frames are extracted and committed in passes of at most 16 frames before
+the soundtrack starts. Long audio is extracted and committed in batches of at most
+16 windows, keeping decoded payload memory bounded as well as streaming PCM one
+window at a time.
+A failed soundtrack leaves successfully embedded frames in a `partial` video.
+Size caps are 8 GiB for video, 2 GiB for audio, 512 MiB for PDF and 16 MiB otherwise.
 
 Indexes live in `$XDG_DATA_HOME/omafind/index/<uuid>.sqlite` (default
 `~/.local/share/omafind/index`), mode 0600. Paths are relative to each filesystem's

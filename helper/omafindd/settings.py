@@ -18,6 +18,8 @@ class Settings:
     roots: list[dict] = field(default_factory=list)
     max_results: int = 40
     warm_minutes: int = 5
+    code_roots: tuple[str, ...] = ()
+    image_budget: int = 140
 
 
 def find_entry(config: dict, plugin_id: str) -> dict | None:
@@ -57,6 +59,8 @@ def _load(path: Path) -> Settings:
     setup_done = entry.get("setupDone", False)
     gpu = entry.get("gpu", "auto")
     audio = entry.get("audio", True)
+    repositories = entry.get("codeRoots", [])
+    budget = entry.get("imageBudget", 140)
     return Settings(
         setup_done=setup_done if type(setup_done) is bool else False,
         gpu=gpu if gpu in ("auto", "never") else "auto",
@@ -64,6 +68,10 @@ def _load(path: Path) -> Settings:
         roots=roots(entry.get("roots")),
         max_results=_integer(entry, "maxResults", 40, 10, 200),
         warm_minutes=_integer(entry, "warmMinutes", 5, 0, 60),
+        code_roots=tuple(path for path in repositories
+                         if isinstance(path, str) and Path(path).is_absolute())
+        if isinstance(repositories, list) else (),
+        image_budget=budget if type(budget) is int and budget in (70, 140, 280) else 140,
     )
 
 

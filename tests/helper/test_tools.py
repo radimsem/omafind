@@ -13,6 +13,8 @@ def test_missing_tools_deduplicate_pacman_packages():
         "poppler",
         "git",
         "util-linux",
+        "ffmpeg",
+        "tesseract",
     ]
 
 
@@ -31,7 +33,9 @@ def test_setup_missing_tool_exits_before_installing(cli, env, capsys):
 
     assert cli.setup(env, run=reject, which=lambda name: None) == 1
     lines = capsys.readouterr().err.splitlines()
-    assert lines == ["sudo pacman -S --needed fd ripgrep imagemagick poppler git util-linux"]
+    assert lines == [
+        "sudo pacman -S --needed fd ripgrep imagemagick poppler git util-linux ffmpeg tesseract"
+    ]
 
 
 def test_status_json_reports_tools(cli, env, capsys):

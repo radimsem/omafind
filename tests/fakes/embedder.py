@@ -3,7 +3,7 @@ import re
 from collections.abc import Sequence
 
 import numpy as np
-from omafindd.embedder import Mode, Part, Text
+from omafindd.embedder import InputAudio, Mode, Part, Text
 from omafindd.extractors import ImagePart
 
 
@@ -28,9 +28,11 @@ class FakeEmbedder:
     async def embed_query(self, text: str) -> np.ndarray:
         return self._vector(text)
 
-    async def embed_documents(self, parts: list[str | ImagePart]) -> list[np.ndarray]:
+    async def embed_documents(self, parts: list[str | ImagePart | InputAudio]) -> list[np.ndarray]:
         return [self._vector(part.split(" | text: ", 1)[-1]) if isinstance(part, str)
-                else self._vector(hashlib.sha256(part.data).hexdigest()) for part in parts]
+                else self._vector(hashlib.sha256(
+                    part.data.encode() if isinstance(part, InputAudio) else part.data
+                ).hexdigest()) for part in parts]
 
     async def embed(self, parts: Sequence[Part]) -> list[np.ndarray]:
         return [self._vector(part.text.split(" | query: ", 1)[-1].split(" | text: ", 1)[-1])

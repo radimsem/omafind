@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import multiprocessing
 import os
@@ -9,9 +10,10 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-from .embedder import EmbeddingError, _parent_death_signal, document_text
+from .embedder import EmbeddingError, InputAudio, _parent_death_signal, document_text
 from .embedding import Embedder, validated
 from .extractors import ExtractionError, extract
+from .settings import Settings
 from .store import Store
 
 
@@ -35,8 +37,9 @@ def _pool():
 
 
 class Jobs:
-    def __init__(self, store: Store, embedder: Embedder, *, journal: Path):
+    def __init__(self, store: Store, embedder: Embedder, *, journal: Path, settings=None):
         self.store, self.embedder, self.journal = store, embedder, journal
+        self.settings = settings or Settings()
         self.queue = asyncio.Queue(maxsize=64)
         self.batch = 0
 
@@ -103,7 +106,8 @@ class Jobs:
         pool = _pool()
         try:
             while True:
-                sql = "SELECT * FROM files WHERE state IN ('pending','partial')"
+                sql = ("SELECT * FROM files WHERE "
+                       "(state='pending' OR (state='partial' AND detail IS NULL))")
                 params = []
                 if selected is not None:
                     if not selected:
@@ -123,13 +127,17 @@ class Jobs:
                     row = await self.queue.get()
                     file = row["id"]
                     info = json.loads(row["info"] or "{}")
-                    append = row["state"] == "partial"
-                    start = info.get("read_to", 0) + 1 if append else 1
+                    append = row["state"] == "partial" and row["detail"] is None
+                    start = (info.get("read_to", 0) if row["kind"] == "pdf"
+                             else info.get("audio_next", 0)) + 1 if append else 1
                     try:
                         try:
-                            future = pool.submit(
-                                extract, self.store.mount / row["path"], row["kind"], start
-                            )
+                            args = [self.store.mount / row["path"], row["kind"], start]
+                            if row["kind"] in ("image", "video", "audio"):
+                                args.extend([self.settings.audio, self.settings.image_budget])
+                            if row["kind"] == "video":
+                                args.append(info.get("frame_next") if append else 0.0)
+                            future = pool.submit(extract, *args)
                             result = await asyncio.wrap_future(future)
                         except BrokenProcessPool as error:
                             pool.shutdown(wait=True, cancel_futures=True)
@@ -144,30 +152,63 @@ class Jobs:
                             ):
                                 detail = str(error)
                             raise ExtractionError(detail) from error
-                        if not started:
+                        if result.segments and not started:
                             await self.embedder.start("full")
                             started = True
-                        parts = [
-                            segment.image
-                            if segment.image is not None
-                            else document_text(Path(row["path"]).name, segment.text)
-                            for segment in result.segments
-                        ]
+                        segments = result.segments
                         vectors = []
-                        for offset in range(0, len(parts), 16):
-                            self._begin(file)
-                            batch = parts[offset : offset + 16]
-                            values = await self.embedder.embed_documents(batch)
-                            if len(values) != len(batch):
-                                raise ValueError("embedding precision fault")
-                            vectors.extend(validated(value) for value in values)
+                        groups = [segments]
+                        if row["kind"] == "video":
+                            groups = [[s for s in segments if s.audio is None],
+                                      [s for s in segments if s.audio is not None]]
+                            segments = []
+                        for group in groups:
+                            group_vectors = []
+                            try:
+                                for offset in range(0, len(group), 16):
+                                    self._begin(file)
+                                    batch = [
+                                        segment.image if segment.image is not None
+                                        else InputAudio(base64.b64encode(segment.audio).decode())
+                                        if segment.audio is not None
+                                        else document_text(Path(row["path"]).name, segment.text)
+                                        for segment in group[offset:offset + 16]
+                                    ]
+                                    values = await self.embedder.embed_documents(batch)
+                                    if len(values) != len(batch):
+                                        raise ValueError("embedding precision fault")
+                                    group_vectors.extend(validated(value) for value in values)
+                            except (ValueError, EmbeddingError) as error:
+                                if row["kind"] != "video" or not group or (
+                                    group[0].audio is None or (not vectors and not append)
+                                ):
+                                    raise
+                                result.state = "partial"
+                                result.detail = (
+                                    "embedding precision fault" if isinstance(error, ValueError)
+                                    or str(error) == "embedding precision fault"
+                                    else "soundtrack embedding failed"
+                                )
+                                break
+                            vectors.extend(group_vectors)
+                            if row["kind"] == "video":
+                                segments.extend(group)
+                        if result.thumbnail is not None:
+                            result.info["thumb"] = self.store.thumbnail(file, result.thumbnail)
+                        if append:
+                            info.pop("frame_next", None)
+                            info.pop("audio_next", None)
+                            info.update(result.info)
+                            result.info = info
                         self.store.write(
                             file,
-                            result.segments,
+                            segments,
                             vectors,
                             state=result.state,
                             info=result.info,
                             append=append,
+                            ocr_text=result.ocr_text,
+                            detail=result.detail,
                         )
                     except ExtractionError as error:
                         self.store.fail(file, str(error))
@@ -184,7 +225,8 @@ class Jobs:
                             else "extract-failed",
                         )
                     finally:
-                        result = parts = batch = vectors = future = None
+                        result = batch = vectors = future = segments = groups = group = None
+                        group_vectors = values = None
                         # Release the completed asyncio future before the next PNG window.
                         await asyncio.sleep(0)
                     self._committed(file)
@@ -194,7 +236,8 @@ class Jobs:
                         "SELECT state FROM files WHERE id=?", (file,)
                     ).fetchone()[0]
                     queued = self.store.db.execute(
-                        "SELECT count(*) FROM files WHERE state IN ('pending','partial')"
+                        "SELECT count(*) FROM files WHERE state='pending' "
+                        "OR (state='partial' AND detail IS NULL)"
                     ).fetchone()[0]
                     progress(
                         {

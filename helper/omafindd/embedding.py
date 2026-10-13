@@ -4,7 +4,7 @@ from typing import Protocol
 import numpy as np
 
 from .embedder import Embedder as RuntimeEmbedder
-from .embedder import ImageUrl, Text, query_text
+from .embedder import ImageUrl, InputAudio, Text, query_text
 from .extractors import ImagePart
 
 
@@ -12,7 +12,9 @@ class Embedder(Protocol):
     async def start(self, mode: str) -> None: ...
     async def stop(self) -> None: ...
     async def embed_query(self, text: str) -> np.ndarray: ...
-    async def embed_documents(self, parts: list[str | ImagePart]) -> list[np.ndarray]: ...
+    async def embed_documents(
+        self, parts: list[str | ImagePart | InputAudio]
+    ) -> list[np.ndarray]: ...
 
 
 class Adapter:
@@ -32,10 +34,12 @@ class Adapter:
     async def embed_query(self, text: str) -> np.ndarray:
         return (await self.runtime.embed([Text(query_text(text))]))[0]
 
-    async def embed_documents(self, parts: list[str | ImagePart]) -> list[np.ndarray]:
+    async def embed_documents(self, parts: list[str | ImagePart | InputAudio]) -> list[np.ndarray]:
         inputs = [
             Text(part)
             if isinstance(part, str)
+            else part
+            if isinstance(part, InputAudio)
             else ImageUrl("data:image/png;base64," + base64.b64encode(part.data).decode())
             for part in parts
         ]

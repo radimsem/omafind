@@ -17,6 +17,7 @@ def test_example_has_exact_defaults():
     assert json.loads((ROOT / "settings.example.json").read_text()) == {
         "setupDone": False, "gpu": "auto", "audio": True,
         "roots": [], "maxResults": 40, "warmMinutes": 5,
+        "codeRoots": [], "imageBudget": 140,
     }
 
 
@@ -139,3 +140,12 @@ def test_roots_keep_valid_path_volume_and_excludes(tmp_path):
     path = tmp_path / "shell.json"
     write_settings(path, roots=[None, "bad", {"path": "/x", "volume": "v", "excludes": ["/x/no"]}])
     assert load(path).roots == [{"path": "/x", "volume": "v", "excludes": ["/x/no"]}]
+
+
+@pytest.mark.parametrize("budget,expected", [(70, 70), (140, 140), (280, 280),
+                                             (71, 140), (True, 140), ("280", 140)])
+def test_media_and_code_settings(tmp_path, budget, expected):
+    path = tmp_path / "shell.json"
+    write_settings(path, imageBudget=budget, codeRoots=["/repo", "relative", None, 42])
+    assert load(path).image_budget == expected
+    assert load(path).code_roots == ("/repo",)
