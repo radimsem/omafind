@@ -21,7 +21,7 @@ Setup creates `~/.local/share/omafind/venv`, copies the user unit into `~/.confi
 
 The Vulkan build needs `vulkan-headers` and `shaderc`. Prefer installing the remaining build tools with `sudo pacman -S cmake ninja spirv-headers`. The script can bootstrap private copies when those are missing. It runs in a memory-capped systemd user scope (12 GiB, no swap) when the user manager is available. It builds the pinned llama.cpp runtime, then downloads and verifies both pinned model files.
 
-Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON. Status reports runtime and per-file model presence. `build-runtime` verifies model digests. Runtime and model presence do not change the unit and socket exit codes.
+Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON. Status reports runtime and per-file model presence, the last model verification, volumes, queue length and permission problems. The daemon verifies pinned model sizes and digests on startup. These reports do not change the unit and socket exit codes.
 
 | Exit | Meaning |
 |---|---|
@@ -30,7 +30,26 @@ Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON.
 | 2 | Unit enabled but not active |
 | 3 | Unit active but socket silent |
 
-JSON keys are `unit: {enabled, active}`, `socket: {path, answers}`, `runtime: {path, present}` and `model: {path, files}`. `files` maps each pinned filename to a presence boolean. See [docs/ipc.md](docs/ipc.md) for the handshake.
+`status --json` returns these fields. It reads indexes without opening them for writes.
+
+| Field | Value |
+|---|---|
+| `unit` | `{enabled, active}` |
+| `socket` | `{path, answers}` |
+| `tools` | `{missing: [tool]}` |
+| `runtime` | `{path, present}` |
+| `model` | `{path, files, verified}`; `files` maps pinned filenames to presence booleans; `verified` is the last daemon verdict, false before a report exists |
+| `volumes` | `[{uuid, label, files, online}]`; `files` counts rows with `indexed_at`, excluding `code.sqlite` |
+| `queue` | Total pending and partial file rows across volume indexes |
+| `permissions` | `[{path, expected, actual}]`, with modes such as `0700` and `0644` |
+| `recovery` | Last startup `{clean, mode, journal_retried}`, or `{}` before a report exists |
+| `problems` | Integrity rebuilds as `[{volume, problem, action, moved_to, at}]`, or `[]` |
+
+Text status prints `permission <path> <actual> want <expected>`,
+`volume <label> <files> online|offline`, `queue <n>`, `recovery reconcile|none`
+and `problem <uuid> integrity rebuilt` when applicable.
+Unreadable or corrupt indexes retain a volume entry with zero counts until recovery rebuilds them.
+See [docs/ipc.md](docs/ipc.md) for the handshake.
 
 Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell.json`. The plugin writes them through `updateEntryInline`; the daemon only reads them. Later issues add keys.
 
@@ -41,12 +60,27 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
 | `audio` | bool | `true` |
 | `roots` | `[{path, volume, excludes: [path]}]` | `[]` |
 | `codeRoots` | list of absolute repository paths | `[]` |
+| `ignoredVolumes` | list of filesystem UUIDs the new-drive toast skips | `[]` |
 | `imageBudget` | 70, 140 or 280 | `140` |
 | `maxResults` | int, clamped to 10..200 | `40` |
 | `warmMinutes` | int, clamped to 0..60 | `5` |
 | `shortcut` | uppercase `MODS + KEY`; mods: SUPER, SHIFT, CTRL, ALT | `"SUPER + E"` |
 
-Index data, snippets, OCR text and thumbnails are stored unencrypted inside the user's home. On the target host, LUKS protects them while the disk is locked. External-drive indexes live on the internal disk. omafind sends no telemetry; network access is limited to user-started runtime builds and model downloads.
+## Threat model
+
+The index, snippets, OCR text and thumbnails are stored unencrypted inside the user's home.
+The host's LUKS disk encryption protects them while the disk is locked.
+External-drive indexes and cached thumbnails live on the internal disk, so they stay after a drive is unplugged.
+A process running as the same user can read this data; omafind adds no encryption while the user is logged in.
+
+The data directory and its child directories use 0700. Databases, model files and the journal use 0600.
+The socket directory uses 0700 and the socket uses 0600. The daemon checks the connecting UID with `SO_PEERCRED`.
+The shared secrets filter runs at every indexing entry point. It excludes known secret names, but cannot identify every sensitive document.
+The daemon never logs file text or query text. It sends no telemetry.
+Network access is limited to user-started runtime builds and model downloads, plus the local embedding server on loopback.
+
+The daemon runs as the user and searches selected folders in `$HOME` and mounted volumes.
+It needs no root daemon or fanotify. Status reports permission problems without changing permissions or its exit code.
 
 ## Check
 
@@ -149,6 +183,9 @@ before searching. During reindex it serves words-only results with
 `degraded:"indexing in progress"` and rejects `warm` with the same reason.
 A reindex that finds the daemon's server warm prints `waiting index.lock`; the daemon
 stops that server within half a second.
+Incremental reindexes the daemon starts itself, after a file change or a drive
+returns, reuse the daemon's server, so search keeps its meaning results while
+they run.
 
 The shared fd rules exclude hidden files, ignored paths, heavy directories and
 DigUp's secret-name patterns, including encrypted key stores. Machine-named
