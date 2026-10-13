@@ -106,7 +106,7 @@ async def test_runtime_requests(service, kind, method):
 
 async def test_discover_start(service):
     result = await service.handle({"t": "discover_start"})
-    assert result == {"t": "discover_result", "candidates": []}
+    assert result == {"t": "discover_result", "candidates": [], "volume": None}
 
 
 @pytest.mark.parametrize("root", ["~/Documents", "/h/Documents"])
@@ -312,6 +312,7 @@ async def test_progress_body_from_stores(service):
     assert result["failed"] == {"encrypted-pdf": 1}
     assert result["problems"] == [{"path": "/h/e.pdf", "reason": "encrypted-pdf"}]
     assert result["volume"] == "u"
+    assert result["volumes"] == {"u": {"label": "root", "done": 6, "total": 8}}
 
 
 @pytest.mark.parametrize(
@@ -457,3 +458,41 @@ async def test_ipc_stop_cancels_requests_before_stopping_jobs(service, tmp_path)
     server._tasks.add(task)
     await asyncio.sleep(0)
     await server.stop()
+
+
+async def test_discover_result_echoes_volume(service):
+    assert (await service.handle({'t': 'discover_start', 'volume': 'usb'}))['volume'] == 'usb'
+
+
+async def test_index_start_volume_spawns_volume_filter(service):
+    await service.handle({'t': 'index_start', 'volume': 'usb'})
+    assert service.test_calls[0][0][-2:] == ('--volume', 'usb')
+
+
+async def test_drive_decision_reply(service):
+    for choice in ('scan', 'ignore'):
+        message = {'t': 'drive_decision', 'uuid': 'usb', 'choice': choice}
+        assert await service.handle(message) == message
+    assert 'usb' in service.ignored
+    assert not service.test_calls
+
+
+async def test_kick_defers_until_child_exit(service):
+    await service.kick('u')
+    assert service.busy
+    await service.kick('usb')
+    assert len(service.test_calls) == 1
+    service.test_process.returncode = 0
+    await service.poll(now=0)
+    assert len(service.test_calls) == 2
+    assert service.test_calls[-1][0][-2:] == ('--volume', 'usb')
+
+
+async def test_kick_paused_or_unverified_does_not_spawn(service):
+    service.model_ready = lambda: False
+    await service.kick('u')
+    assert not service.test_calls
+    service.model_ready = lambda: True
+    service.paused = lambda: True
+    await service.kick('u')
+    assert not service.test_calls

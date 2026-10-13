@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -82,12 +83,61 @@ def _presence(env):
     data = Path(env.get("XDG_DATA_HOME") or Path(env["HOME"]) / ".local/share") / "omafind"
     binary = data / "runtime/bin/llama-server"
     directory = data / "model"
+
+    def present(path):
+        try:
+            return path.is_file()
+        except OSError:
+            return False
+
     return {
         "runtime": {"path": str(binary),
-                    "present": binary.is_file() and os.access(binary, os.X_OK)},
+                    "present": present(binary) and os.access(binary, os.X_OK)},
         "model": {"path": str(directory),
-                  "files": {name: (directory / name).is_file() for name in MODEL_NAMES}},
+                  "files": {name: present(directory / name) for name in MODEL_NAMES}},
     }
+
+
+def _index_status(env, run):
+    from omafindd import health, permissions
+
+    data = Path(env.get("XDG_DATA_HOME") or Path(env["HOME"]) / ".local/share") / "omafind"
+    runtime = Path(env["XDG_RUNTIME_DIR"]) / "omafind" if env.get("XDG_RUNTIME_DIR") else None
+    report = health.read(data / "index/health.json")
+    try:
+        mounted = run(["findmnt", "-rno", "UUID"], env=env,
+                      capture_output=True, text=True)
+        online = set(mounted.stdout.split()) if mounted.returncode == 0 else set()
+    except OSError:
+        online = set()
+    volumes = []
+    queue = 0
+    for path in sorted((data / "index").glob("*.sqlite")):
+        if path.name == "code.sqlite":
+            continue
+        label = path.stem
+        files = pending = 0
+        try:
+            connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+            try:
+                row = connection.execute(
+                    "SELECT value FROM meta WHERE key='volume_label'").fetchone()
+                label = row[0] if row and row[0] else path.stem
+                files, pending = connection.execute(
+                    "SELECT count(indexed_at), "
+                    "coalesce(sum(state='pending' OR (state='partial' AND detail IS NULL)), "
+                    "0) FROM files").fetchone()
+            finally:
+                connection.close()
+        except (OSError, sqlite3.Error):
+            pass
+        volumes.append({"uuid": path.stem, "label": label, "files": files,
+                        "online": path.stem in online})
+        queue += pending
+    return {"volumes": volumes, "queue": queue,
+            "permissions": permissions.check(data, runtime),
+            "problems": report.get("problems", []), "recovery": report.get("recovery", {}),
+            "verified": report.get("model", {}).get("verified", False)}
 
 
 def _print_presence(details):
@@ -173,6 +223,9 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
     details = {"unit": {"enabled": enabled, "active": active},
                "socket": {"path": str(path), "answers": answers},
                "tools": {"missing": missing}, **_presence(env)}
+    index = _index_status(env, run)
+    details["model"]["verified"] = index.pop("verified")
+    details.update(index)
     if as_json:
         print(json.dumps(details, separators=(",", ":")))
     else:
@@ -180,6 +233,15 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
         print("unit active" if active else "unit inactive")
         print("socket answering" if answers else "socket silent")
         _print_presence(details)
+        for item in details["permissions"]:
+            print(f"permission {item['path']} {item['actual']} want {item['expected']}")
+        for item in details["volumes"]:
+            print(f"volume {item['label']} {item['files']} "
+                  f"{'online' if item['online'] else 'offline'}")
+        print(f"queue {details['queue']}")
+        print(f"recovery {details['recovery'].get('mode', 'none')}")
+        for item in details["problems"]:
+            print(f"problem {item['volume']} {item['problem']} {item['action']}")
     if missing:
         print("sudo pacman -S --needed " + " ".join(missing), file=sys.stderr)
         return 1
@@ -297,8 +359,10 @@ def reindex(args, env, execve=os.execve):
     from omafindd.indexing import reindex as index
 
     directory = Path(env.get("XDG_DATA_HOME") or Path(env["HOME"]) / ".local/share") / "omafind"
+    shared_url = env.get('OMAFIND_EMBED_URL') if parsed.incremental else None
     embedder = Adapter(Embedder(binary=directory / "runtime/bin/llama-server",
-                                model_dir=directory / "model"))
+                                model_dir=directory / "model", base_url=shared_url,
+                                api_key=env.get('OMAFIND_EMBED_KEY')))
     try:
         asyncio.run(index(roots, directory=directory, embedder=embedder, volume=parsed.volume,
                           settings=settings, code_roots=code_roots, force=not parsed.incremental))

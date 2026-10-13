@@ -450,3 +450,72 @@ async def test_fake_embedder_provides_repeatable_unit_vectors():
     assert all(np.array_equal(a, b) for a, b in zip(first, second, strict=True))
     assert not np.array_equal(first[0], first[1])
     await embedder.stop()
+
+
+async def test_client_only_embedder_never_spawns_or_stops_server(memory_runtime, monkeypatch):
+    owner, spawner = memory_runtime
+    await owner.start('full')
+    env = owner.connection_env
+    shared = Embedder(base_url=env['OMAFIND_EMBED_URL'], api_key=env['OMAFIND_EMBED_KEY'],
+                      spawner=lambda *args, **kwargs: pytest.fail('client spawned a server'))
+    try:
+        await shared.start('full')
+        assert len(await shared.embed([ImageUrl('data:image/png;base64,YWJj')])) == 1
+        await shared.stop()
+        assert owner.mode == 'full'
+        assert not spawner.servers[0].terminated
+        assert len(await owner.embed([Text('still warm')])) == 1
+    finally:
+        await shared.stop()
+        await owner.stop()
+
+
+async def test_full_server_serves_text_without_restart(memory_runtime):
+    embedder, spawner = memory_runtime
+    await embedder.start('full')
+    try:
+        await embedder.start('text')
+        assert embedder.mode == 'full'
+        assert len(spawner.commands) == 1
+        assert len(await embedder.embed([Text('query')])) == 1
+    finally:
+        await embedder.stop()
+
+
+async def test_lease_reuses_daemon_server_while_it_is_starting(memory_runtime, monkeypatch):
+    from omafindd import main
+    from omafindd.embedding import Adapter
+    from omafindd.service import SearchService
+    from omafindd.settings import Settings
+    from omafindd.state import State
+
+    embedder, spawner = memory_runtime
+    spawner.server_options['health_status'] = 503
+    monkeypatch.setattr(main, 'Embedder', lambda **kwargs: embedder)
+    service = SearchService(embedder.model_dir / 'index', lambda: Settings(),
+                            main._LazyEmbedder(), State(model='ready'))
+    warming = service._warming('text')
+    leasing = None
+    try:
+        async with asyncio.timeout(1):
+            while not spawner.servers:
+                await asyncio.sleep(0)
+            server = spawner.servers[0]
+            await server.health_requested.wait()
+        leasing = asyncio.create_task(service.lease_indexer())
+        await asyncio.sleep(0)
+        server.health_status = 200
+        env = await asyncio.wait_for(leasing, 1)
+        assert await warming is None
+        assert env['OMAFIND_EMBED_KEY'] == server.api_key
+        assert len(spawner.commands) == 1
+        assert '--mmproj' in spawner.commands[0]
+        assert not server.terminated
+        await service._start('text')
+        assert len(await Adapter(embedder).embed_query('fixture')) == 768
+    finally:
+        server.health_status = 200
+        tasks = [task for task in (warming, leasing) if task is not None]
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await service.release_indexer()
+        await service.stop()

@@ -11,7 +11,11 @@ from pathlib import Path
 
 from . import discovery
 from .install import RuntimeJob
-from .store import mounted_volumes
+
+
+def mounted_volumes():
+    from .store import mounted_volumes as resolve
+    return resolve()
 
 HOME = Path.home()
 KINDS = ("text", "pdf", "image", "video", "audio")
@@ -26,6 +30,7 @@ class SetupService:
         "discover_tree",
         "fs_list",
         "index_start",
+        "drive_decision",
     }
 
     def __init__(
@@ -42,11 +47,20 @@ class SetupService:
         spawn=asyncio.create_subprocess_exec,
         clock=time.monotonic,
         home=HOME,
+        model_ready=lambda: True,
+        paused=lambda: False,
+        check_disk=None,
+        push_status=None,
     ):
         self.data_dir, self.plugin_root, self.home = data_dir, plugin_root, home
         self.settings, self.broadcast, self.runtime = settings, broadcast, runtime
         self.discover, self.tree, self.list_dirs = discover, tree, list_dirs
         self.spawn, self.clock = spawn, clock
+        self.model_ready, self.paused = model_ready, paused
+        self.check_disk, self.push_status = check_disk, push_status
+        self.ignored = set()
+        self._deferred = set()
+        self._active_volume = None
         self._scan = None
         self._scans = {}
         self._index = None
@@ -87,7 +101,7 @@ class SetupService:
                 if volume is not None and (not isinstance(volume, str) or not volume):
                     return self._error(kind, "bad-request", "Invalid discovery volume.")
                 scan = await self._discover(volume)
-                return {"t": "discover_result", **scan.body}
+                return {"t": "discover_result", **scan.body, "volume": volume}
             if kind in ("discover_tree", "fs_list"):
                 key = "root" if kind == "discover_tree" else "path"
                 path = message.get(key)
@@ -103,9 +117,19 @@ class SetupService:
                 else:
                     body = await asyncio.to_thread(self.list_dirs, path, home=self.home)
                 return {"t": kind, **body}
+            if kind == "drive_decision":
+                uuid, choice = message.get("uuid"), message.get("choice")
+                if not isinstance(uuid, str) or not uuid or choice not in ("scan", "ignore"):
+                    return self._error(kind, "bad-request", "Invalid drive decision.")
+                if choice == "ignore":
+                    self.ignored.add(uuid)
+                return {"t": kind, "uuid": uuid, "choice": choice}
             if kind == "index_start":
+                volume = message.get("volume")
+                if volume is not None and (not isinstance(volume, str) or not volume):
+                    return self._error(kind, "bad-request", "Invalid indexing volume.")
                 if self._starting is None or self._starting.done():
-                    self._starting = asyncio.create_task(self._start_index())
+                    self._starting = asyncio.create_task(self._start_index(volume))
                 return await asyncio.shield(self._starting)
             return self._error(kind, "bad-request", "Unknown setup request.")
         except Exception as error:
@@ -116,7 +140,23 @@ class SetupService:
             )
             return self._error(kind, code, str(error))
 
-    async def _start_index(self):
+    @property
+    def busy(self):
+        return ((self._starting is not None and not self._starting.done())
+                or (self._index is not None and self._index.returncode is None))
+
+    async def kick(self, volume=None):
+        if self.check_disk is not None:
+            await self.check_disk()
+        if self.paused() or not self.model_ready():
+            return
+        if self.busy:
+            self._deferred.add(volume)
+            return
+        self._starting = asyncio.create_task(self._start_index(volume))
+        await asyncio.shield(self._starting)
+
+    async def _start_index(self, volume=None):
         async with self._index_lock:
             settings = self.settings()
             if not settings.roots and not settings.code_roots:
@@ -125,7 +165,15 @@ class SetupService:
                     "no-roots",
                     "No folders are selected. Pick folders in setup first.",
                 )
-            if self._index is None or self._index.returncode is not None:
+            if self.check_disk is not None:
+                await self.check_disk()
+            if self.paused() or not self.model_ready():
+                return await asyncio.to_thread(self._progress)
+            if self._index is not None and self._index.returncode is None:
+                if volume != self._active_volume:
+                    self._deferred.add(volume)
+            else:
+                self._active_volume = volume
                 directory = self.data_dir / "index"
                 directory.mkdir(parents=True, mode=0o700, exist_ok=True)
                 log = directory / "reindex.log"
@@ -137,6 +185,7 @@ class SetupService:
                         str(self.plugin_root / "bin/omafind"),
                         "reindex",
                         "--incremental",
+                        *(["--volume", volume] if volume is not None else []),
                         start_new_session=True,
                         stdout=stream,
                         stderr=stream,
@@ -201,7 +250,7 @@ class SetupService:
     def _progress(self):
         kinds = {kind: {"done": 0, "total": 0} for kind in KINDS}
         kinds["pdf"]["pages"] = kinds["image"]["ocr"] = 0
-        failed, problems = {}, []
+        failed, problems, volumes = {}, [], {}
         volume = pending_volume = None
         try:
             self._mounts = mounted_volumes()
@@ -213,11 +262,16 @@ class SetupService:
                 continue
             try:
                 with closing(
-                    sqlite3.connect(path.absolute().as_uri() + "?mode=ro", uri=True, timeout=0.05)
+                    sqlite3.connect(path.absolute().as_uri() + "?mode=rw", uri=True, timeout=0.05)
                 ) as db:
                     meta = dict(db.execute("SELECT key,value FROM meta"))
                     current = meta.get("volume_uuid", path.stem)
                     volume = current
+                    total, done = db.execute(
+                        f"SELECT count(*),coalesce(sum({ready}),0) FROM files"
+                    ).fetchone()
+                    volumes[current] = {"label": meta.get("volume_label", "root"),
+                                        "done": done, "total": total}
                     for kind, total, done in db.execute(
                         f"SELECT kind,count(*),sum({ready}) FROM files GROUP BY kind"
                     ):
@@ -287,6 +341,7 @@ class SetupService:
             "done": done,
             "queued": total - done,
             "volume": pending_volume or volume,
+            "volumes": volumes,
             "device": device,
             "vram_gb": vram,
             "kinds": kinds,
@@ -302,6 +357,8 @@ class SetupService:
         now = self.clock() if now is None else now
         if not body["running"] or (body != self._last and now - self._last_at >= 0.5):
             await self.broadcast(body)
+            if self.push_status is not None:
+                await self.push_status(force=not body["running"])
             self._last, self._last_at = body, now
             if not body["running"]:
                 self._final = True
@@ -314,6 +371,14 @@ class SetupService:
                             f"See {self.data_dir / 'index/reindex.log'}.",
                         )
                     )
+
+                if self._deferred:
+                    volume = None if None in self._deferred else sorted(self._deferred)[0]
+                    if volume is None:
+                        self._deferred.clear()
+                    else:
+                        self._deferred.remove(volume)
+                    await self.kick(volume)
 
     async def stop(self) -> None:
         if self._starting is not None:

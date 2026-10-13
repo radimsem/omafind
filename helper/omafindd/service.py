@@ -5,9 +5,16 @@ import sqlite3
 from pathlib import Path
 
 from .code import configured_roots
-from .embedder import EmbeddingError
-from .search import PREFIXES, Searcher
-from .store import Store, mounted_volumes, volume_for
+
+
+def mounted_volumes():
+    from .store import mounted_volumes as resolve
+    return resolve()
+
+
+def volume_for(path, **kwargs):
+    from .store import volume_for as resolve
+    return resolve(path, **kwargs)
 
 
 class SearchService:
@@ -29,14 +36,31 @@ class SearchService:
         )
         self.volume_resolver = volume_resolver
         self.mounts_resolver = mounts_resolver
-        self.searcher = Searcher([], embedder, start=self._start, code_directory=directory)
+        self._searcher = None
         self._databases = {}
         self._idle_task = None
+        self._warm_task = None
         self._lock = asyncio.Lock()
         self._index_lock = None
+        self._lease_want = None
+        self._lease_child = None
+        self._lease_task = None
         self._mountinfo = None
         self._mount_files = None
+        self._mount_roots = None
         self._mounts = {}
+
+    @property
+    def searcher(self):
+        if self._searcher is None:
+            from .search import Searcher
+            self._searcher = Searcher([], self.embedder, start=self._start_query,
+                                      code_directory=self.directory)
+        return self._searcher
+
+    @searcher.setter
+    def searcher(self, value):
+        self._searcher = value
 
     def _probe_lock(self):
         self.directory.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -56,6 +80,8 @@ class SearchService:
             os.close(intent)
 
     def _indexing(self):
+        if self.index_leased:
+            return False
         try:
             descriptor = self._probe_lock()
         except BlockingIOError:
@@ -69,7 +95,12 @@ class SearchService:
             self._index_lock = None
 
     async def _start(self, mode):
+        from .embedder import EmbeddingError
         async with self._lock:
+            if self.index_leased:
+                if self.embedder.mode != 'full':
+                    raise EmbeddingError('Shared embedding server is not running')
+                return
             if self._index_lock is None:
                 try:
                     self._index_lock = self._probe_lock()
@@ -88,8 +119,113 @@ class SearchService:
                 raise
 
     async def _stop(self):
+        task, self._warm_task = self._warm_task, None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         async with self._lock:
+            if self.index_leased:
+                return False
             await self._stop_locked()
+            return True
+
+    @property
+    def index_leased(self):
+        return self._lease_want is not None
+
+    async def lease_indexer(self):
+        from .embedder import EmbeddingError
+
+        async with self._lock:
+            if self.index_leased:
+                if self._lease_child is not None and self._lease_child.returncode is not None:
+                    self._lease_child = None
+                return self.embedder.connection_env
+            if self.state.model != 'ready':
+                return None
+            self.directory.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            want = os.open(self.directory.parent / 'index.want', os.O_CREAT | os.O_RDWR, 0o600)
+            try:
+                # Retain both shared locks so external indexers cannot take server ownership.
+                fcntl.flock(want, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                if self._index_lock is None:
+                    self._index_lock = self._probe_lock()
+                self._cancel_idle()
+                await self.embedder.start('full')
+                env = self.embedder.connection_env
+                if self.embedder.mode != 'full' or not env.get('OMAFIND_EMBED_URL'):
+                    raise EmbeddingError('Embedding server cannot be shared')
+                await self.state.update(embedder=self.embedder.mode)
+                self._lease_want = want
+                return env
+            except (EmbeddingError, OSError):
+                await self._stop_locked()
+                await self.state.update(embedder='stopped')
+                return None
+            except BaseException:
+                await self._stop_locked()
+                raise
+            finally:
+                if self._lease_want != want:
+                    os.close(want)
+
+    async def release_indexer(self):
+        async with self._lock:
+            self._release_indexer_locked()
+
+    def _release_indexer_locked(self):
+        if self._lease_want is None:
+            return
+        os.close(self._lease_want)
+        self._lease_want = None
+        self._lease_child = None
+        if self.embedder.mode is not None:
+            self._arm_idle()
+
+    def watch_indexer(self, child):
+        self._lease_child = child
+        self._lease_task = asyncio.create_task(self._wait_indexer(child))
+
+    async def _wait_indexer(self, child):
+        try:
+            await child.wait()
+        finally:
+            async with self._lock:
+                if self._lease_child is child:
+                    self._release_indexer_locked()
+
+    def _warming(self, mode):
+        if self._warm_task is None or self._warm_task.done():
+            self._warm_task = asyncio.create_task(self._warm(mode))
+        return self._warm_task
+
+    async def _warm(self, mode):
+        from .embedder import EmbeddingError
+
+        try:
+            await self._start(mode)
+        except (EmbeddingError, OSError) as error:
+            await self.state.update(embedder="stopped")
+            return str(error) or "the embedding server did not start"
+        await self.state.update(embedder=self.embedder.mode or "stopped")
+        if self.embedder.mode is not None:
+            self._arm_idle()
+        return None
+
+    async def _start_query(self, mode):
+        from .embedder import EmbeddingError
+
+        if self._warm_task is not None and self._warm_task.done():
+            if reason := self._warm_task.result():
+                self._warm_task = None
+                raise EmbeddingError(reason)
+        task = self._warming(mode)
+        # An already warm server can finish in one turn; a cold load stays in the background.
+        await asyncio.sleep(0)
+        if not task.done():
+            raise EmbeddingError("the embedding server is starting")
+        if reason := task.result():
+            raise EmbeddingError(reason)
 
     async def _stop_locked(self):
         stopping = asyncio.create_task(self.embedder.stop())
@@ -103,27 +239,35 @@ class SearchService:
             self._release_lock()
 
     async def yield_to_indexer(self):
-        async with self._lock:
-            if self._index_lock is not None and self._indexing():
-                self._cancel_idle()
-                await self._stop_locked()
+        if not self.index_leased and self._index_lock is not None and self._indexing():
+            self._cancel_idle()
+            if await self._stop():
                 await self.state.update(embedder="stopped")
 
-    def _refresh(self):
-        self.searcher.code_roots = configured_roots(self.settings)
-        files = set(self.directory.glob("*.sqlite")) - {self.directory / "code.sqlite"}
+    def current_mounts(self):
         mountinfo = Path("/proc/self/mountinfo").read_bytes()
-        if mountinfo != self._mountinfo or files != self._mount_files:
+        files = set(self.directory.glob("*.sqlite")) - {self.directory / "code.sqlite"}
+        roots = self.settings().roots
+        if (mountinfo != self._mountinfo or files != self._mount_files
+                or roots != self._mount_roots):
             mounts = dict(self.mounts_resolver())
-            roots = self.settings().roots
-            for path in [self.directory.parent, *(Path(root["path"]) for root in roots)]:
+            for path in [self.directory.parent, *(Path(root["path"])
+                                                  for root in self.settings().roots)]:
                 try:
                     volume, mount = self.volume_resolver(path, mounts=mounts)
                 except OSError:
                     continue
                 mounts[volume] = mount
             self._mountinfo, self._mount_files, self._mounts = mountinfo, files, mounts
-        mounts = self._mounts
+            self._mount_roots = roots
+        return self._mounts
+
+    def _refresh(self):
+        from .store import Store
+
+        self.searcher.code_roots = configured_roots(self.settings)
+        files = set(self.directory.glob("*.sqlite")) - {self.directory / "code.sqlite"}
+        mounts = self.current_mounts()
         for path in self._databases.keys() - files:
             self._databases.pop(path).close()
         for path in files:
@@ -133,15 +277,10 @@ class SearchService:
                 except (sqlite3.Error, KeyError):
                     self._mount_files = self._mount_files - {path}
                     continue
-                if store.volume not in mounts:
-                    store.close()
-                    continue
-                store.mount = mounts[store.volume]
                 self._databases[path] = store
-            else:
-                store = self._databases[path]
-                if store.volume in mounts:
-                    store.mount = mounts[store.volume]
+            store = self._databases[path]
+            store.online = store.volume in mounts
+            store.mount = mounts.get(store.volume, store.last_mount or Path("/"))
         self.searcher.stores = list(self._databases.values())
 
     def _cancel_idle(self):
@@ -151,12 +290,13 @@ class SearchService:
 
     def _arm_idle(self):
         self._cancel_idle()
-        self._idle_task = asyncio.create_task(self._idle(self.settings().warm_minutes * 60))
+        if not self.index_leased:
+            self._idle_task = asyncio.create_task(self._idle(self.settings().warm_minutes * 60))
 
     async def _idle(self, seconds):
         await asyncio.sleep(seconds)
-        await self._stop()
-        await self.state.update(embedder="stopped")
+        if await self._stop():
+            await self.state.update(embedder="stopped")
 
     async def handle(self, message: dict) -> dict:
         self._cancel_idle()
@@ -169,6 +309,9 @@ class SearchService:
                 self._arm_idle()
 
     async def _handle(self, message: dict) -> dict:
+        from .embedder import EmbeddingError
+        from .search import PREFIXES
+
         indexing = self._indexing()
         if indexing:
             await self._stop()
@@ -176,8 +319,8 @@ class SearchService:
             try:
                 if indexing:
                     raise EmbeddingError("indexing in progress")
-                await self._start("text")
-                await self.state.update(embedder="text")
+                if reason := await asyncio.shield(self._warming("text")):
+                    raise EmbeddingError(reason)
                 return self.state.message()
             except (EmbeddingError, OSError) as error:
                 await self.state.update(embedder="stopped")
@@ -212,20 +355,40 @@ class SearchService:
             if not indexing and self._indexing():
                 indexing = True
                 await self._stop()
+            unverified = self.state.model != "ready"
             reply = await self.searcher.search(
-                q, legs=["words"] if indexing else legs, limit=limit, seq=seq, kinds=kinds
+                q, legs=["words"] if indexing or unverified else legs, limit=limit, seq=seq,
+                kinds=kinds
             )
-            if indexing or reply["degraded"] == "indexing in progress":
+            if unverified:
+                reply["legs"] = ["words"]
+                reply["degraded"] = "embedding model failed verification"
+            elif indexing or reply["degraded"] == "indexing in progress":
                 if "words" not in reply["legs"]:
                     reply = await self.searcher.search(q, legs=["words"], limit=limit, seq=seq,
                                                        kinds=kinds)
                 reply["legs"] = ["words"]
                 reply["degraded"] = "indexing in progress"
+            elif reply["degraded"] == "the embedding server is starting":
+                if "words" not in reply["legs"]:
+                    reply = await self.searcher.search(q, legs=["words"], limit=limit, seq=seq,
+                                                       kinds=kinds)
+                reply["legs"] = ["words"]
+                reply["degraded"] = "the embedding server is starting"
         except FileNotFoundError as error:
             return {"t": "error", "seq": seq, "code": "no-index", "reason": str(error)}
         return reply
 
     async def stop(self):
+        if self._lease_task is not None:
+            await self._lease_task
+            self._lease_task = None
+        # A cold warm-up holds self._lock until it is cancelled.
+        warm, self._warm_task = self._warm_task, None
+        if warm is not None:
+            warm.cancel()
+            await asyncio.gather(warm, return_exceptions=True)
+        await self.release_indexer()
         task = self._idle_task
         self._cancel_idle()
         if task is not None:

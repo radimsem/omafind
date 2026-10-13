@@ -350,6 +350,7 @@ def scan(*, home: Path, volume: str | None = None, run=subprocess.run, popen=sub
     xdg = xdg_dirs(home) if xdg is None else xdg
     counts = defaultdict(lambda: dict.fromkeys(KINDS, 0))
     datasets = set()
+    dataset_details = {}
     with ThreadPoolExecutor(max_workers=5) as pool:
         volume_future = pool.submit(_volume_lookup, lsblk) if volume_of is None else None
         device_future = pool.submit(_device, home) if device is None else None
@@ -366,6 +367,11 @@ def scan(*, home: Path, volume: str | None = None, run=subprocess.run, popen=sub
             listed = list(rules.walk(root, excludes=[], run=popen))
             skipped = rules.datasets(listed, root=root)
             datasets.update(skipped)
+            for folder in skipped:
+                names = [p for p in listed if p.is_relative_to(folder)]
+                matched = sum(rules.looks_machine_named(p.stem) for p in names)
+                dataset_details[str(folder)] = {"path": str(folder), "files": len(names),
+                                                "match": [matched, len(names)]}
             direct = defaultdict(Counter)
             skipped_names = {str(p) for p in skipped}
             excluded = {}
@@ -434,6 +440,8 @@ def scan(*, home: Path, volume: str | None = None, run=subprocess.run, popen=sub
         for path, section in selected:
             data = _root_tree(path, _listed(path, run, datasets, names=selected_names[str(path)]),
                               section=section, volume=volume_of(path)[0], device=device, git=False)
+            if volume is not None:
+                data.candidate["checked"] = True
             roots[str(path)] = data
         rule_counts = {r: rules.rule_dirs(future.result(), r, root=home)
                        for r, future in removed.items() if r != 'secrets'}
@@ -452,7 +460,8 @@ def scan(*, home: Path, volume: str | None = None, run=subprocess.run, popen=sub
                                              if p != home and not sum(counts.get(p, {}).values()))
                             if volume is None else [],
                             'dot': rule_counts.get('dot', 0), 'heavy': rule_counts.get('heavy', 0),
-                            'dataset': len(datasets)}}
+                            'dataset': len(datasets),
+                            'datasets': [dataset_details[p] for p in sorted(dataset_details)]}}
     return Scan(body, roots, scanned_at)
 
 

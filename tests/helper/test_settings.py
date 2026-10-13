@@ -17,7 +17,7 @@ def test_example_has_exact_defaults():
     assert json.loads((ROOT / "settings.example.json").read_text()) == {
         "setupDone": False, "gpu": "auto", "audio": True,
         "roots": [], "maxResults": 40, "warmMinutes": 5,
-        "codeRoots": [], "imageBudget": 140, "shortcut": "SUPER + E",
+        "codeRoots": [], "imageBudget": 140, "shortcut": "SUPER + E", "ignoredVolumes": [],
     }
 
 
@@ -172,3 +172,36 @@ def test_bad_root_shapes_give_defaults(tmp_path, fields):
     path = tmp_path / 'shell.json'
     write_settings(path, **fields)
     assert load(path) == Settings()
+
+
+@pytest.mark.parametrize('value,expected', [
+    (['usb', '', None, 42, 'other'], ('usb', 'other')), ('usb', ()), (None, ()),
+])
+def test_ignored_volumes_round_trip(tmp_path, value, expected):
+    path = tmp_path / 'shell.json'
+    write_settings(path, ignoredVolumes=value)
+    assert load(path).ignored_volumes == expected
+    assert SettingsReader(path).read().ignored_volumes == expected
+
+
+def test_mount_aliases_rebase_roots_and_excludes_without_writing_shell(tmp_path, monkeypatch):
+    from omafindd import health
+
+    monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path))
+    path = tmp_path / 'shell.json'
+    write_settings(path, roots=[{'path': '/media/old/docs', 'volume': 'usb',
+                                'excludes': ['/media/old/docs/private', 'generated']}])
+    before = path.read_bytes()
+    reader = SettingsReader(path)
+    assert reader.read().roots[0]['path'] == '/media/old/docs'
+    health.write(paths.health_path(), {'mounts': {'usb': {
+        'current': '/media/new', 'previous': ['/media/old']}}})
+    expected = [{'path': '/media/new/docs', 'volume': 'usb',
+                 'excludes': ['/media/new/docs/private', 'generated']}]
+    assert reader.read().roots == expected
+    assert load(path).roots == expected
+    assert SettingsReader(path).read().roots == expected
+    assert path.read_bytes() == before
+    health.write(paths.health_path(), {'mounts': {'usb': {
+        'current': '/media/again', 'previous': ['/media/old', '/media/new']}}})
+    assert reader.read().roots[0]['path'] == '/media/again/docs'

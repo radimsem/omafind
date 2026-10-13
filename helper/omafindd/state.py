@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from . import paths
+from .models import Verifier
 
 
 @dataclass
@@ -15,14 +16,15 @@ class State:
     )
 
     @classmethod
-    def detect(cls):
+    def detect(cls, verifier=None):
         binary = paths.runtime_bin()
         models = paths.model_dir()
+        verifier = verifier if verifier is not None else Verifier(models)
         return cls(
             runtime="ready" if binary.is_file() and os.access(binary, os.X_OK) else "missing",
             model="ready" if all((models / name).is_file() for name in (
                 "embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf",
-            )) else "missing",
+            )) and verifier.check() else "missing",
         )
 
     def message(self) -> dict:

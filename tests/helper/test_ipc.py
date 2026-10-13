@@ -20,6 +20,18 @@ INITIAL = {"t": "state", "v": 1, "runtime": "missing", "model": "missing",
 
 @pytest.fixture
 def runtime(monkeypatch):
+    import hashlib
+    from functools import partial
+
+    from omafindd import main, models, state
+
+    files = tuple(models.ModelFile(name, 7, hashlib.sha256(b'fixture').hexdigest()) for name in (
+        'embeddinggemma-2-Q8_0.gguf', 'mmproj-embeddinggemma-2-Q8_0.gguf'))
+    verified = partial(models.Verifier, files=files)
+    monkeypatch.setattr(state, 'Verifier', verified)
+    monkeypatch.setattr(main, 'Verifier', verified)
+    # A drive plugged into the test host would otherwise be replayed after hello.
+    monkeypatch.setattr(main, 'lsblk', lambda: {'blockdevices': []})
     with tempfile.TemporaryDirectory(dir="/tmp") as directory:
         root = Path(directory)
         monkeypatch.setenv("XDG_RUNTIME_DIR", str(root))
@@ -219,7 +231,7 @@ def test_state_detects_executable_and_both_models(runtime, executable, files,
     binary.chmod(0o700 if executable else 0o600)
     paths.model_dir().mkdir()
     for name in files:
-        (paths.model_dir() / name).touch()
+        (paths.model_dir() / name).write_bytes(b"fixture")
     assert State.detect().message() == {
         **INITIAL, "runtime": want_runtime, "model": want_model,
     }
@@ -268,7 +280,7 @@ async def test_daemon_updates_readiness_after_install(runtime):
         binary.chmod(0o700)
         paths.model_dir().mkdir()
         for name in ("embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf"):
-            (paths.model_dir() / name).touch()
+            (paths.model_dir() / name).write_bytes(b"fixture")
         assert await reply(reader) == {**INITIAL, "runtime": "ready", "model": "ready"}
         writer.close()
         await writer.wait_closed()
@@ -409,9 +421,9 @@ async def test_daemon_polls_and_stops_with_fake_socket(runtime, monkeypatch, rem
     published = asyncio.Queue()
 
     class FakeServer:
-        def __init__(self, path):
+        def __init__(self, path, state):
             assert paths.data_dir_path().stat().st_mode & 0o777 == 0o700
-            self.state = State.detect()
+            self.state = state
             self.state.on_change = self.broadcast
 
         async def start(self):
@@ -434,7 +446,7 @@ async def test_daemon_polls_and_stops_with_fake_socket(runtime, monkeypatch, rem
         binary.touch(mode=0o700)
         paths.model_dir().mkdir()
         for name in ("embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf"):
-            (paths.model_dir() / name).touch()
+            (paths.model_dir() / name).write_bytes(b"fixture")
         assert await asyncio.wait_for(published.get(), 1) == {
             **INITIAL, "runtime": "ready", "model": "ready",
         }

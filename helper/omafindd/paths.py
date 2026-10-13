@@ -48,3 +48,19 @@ def manifest_path() -> Path:
 
 def shell_json_path() -> Path:
     return Path.home() / ".config/omarchy/shell.json"
+
+
+def running_path() -> Path:
+    return data_dir_path() / "running"
+
+
+def journal_path() -> Path:
+    return data_dir_path() / "journal"
+
+
+def health_path() -> Path:
+    return data_dir_path() / "index/health.json"
+
+
+def thumbs_dir() -> Path:
+    return data_dir_path() / "thumbs"

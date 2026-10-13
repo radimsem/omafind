@@ -24,6 +24,7 @@ ITEM_KEYS = {
     "dir",
     "volume",
     "label",
+    "drive",
     "offline",
     "loc",
     "loc_end",
@@ -73,7 +74,7 @@ async def test_item_shape_and_same_seq_later_reply(store, tmp_path):
         store.path.parent,
         lambda: Settings(),
         FakeEmbedder(),
-        State(),
+        State(model="ready"),
         volume_resolver=lambda path, **kwargs: ("v", tmp_path),
     )
     service.searcher = searcher
@@ -517,7 +518,7 @@ async def test_words_search_does_not_wait_for_server(store, tmp_path, operation)
             return await super().embed_query(text)
 
     service = SearchService(
-        store.path.parent, lambda: Settings(), Slow(), State(),
+        store.path.parent, lambda: Settings(), Slow(), State(model="ready"),
         volume_resolver=lambda path, **kwargs: ("v", tmp_path), mounts_resolver=lambda: {}
     )
     message = {"t": "warm"} if operation == "warm" else {"t": "search", "seq": 1, "q": "lunar"}
@@ -532,6 +533,142 @@ async def test_words_search_does_not_wait_for_server(store, tmp_path, operation)
     finally:
         release.set()
         await pending
+        await service.stop()
+
+
+@pytest.mark.parametrize('startup', ['first-query', 'after-reindex', 'warm-request'])
+@pytest.mark.parametrize('legs', [['words', 'meaning'], ['meaning']])
+async def test_query_while_server_starting_returns_words_without_waiting(
+        store, tmp_path, startup, legs):
+    import fcntl
+
+    from omafindd.service import SearchService
+
+    await seeded_search(store, tmp_path)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class Slow(FakeEmbedder):
+        blocked = startup != 'after-reindex'
+        starts = 0
+
+        async def start(self, mode):
+            if self.mode != mode:
+                self.starts += 1
+                if self.blocked:
+                    entered.set()
+                    await release.wait()
+            await super().start(mode)
+
+    embedder = Slow()
+    service = SearchService(
+        store.path.parent, lambda: Settings(), embedder, State(model='ready'),
+        volume_resolver=lambda path, **kwargs: ('v', tmp_path), mounts_resolver=lambda: {}
+    )
+    warming = None
+    query = {'t': 'search', 'seq': 7, 'q': 'lunar', 'legs': legs}
+    try:
+        if startup == 'after-reindex':
+            await service.handle({'t': 'warm'})
+            with (tmp_path / 'index.lock').open('a') as lock:
+                with (tmp_path / 'index.want').open('a') as want:
+                    fcntl.flock(want, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    await service.yield_to_indexer()
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = await service.handle(query)
+                    assert locked['degraded'] == 'indexing in progress'
+            embedder.blocked = True
+        elif startup == 'warm-request':
+            warming = asyncio.create_task(service.handle({'t': 'warm'}))
+            await asyncio.wait_for(entered.wait(), .5)
+        reply = await asyncio.wait_for(service.handle(query), .1)
+        await asyncio.wait_for(entered.wait(), .5)
+        assert not release.is_set()
+        assert reply['legs'] == ['words']
+        assert reply['degraded'] == 'the embedding server is starting'
+        assert reply['items'][0]['name'] == 'notes.txt'
+        assert reply['items'][0]['leg'] == 'words'
+        repeated = await asyncio.wait_for(service.handle(query), .1)
+        assert repeated['legs'] == ['words']
+        assert embedder.starts == (2 if startup == 'after-reindex' else 1)
+        release.set()
+        await service.handle({'t': 'warm'})
+        ready = await service.handle(query)
+        assert ready['seq'] == 7 and ready['legs'] == legs
+        assert ready['degraded'] is None
+    finally:
+        release.set()
+        if warming is not None:
+            await warming
+        await service.stop()
+
+
+async def test_background_startup_failure_is_reported_by_next_query(store, tmp_path):
+    from omafindd.embedder import EmbeddingError
+    from omafindd.service import SearchService
+
+    await seeded_search(store, tmp_path)
+    release, failed = asyncio.Event(), asyncio.Event()
+
+    class Failed(FakeEmbedder):
+        starts = 0
+
+        async def start(self, mode):
+            self.starts += 1
+            await release.wait()
+            failed.set()
+            raise EmbeddingError('the embedding server did not start')
+
+    service = SearchService(
+        store.path.parent, lambda: Settings(), Failed(), State(model='ready'),
+        volume_resolver=lambda path, **kwargs: ('v', tmp_path), mounts_resolver=lambda: {}
+    )
+    query = {'t': 'search', 'seq': 1, 'q': 'lunar'}
+    try:
+        assert (await service.handle(query))['degraded'] == 'the embedding server is starting'
+        release.set()
+        await asyncio.wait_for(failed.wait(), .5)
+        reply = await service.handle(query)
+        assert reply['degraded'] == 'the embedding server did not start'
+        assert reply['items'][0]['name'] == 'notes.txt'
+        assert service._index_lock is None
+        assert service.embedder.starts == 1
+    finally:
+        await service.stop()
+
+
+@pytest.mark.parametrize('operation', ['stop', 'yield'])
+async def test_background_startup_is_cancelled_before_releasing_index_lock(
+        store, tmp_path, operation):
+    import fcntl
+
+    from omafindd.service import SearchService
+
+    await seeded_search(store, tmp_path)
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+
+    class Slow(FakeEmbedder):
+        async def start(self, mode):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+    service = SearchService(
+        store.path.parent, lambda: Settings(), Slow(), State(model='ready'),
+        volume_resolver=lambda path, **kwargs: ('v', tmp_path), mounts_resolver=lambda: {}
+    )
+    try:
+        await service.handle({'t': 'search', 'seq': 1, 'q': 'lunar'})
+        await asyncio.wait_for(entered.wait(), .5)
+        with (tmp_path / 'index.want').open('a') as want:
+            fcntl.flock(want, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            action = service.stop if operation == 'stop' else service.yield_to_indexer
+            await asyncio.wait_for(action(), .1)
+            with (tmp_path / 'index.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            assert cancelled.is_set() and service.embedder.mode is None
+    finally:
         await service.stop()
 
 
@@ -616,7 +753,7 @@ async def test_reindex_lock_forces_words_and_rejects_warm(store, tmp_path, legs)
 
     embedder = Observe()
     service = SearchService(
-        store.path.parent, lambda: Settings(), embedder, State(),
+        store.path.parent, lambda: Settings(), embedder, State(model="ready"),
         volume_resolver=lambda path, **kwargs: ("v", tmp_path), mounts_resolver=lambda: {}
     )
     try:
@@ -729,8 +866,8 @@ async def test_serve_tick_yields_to_reindex_without_client_message(tmp_path, mon
                 manifest.unlink()
 
         class Server:
-            def __init__(self, path):
-                self.state = State()
+            def __init__(self, path, state):
+                self.state = state
 
             async def start(self):
                 await self.service.handle({"t": "warm"})
@@ -764,7 +901,7 @@ async def test_waiting_reindex_stops_warm_server_and_holds_intent(tmp_path, monk
     await seeded_search(store, tmp_path)
     store.close()
     service = SearchService(
-        tmp_path / "index", lambda: Settings(), FakeEmbedder(), State(),
+        tmp_path / "index", lambda: Settings(), FakeEmbedder(), State(model="ready"),
         volume_resolver=lambda path, **kwargs: ("v", tmp_path), mounts_resolver=lambda: {}
     )
     wanted, acquired, release = threading.Event(), threading.Event(), threading.Event()

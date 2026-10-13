@@ -1,0 +1,28 @@
+{
+   "action": "mount",
+   "target": "/run/media/radimsem/Photos2024",
+   "source": "/dev/loop0",
+   "fstype": "exfat",
+   "uuid": "6BFF-B220"
+}
+{
+   "action": "umount",
+   "target": "/run/media/radimsem/Photos2024",
+   "source": "/dev/loop0",
+   "fstype": "exfat",
+   "uuid": "6BFF-B220"
+}
+{
+   "action": "mount",
+   "target": "/run/media/radimsem/Photos2024",
+   "source": "/dev/loop0",
+   "fstype": "exfat",
+   "uuid": "6BFF-B220"
+}
+{
+   "action": "umount",
+   "target": "/run/media/radimsem/Photos2024",
+   "source": "/dev/loop0",
+   "fstype": "exfat",
+   "uuid": "6BFF-B220"
+}

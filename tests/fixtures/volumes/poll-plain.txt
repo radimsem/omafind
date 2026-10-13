@@ -1,0 +1,5 @@
+ACTION     TARGET                         SOURCE     FSTYPE UUID
+mount      /run/media/radimsem/Photos2024 /dev/loop0 exfat  6BFF-B220
+umount     /run/media/radimsem/Photos2024 /dev/loop0 exfat  6BFF-B220
+mount      /run/media/radimsem/Photos2024 /dev/loop0 exfat  6BFF-B220
+umount     /run/media/radimsem/Photos2024 /dev/loop0 exfat  6BFF-B220

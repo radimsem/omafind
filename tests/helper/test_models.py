@@ -143,3 +143,69 @@ def test_oversize_partial_file_is_deleted_without_network(tmp_path, model_server
         download(tmp_path, files=[file], base_url=base_url)
     assert not part.exists()
     assert requests == []
+
+
+def test_verifier_caches_hash_until_metadata_changes(tmp_path, monkeypatch):
+    import os
+
+    from omafindd.models import Verifier
+
+    file = model_file(b'expected')
+    path = tmp_path / file.name
+    path.write_bytes(b'expected')
+    hashes = []
+    digest = hashlib.file_digest
+
+    def counted(stream, algorithm):
+        hashes.append(stream.name)
+        return digest(stream, algorithm)
+
+    monkeypatch.setattr(hashlib, 'file_digest', counted)
+    verifier = Verifier(tmp_path, files=[file])
+    assert verifier.check() is True
+    assert verifier.check() is True
+    assert len(hashes) == 1
+    assert verifier.files_report() == {
+        'tiny.gguf': {'size': 8, 'mtime_ns': path.stat().st_mtime_ns, 'ok': True}}
+    before = path.stat()
+    path.write_bytes(b'wrong!!!')
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000))
+    assert verifier.check() is False
+    assert verifier.check() is False
+    assert len(hashes) == 2
+    path.unlink()
+    assert verifier.check() is False
+    path.write_bytes(b'expected')
+    assert verifier.check() is True
+    assert len(hashes) == 3
+
+
+def test_verifier_rechecks_replaced_inode_with_same_size_and_mtime(tmp_path):
+    import os
+
+    from omafindd.models import Verifier
+
+    file = model_file(b'expected')
+    path = tmp_path / file.name
+    path.write_bytes(b'expected')
+    verifier = Verifier(tmp_path, files=[file])
+    assert verifier.check() is True
+    before = path.stat()
+    replacement = tmp_path / 'replacement'
+    replacement.write_bytes(b'wrong!!!')
+    os.utime(replacement, ns=(before.st_atime_ns, before.st_mtime_ns))
+    replacement.replace(path)
+    assert verifier.check() is False
+
+
+def test_models_verification_import_needs_only_stdlib():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    result = subprocess.run([sys.executable, '-S', '-c',
+                             'import sys; sys.path.insert(0, sys.argv[1]); '
+                             'from omafindd.models import Verifier',
+                             str(Path(__file__).resolve().parents[2] / 'helper')],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

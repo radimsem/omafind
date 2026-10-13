@@ -386,3 +386,30 @@ def test_scan_ancestor_caches_handle_deep_directories():
     assert row['found'] == row['kept'] == 25
     assert row['dirs'] == 1200
     assert scan.roots[row['path']].dirs[0]['sub']['text'] == 25
+
+
+def test_volume_scan_candidates_are_checked_and_mount_is_echoed(tmp_path):
+    mount = tmp_path / 'drive'
+    docs = mount / 'docs'
+    docs.mkdir(parents=True)
+    for n in range(25):
+        (docs / f'reading-note-{n}.md').touch()
+    body = discovery.scan(home=tmp_path, volume='usb', device='cpu', xdg={},
+                          lsblk={'blockdevices': [{'uuid': 'usb', 'fstype': 'exfat',
+                                                  'mountpoints': [str(mount)]}]},
+                          volume_of=lambda p: ('usb', mount)).body
+    assert body['scan']['roots'] == [str(mount)]
+    assert body['candidates']
+    assert all(candidate['checked'] for candidate in body['candidates'])
+
+
+def test_not_proposed_datasets_include_absolute_path_and_evidence(tmp_path):
+    folder = tmp_path / 'dataset'
+    folder.mkdir()
+    for n in range(300):
+        (folder / f'{n:08x}.png').touch()
+    body = discovery.scan(home=tmp_path, lsblk={}, volume_of=lambda p: ('u', tmp_path),
+                          xdg={}, device='cpu').body
+    assert body['not_proposed']['dataset'] == 1
+    assert body['not_proposed']['datasets'] == [
+        {'path': str(folder), 'files': 300, 'match': [300, 300]}]

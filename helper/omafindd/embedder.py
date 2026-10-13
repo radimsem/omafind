@@ -121,23 +121,51 @@ def _parent_death_signal(parent, sig=signal.SIGTERM):
 class Embedder:
     def __init__(self, *, binary=None, model_dir=None, runner=subprocess.run,
                  spawner=asyncio.create_subprocess_exec, startup_timeout=60.0,
-                 stop_timeout=5.0):
+                 stop_timeout=5.0, base_url=None, api_key=None):
         self.binary = binary
         self.model_dir = model_dir
         self.runner = runner
         self.spawner = spawner
         self.startup_timeout = startup_timeout
         self.stop_timeout = stop_timeout
+        self.shared = base_url is not None
+        self._base_url, self._api_key = base_url, api_key
         self.mode: Mode | None = None
         self._process = None
         self._client = None
         self._lock = asyncio.Lock()
 
+    @property
+    def connection_env(self):
+        if self.mode is None or self._client is None:
+            return {}
+        return {'OMAFIND_EMBED_URL': str(self._client.base_url).rstrip('/'),
+                'OMAFIND_EMBED_KEY': self._api_key}
+
     async def start(self, mode: Mode) -> None:
         async with self._lock:
-            if self.mode == mode and self._process is not None and self._process.returncode is None:
+            if (self.mode == mode or self.mode == 'full' and mode == 'text') and (
+                    self.shared or self._process is not None
+                    and self._process.returncode is None):
                 return
             await self._stop()
+            if self.shared:
+                self._client = httpx.AsyncClient(
+                    base_url=self._base_url,
+                    headers={'Authorization': f'Bearer {self._api_key}'},
+                    trust_env=False, timeout=30,
+                )
+                try:
+                    response = await self._client.get('/health')
+                    response.raise_for_status()
+                except (httpx.HTTPError, RuntimeError) as error:
+                    await self._stop()
+                    raise EmbeddingError('Shared embedding server is not running') from error
+                except BaseException:
+                    await self._stop()
+                    raise
+                self.mode = 'full'
+                return
             binary, directory = self.binary, self.model_dir
             if binary is None or directory is None:
                 from omafindd import paths
@@ -153,6 +181,7 @@ class Embedder:
                         sock.bind(("127.0.0.1", 0))
                         port = sock.getsockname()[1]
                     api_key = secrets.token_urlsafe(32)
+                    self._api_key = api_key
                     self._process = await self.spawner(
                         *build_command(binary, directory, mode, device, port),
                         env={**os.environ, "LLAMA_API_KEY": api_key},
@@ -220,12 +249,12 @@ class Embedder:
     async def embed(self, parts: Sequence[Part]) -> list[np.ndarray]:
         async with self._lock:
             process, client = self._process, self._client
-            if (self.mode is None or process is None or client is None
-                    or process.returncode is not None):
+            if (self.mode is None or client is None or not self.shared
+                    and (process is None or process.returncode is not None)):
                 raise EmbeddingError("Embedding server is not running")
             vectors = []
             for offset in range(0, len(parts), 16):
-                if process.returncode is not None:
+                if process is not None and process.returncode is not None:
                     raise EmbeddingError("Embedding server is not running")
                 batch = parts[offset:offset + 16]
                 try:
@@ -233,7 +262,7 @@ class Embedder:
                     response.raise_for_status()
                 except (httpx.HTTPError, RuntimeError) as error:
                     raise EmbeddingError("Embedding request failed") from error
-                if process.returncode is not None:
+                if process is not None and process.returncode is not None:
                     raise EmbeddingError("Embedding server is not running")
                 try:
                     rows = sorted(response.json()["data"], key=lambda row: row["index"])

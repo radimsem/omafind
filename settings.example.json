@@ -3,6 +3,7 @@
   "gpu": "auto",
   "audio": true,
   "roots": [],
+  "ignoredVolumes": [],
   "codeRoots": [],
   "imageBudget": 140,
   "maxResults": 40,

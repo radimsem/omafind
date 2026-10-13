@@ -157,7 +157,13 @@ def reason_name(name: str) -> str | None:
     return _part_reason(name)
 
 
-def fd_args(root: Path, *, excludes: Sequence[str], kinds: Iterable[str]) -> list[str]:
+def _rx(value: str) -> str:
+    return ''.join('\\' + char if char in r'\.+*?()|[]{}^$#&-~' else char for char in value)
+
+
+def fd_args(
+    root: Path, *, excludes: Sequence[str], kinds: Iterable[str], only: Sequence[Path] | None = None
+) -> list[str]:
     args = ["fd", "--threads", "8", "-0", "-t", "f", "--one-file-system", "--no-global-ignore-file"]
     for kind in kinds:
         for extension in INDEXED_KINDS[kind]:
@@ -174,11 +180,19 @@ def fd_args(root: Path, *, excludes: Sequence[str], kinds: Iterable[str]) -> lis
     if reason(root.absolute()) is not None:
         # fd ignores the starting directory's name when applying override globs.
         args.extend(["-E", "*"])
+    if only is not None:
+        pattern = '^(?:' + '|'.join(_rx(str(path.resolve()).rstrip('/')) for path in only) + ')/'
+        return [*args, '--full-path', '-s', pattern if only else '^$', str(root)]
     return [*args, ".", str(root)]
 
 
-def walk(root: Path, *, excludes: Sequence[str], run=subprocess.Popen) -> Iterator[Path]:
-    args = fd_args(root, excludes=excludes, kinds=INDEXED_KINDS)
+def walk(
+    root: Path, *, excludes: Sequence[str], run=subprocess.Popen, only: Sequence[Path] | None = None
+) -> Iterator[Path]:
+    if only is not None:
+        # The --full-path pattern holds resolved paths, so fd must see the resolved root too.
+        root = root.resolve()
+    args = fd_args(root, excludes=excludes, kinds=INDEXED_KINDS, only=only)
     with run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=root) as process:
         pending = b""
         while block := process.stdout.read(65536):

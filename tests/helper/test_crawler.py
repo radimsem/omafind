@@ -68,6 +68,13 @@ def test_python_exclude_predicate_matches_fd(tmp_path):
         assert found == {n for n in names if not rules.is_excluded(n, excludes)}
 
 
+@pytest.mark.parametrize('folder', ['Upper', 'a[1]', 'a+b', 'a#b', 'a&b', 'a-b', 'a~b'])
+def test_partial_walk_matches_literal_resolved_directory(tmp_path, folder):
+    write(tmp_path, [f'{folder}/note.md', 'neighbor/note.md'])
+    assert list(rules.walk(tmp_path, excludes=[], only=[tmp_path / folder / '..' / folder])) == [
+        tmp_path / folder / 'note.md']
+
+
 def test_chosen_folder_inside_skipped_one_is_walked(tmp_path):
     write(tmp_path, ['D/top.txt', 'D/Media/film.txt', 'D/Media/Courses/week1.txt',
                      'D/Media/Courses/Old/old.txt'])
@@ -131,3 +138,57 @@ async def test_incremental_reindex_keeps_unchanged_files_and_writes_run_json(tmp
     run = data / 'index/run.json'
     assert json.loads(run.read_text())['skipped'] == {}
     assert run.stat().st_mode & 0o777 == 0o600
+
+
+async def test_reindex_skips_offline_roots(tmp_path, monkeypatch):
+    monkeypatch.setattr(indexing, 'mounted_volumes', lambda: {}, raising=False)
+
+    def missing(path):
+        raise FileNotFoundError(path)
+
+    await indexing.reindex([{'path': str(tmp_path / 'gone'), 'volume': 'offline'}],
+                           directory=tmp_path / 'data', embedder=FakeEmbedder(),
+                           volume_resolver=missing, volume='offline')
+    assert not (tmp_path / 'data/index/offline.sqlite').exists()
+
+
+async def test_reindex_remaps_root_and_preserves_drive_label(tmp_path, monkeypatch):
+    old, new, data = tmp_path / 'old', tmp_path / 'new', tmp_path / 'data'
+    write(new, ['docs/note.txt'])
+    store = Store(data / 'index/drive.sqlite', volume='drive', mount=old, label='Photos')
+    store.close()
+    monkeypatch.setattr(indexing, 'mounted_volumes', lambda: {'drive': new}, raising=False)
+    selected = []
+    monkeypatch.setattr(indexing, 'crawl', lambda store, roots, **kwargs: selected.extend(roots))
+
+    def offline(path):
+        raise FileNotFoundError(path)
+
+    await indexing.reindex([{'path': str(old / 'docs'), 'volume': 'drive'}], directory=data,
+                           embedder=FakeEmbedder(), volume_resolver=offline,
+                           label_resolver=lambda uuid: 'Photos', force=False)
+    assert selected[0]['path'] == str(new / 'docs')
+    store = Store.open_existing(data / 'index/drive.sqlite', new)
+    try:
+        assert store.last_mount == new and store.label == 'Photos'
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize('mount,label', [('/home', 'root'), ('/media/Photos', 'Photos')])
+async def test_reindex_default_labels_come_from_drive_facts(tmp_path, monkeypatch, mount, label):
+    root, data = tmp_path / 'docs', tmp_path / 'data'
+    root.mkdir()
+    store = Store(data / 'index/v.sqlite', volume='v', mount=root, label='Old label')
+    store.close()
+    monkeypatch.setattr(indexing, 'mounted_volumes', lambda: {'v': root})
+    monkeypatch.setattr(indexing, 'lsblk', lambda: {'blockdevices': [
+        {'uuid': 'v', 'label': 'Photos', 'fstype': 'ext4', 'size': 1000,
+         'rm': False, 'hotplug': False, 'mountpoints': [mount]}]})
+    await indexing.reindex([{'path': str(root), 'volume': 'v'}], directory=data,
+                           embedder=FakeEmbedder(), force=False)
+    store = Store.open_existing(data / 'index/v.sqlite', root)
+    try:
+        assert store.label == label
+    finally:
+        store.close()

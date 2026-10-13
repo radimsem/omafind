@@ -1,0 +1,16 @@
+{
+   "blockdevices": [
+      {
+         "name": "loop0",
+         "uuid": "6BFF-B220",
+         "label": "Photos2024",
+         "fstype": "exfat",
+         "size": "256M",
+         "rm": false,
+         "hotplug": false,
+         "mountpoints": [
+             "/run/media/radimsem/Photos2024"
+         ]
+      }
+   ]
+}
