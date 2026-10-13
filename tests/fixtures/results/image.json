@@ -1,0 +1,43 @@
+{
+  "t": "results",
+  "seq": 7,
+  "legs": [
+    "words",
+    "meaning"
+  ],
+  "ms": {
+    "embed": 14,
+    "scan": 9,
+    "words": 4,
+    "total": 38
+  },
+  "total": 1,
+  "weaker": 0,
+  "degraded": null,
+  "items": [
+    {
+      "id": "image:1",
+      "kind": "image",
+      "path": "/home/u/fixtures/IMG_20261003_1742.jpg",
+      "name": "IMG_20261003_1742.jpg",
+      "dir": "/home/u/fixtures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "meaning",
+      "part": "image",
+      "z": 3.4,
+      "score": 7.4,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    }
+  ]
+}

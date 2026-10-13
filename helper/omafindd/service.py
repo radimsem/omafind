@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .code import configured_roots
 from .embedder import EmbeddingError
-from .search import Searcher
+from .search import PREFIXES, Searcher
 from .store import Store, mounted_volumes, volume_for
 
 
@@ -188,6 +188,7 @@ class SearchService:
         seq = message.get("seq")
         q, legs = message.get("q"), message.get("legs", ["words", "meaning"])
         limit = message.get("limit", self.settings().max_results)
+        kinds = message.get("kinds")
         if (
             type(seq) is not int
             or not isinstance(q, str)
@@ -196,6 +197,9 @@ class SearchService:
             or any(leg not in ("words", "meaning") for leg in legs)
             or type(limit) is not int
             or not 1 <= limit <= 200
+            or ("kinds" in message and (not isinstance(kinds, list)
+                or any(not isinstance(kind, str) or kind not in PREFIXES.values()
+                       for kind in kinds)))
         ):
             return {
                 "t": "error",
@@ -209,11 +213,12 @@ class SearchService:
                 indexing = True
                 await self._stop()
             reply = await self.searcher.search(
-                q, legs=["words"] if indexing else legs, limit=limit, seq=seq
+                q, legs=["words"] if indexing else legs, limit=limit, seq=seq, kinds=kinds
             )
             if indexing or reply["degraded"] == "indexing in progress":
                 if "words" not in reply["legs"]:
-                    reply = await self.searcher.search(q, legs=["words"], limit=limit, seq=seq)
+                    reply = await self.searcher.search(q, legs=["words"], limit=limit, seq=seq,
+                                                       kinds=kinds)
                 reply["legs"] = ["words"]
                 reply["degraded"] = "indexing in progress"
         except FileNotFoundError as error:

@@ -1,0 +1,45 @@
+{
+  "t": "results",
+  "seq": 7,
+  "legs": [
+    "words",
+    "meaning"
+  ],
+  "ms": {
+    "embed": 14,
+    "scan": 9,
+    "words": 4,
+    "total": 38
+  },
+  "total": 1,
+  "weaker": 0,
+  "degraded": null,
+  "items": [
+    {
+      "id": "video:1",
+      "kind": "video",
+      "path": "/home/u/fixtures/distributed-routing.mp4",
+      "name": "distributed-routing.mp4",
+      "dir": "/home/u/fixtures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 872,
+      "loc_end": 902,
+      "open_line": null,
+      "leg": "meaning",
+      "part": "frame",
+      "z": 3.4,
+      "score": 7.4,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {
+        "duration": 2900
+      }
+    }
+  ]
+}

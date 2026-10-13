@@ -920,3 +920,38 @@ def test_cli_service_error_prints_reason_and_exits_one(cli, env, capsys):
     reply = {"t": "error", "seq": 1, "reason": "no such table: meta"}
     assert cli.main(["search", "--json", "lunar"], env, request=lambda *args: reply) == 1
     assert capsys.readouterr().err == "no such table: meta\n"
+
+
+@pytest.mark.parametrize("kinds", [None, "image", ["img"], [1], [{}]])
+async def test_service_rejects_invalid_kinds(tmp_path, kinds):
+    from omafindd.service import SearchService
+
+    service = SearchService(tmp_path / "index", lambda: Settings(), FakeEmbedder(), State())
+    try:
+        reply = await service.handle({"t": "search", "seq": 1, "q": "needle", "kinds": kinds})
+        assert reply["code"] == "bad-request"
+    finally:
+        await service.stop()
+
+
+async def test_service_passes_kinds_and_configured_limit(store, tmp_path):
+    from omafindd.service import SearchService
+    from test_search import add
+
+    await seeded_search(store, tmp_path)
+    for i in range(11):
+        await add(store, tmp_path / f"note{i}.txt", "lunar eclipse")
+    service = SearchService(store.path.parent, lambda: Settings(max_results=10),
+                            FakeEmbedder(), State(),
+                            volume_resolver=lambda path, **kw: ("v", tmp_path))
+    try:
+        reply = await service.handle({"t": "search", "seq": 1, "q": "lunar",
+                                      "legs": ["words"], "kinds": ["pdf"]})
+        assert reply["items"] == []
+        assert reply["total"] == 0
+        reply = await service.handle({"t": "search", "seq": 2, "q": "lunar",
+                                      "legs": ["words"]})
+        assert len(reply["items"]) == 10
+        assert reply["total"] == 12
+    finally:
+        await service.stop()

@@ -17,7 +17,7 @@ def test_example_has_exact_defaults():
     assert json.loads((ROOT / "settings.example.json").read_text()) == {
         "setupDone": False, "gpu": "auto", "audio": True,
         "roots": [], "maxResults": 40, "warmMinutes": 5,
-        "codeRoots": [], "imageBudget": 140,
+        "codeRoots": [], "imageBudget": 140, "shortcut": "SUPER + E",
     }
 
 

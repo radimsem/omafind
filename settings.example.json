@@ -6,5 +6,6 @@
   "codeRoots": [],
   "imageBudget": 140,
   "maxResults": 40,
-  "warmMinutes": 5
+  "warmMinutes": 5,
+  "shortcut": "SUPER + E"
 }

@@ -1,0 +1,206 @@
+{
+  "t": "results",
+  "seq": 7,
+  "legs": [
+    "words"
+  ],
+  "ms": {
+    "embed": 14,
+    "scan": 9,
+    "words": 4,
+    "total": 38
+  },
+  "total": 6,
+  "weaker": 0,
+  "degraded": "Vulkan device lost",
+  "items": [
+    {
+      "id": "image:1",
+      "kind": "image",
+      "path": "/home/u/Pictures/whiteboards/IMG_20261003_1742.jpg",
+      "name": "IMG_20261003_1742.jpg",
+      "dir": "/home/u/Pictures/whiteboards",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "words",
+      "part": "image",
+      "z": null,
+      "score": 7.4,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "image:2",
+      "kind": "image",
+      "path": "/home/u/Pictures/IMG_20261003_1744.jpg",
+      "name": "IMG_20261003_1744.jpg",
+      "dir": "/home/u/Pictures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "words",
+      "part": "image",
+      "z": null,
+      "score": 7.3,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "image:3",
+      "kind": "image",
+      "path": "/home/u/Pictures/Screenshot_2026-10-09.png",
+      "name": "Screenshot_2026-10-09.png",
+      "dir": "/home/u/Pictures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "words",
+      "part": "image",
+      "z": null,
+      "score": 7.2,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "image:4",
+      "kind": "image",
+      "path": "/home/u/Pictures/herd-router.png",
+      "name": "herd-router.png",
+      "dir": "/home/u/Pictures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": null,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "words",
+      "part": "image",
+      "z": null,
+      "score": 7.1,
+      "weak": false,
+      "hits": [],
+      "snippet": [],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {}
+    },
+    {
+      "id": "pdf:1",
+      "kind": "pdf",
+      "path": "/home/u/fixtures/Distributed Routing Notes.pdf",
+      "name": "Distributed Routing Notes.pdf",
+      "dir": "/home/u/fixtures",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 12,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "words",
+      "part": "text",
+      "z": null,
+      "score": 7.0,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {
+        "pages": 412
+      }
+    },
+    {
+      "id": "pdf:2",
+      "kind": "pdf",
+      "path": "/home/u/Documents/scans/meeting-2026-10-03-scan.pdf",
+      "name": "meeting-2026-10-03-scan.pdf",
+      "dir": "/home/u/Documents/scans",
+      "volume": "fixture-volume",
+      "label": "Home",
+      "offline": false,
+      "loc": 2,
+      "loc_end": null,
+      "open_line": null,
+      "leg": "words",
+      "part": "text",
+      "z": null,
+      "score": 6.9,
+      "weak": false,
+      "hits": [
+        "they",
+        "talk"
+      ],
+      "snippet": [
+        {
+          "t": "where ",
+          "m": false
+        },
+        {
+          "t": "they",
+          "m": true
+        },
+        {
+          "t": " ",
+          "m": false
+        },
+        {
+          "t": "talk",
+          "m": true
+        }
+      ],
+      "thumb": null,
+      "mtime": 1749729600,
+      "size": 48000,
+      "info": {
+        "pages": 412
+      }
+    }
+  ]
+}

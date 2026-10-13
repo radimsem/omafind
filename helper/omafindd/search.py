@@ -213,10 +213,10 @@ class Searcher:
         self._loaded = loaded
         self._signatures = signatures
 
-    async def _words(self, words, kind):
+    async def _words(self, words, kinds):
         begun = time.monotonic()
         keyword, coverage = {}, {}
-        if words:
+        if words and kinds != []:
             matches = []
             for store in self.stores:
                 sql = (
@@ -226,9 +226,9 @@ class Searcher:
                     "WHERE fts MATCH ?"
                 )
                 args = [" OR ".join(map(pattern, words))]
-                if kind:
-                    sql += " AND f.kind=?"
-                    args.append(kind)
+                if kinds is not None:
+                    sql += " AND f.kind IN (" + ",".join("?" for _ in kinds) + ")"
+                    args.extend(kinds)
                 local = {}
                 for row in store.db.execute(sql + " ORDER BY rank", args):
                     local.setdefault(row["file"], dict(row))
@@ -269,21 +269,27 @@ class Searcher:
         except (EmbeddingError, OSError, ValueError) as error:
             return None, str(error), (time.monotonic() - begun) * 1000
 
-    async def search(self, q: str, *, legs=("words", "meaning"), limit=40, seq=1) -> dict:
+    async def search(self, q: str, *, legs=("words", "meaning"), limit=40, seq=1,
+                     kinds=None) -> dict:
         begun = time.monotonic()
-        kind = None
         prefix = re.match(r"^\s*(img|pdf|vid|aud|doc|code):", q, re.IGNORECASE)
         if prefix:
             kind, q = PREFIXES[prefix[1].lower()], q[prefix.end() :].strip()
+            kinds = [kind] if kinds is None or kind in kinds else []
         q = normalized(q).strip()
-        if kind == "code":
+        code = None
+        if kinds is not None and "code" in kinds:
             from .search_code import search_code
 
-            return await search_code(self, q, roots=self.code_roots, directory=self.code_directory,
+            code = await search_code(self, q, roots=self.code_roots, directory=self.code_directory,
                                      legs=legs, limit=limit, seq=seq, begun=begun)
-        if not self.stores:
+            kinds = [kind for kind in kinds if kind != "code"]
+            if not kinds:
+                return code
+        if not self.stores and kinds != [] and code is None:
             raise FileNotFoundError("No index exists. Run omafind reindex --root PATH.")
-        query_result = await self._query(q, bool(q) and "meaning" in legs and kind != "code")
+        query_result = await self._query(q, bool(q) and "meaning" in legs and kinds != []
+                                         and bool(self.stores))
         opened = []
         try:
             for store in self.stores:
@@ -291,16 +297,28 @@ class Searcher:
                 opened.append(store)
                 # Pin the same WAL snapshot for vectors, metadata, FTS and jump targets.
                 store.db.execute("SELECT value FROM meta LIMIT 1").fetchone()
-            return await self._search(q, kind=kind, query_result=query_result, begun=begun,
-                                      legs=legs, limit=limit, seq=seq)
+            reply = await self._search(q, kinds=kinds, query_result=query_result, begun=begun,
+                                       legs=legs, limit=limit, seq=seq)
+            if code is not None:
+                items = sorted(reply["items"] + code["items"],
+                               key=lambda item: (-item["score"], item["id"]))[:limit]
+                for item in items:
+                    item["weak"] = item["score"] < items[0]["score"] * 0.5
+                reply.update(items=items, total=reply["total"] + code["total"],
+                             weaker=sum(item["weak"] for item in items),
+                             degraded=reply["degraded"] or code["degraded"])
+                for field in ("embed", "words", "scan"):
+                    reply["ms"][field] = round(reply["ms"][field] + code["ms"][field], 3)
+                reply["ms"]["total"] = round((time.monotonic() - begun) * 1000, 3)
+            return reply
         finally:
             for store in opened:
                 store.db.rollback()
 
-    async def _search(self, q: str, *, kind, query_result, begun, legs, limit, seq) -> dict:
+    async def _search(self, q: str, *, kinds, query_result, begun, legs, limit, seq) -> dict:
         words = query_terms(q)
         keyword, coverage, words_ms = await self._words(
-            words if "words" in legs and kind != "code" else [], kind
+            words if "words" in legs else [], kinds
         )
         vector, degraded, embed_ms = query_result
         scan_begun = time.monotonic()
@@ -312,8 +330,8 @@ class Searcher:
             zs = meaning(scores, self.columns["modality"], self.columns["scale"],
                          groups=self._modality_groups)
             indices = np.arange(len(zs))
-            if kind:
-                indices = indices[self.columns["file_kind"] == kind]
+            if kinds is not None:
+                indices = indices[np.isin(self.columns["file_kind"], kinds)]
             codes = self.columns["file_code"][indices]
             order = np.lexsort((indices, -zs[indices], codes))
             _, first = np.unique(codes[order], return_index=True)
