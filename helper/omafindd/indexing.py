@@ -2,8 +2,10 @@ import fcntl
 import os
 import sys
 from collections import defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 
+from .code import index_code
 from .crawler import crawl
 from .jobs import Jobs
 from .store import Store, volume_for
@@ -18,6 +20,7 @@ async def reindex(
     volume_resolver=volume_for,
     progress=None,
     settings=None,
+    code_roots: Sequence[Path] = (),
 ):
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     directory.chmod(0o700)
@@ -49,6 +52,8 @@ async def reindex(
                 crawl(store, selected, force=True)
                 jobs = Jobs(store, embedder, journal=directory / "journal", settings=settings)
                 await jobs.drain(progress=progress or _progress)
+            if code_roots:
+                await index_code(code_roots, directory / "index", embedder)
             print("queued 0", file=sys.stderr)
         finally:
             await embedder.stop()

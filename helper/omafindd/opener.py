@@ -10,18 +10,15 @@ def command(item: Mapping, *, env: Mapping[str, str]) -> list[str]:
     kind = item["kind"]
     if kind in ("video", "audio"):
         return ["mpv", f"--start={int(item.get('loc') or 0)}", path]
-    if kind == "text" and shutil.which("omarchy-launch-editor", path=env.get("PATH")):
+    if kind in ("text", "code") and shutil.which("omarchy-launch-editor", path=env.get("PATH")):
         default = Path(env["HOME"]) / ".local/state/omarchy/defaults/editor"
         try:
             editor = Path(default.read_text().strip().split()[0]).name
         except (OSError, IndexError):
             editor = "nvim"
-        line = item.get("loc")
-        if item.get("info", {}).get("extracted") or Path(path).suffix.lower() in (
-            ".html",
-            ".docx",
-            ".odt",
-        ):
+        line = (item.get("open_line") or item.get("loc")) if kind == "code" else item.get("loc")
+        if kind == "text" and (item.get("info", {}).get("extracted") or
+                               Path(path).suffix.lower() in (".html", ".docx", ".odt")):
             line = None
         if line is not None:
             line = max(1, int(line))

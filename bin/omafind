@@ -262,6 +262,7 @@ def search(args, env, request):
 
 
 def reindex(args, env, execve=os.execve):
+    from omafindd.code import configured_roots
     from omafindd.settings import load
 
     parser = argparse.ArgumentParser(prog="omafind reindex")
@@ -272,13 +273,14 @@ def reindex(args, env, execve=os.execve):
     except SystemExit as error:
         return error.code
     settings = load(Path(env["HOME"]) / ".config/omarchy/shell.json")
+    code_roots = configured_roots(lambda: settings)
     configured = {Path(root["path"]).resolve(): root for root in settings.roots}
     roots = []
     for root in parsed.root:
         path = Path(root).expanduser().resolve()
         roots.append(dict(configured.get(path, {"excludes": []}), path=str(path)))
     roots = roots or settings.roots
-    if not roots:
+    if not roots and not code_roots:
         print("Choose --root PATH or configure the roots setting before omafind reindex",
               file=sys.stderr)
         return 2
@@ -298,7 +300,7 @@ def reindex(args, env, execve=os.execve):
                                 model_dir=directory / "model"))
     try:
         asyncio.run(index(roots, directory=directory, embedder=embedder, volume=parsed.volume,
-                          settings=settings))
+                          settings=settings, code_roots=code_roots))
     except EmbeddingError as error:
         print(str(error), file=sys.stderr)
         return 1

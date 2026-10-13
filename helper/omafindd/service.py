@@ -4,6 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
+from .code import configured_roots
 from .embedder import EmbeddingError
 from .search import Searcher
 from .store import Store, mounted_volumes, volume_for
@@ -28,7 +29,7 @@ class SearchService:
         )
         self.volume_resolver = volume_resolver
         self.mounts_resolver = mounts_resolver
-        self.searcher = Searcher([], embedder, start=self._start)
+        self.searcher = Searcher([], embedder, start=self._start, code_directory=directory)
         self._databases = {}
         self._idle_task = None
         self._lock = asyncio.Lock()
@@ -109,6 +110,7 @@ class SearchService:
                 await self.state.update(embedder="stopped")
 
     def _refresh(self):
+        self.searcher.code_roots = configured_roots(self.settings)
         files = set(self.directory.glob("*.sqlite")) - {self.directory / "code.sqlite"}
         mountinfo = Path("/proc/self/mountinfo").read_bytes()
         if mountinfo != self._mountinfo or files != self._mount_files:
