@@ -25,7 +25,7 @@ CREATE TABLE segments(id INTEGER PRIMARY KEY, file INTEGER NOT NULL
 CREATE INDEX segments_file ON segments(file);
 CREATE VIRTUAL TABLE fts USING fts5(name, body, original UNINDEXED,
  tokenize = "porter unicode61 remove_diacritics 2 categories 'L* N* Co M*'");
-PRAGMA user_version = 6;
+PRAGMA user_version = 5;
 """
 CACHE_SCHEMA = """
 CREATE INDEX IF NOT EXISTS segments_vector_ids ON segments(id) WHERE vec IS NOT NULL;
@@ -137,7 +137,7 @@ class Store:
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         if version == 0:
             self.db.executescript(SCHEMA)
-        elif version != 6:
+        elif version != 5:
             self.close()
             raise ValueError(f"Unsupported index schema: {version}")
         self.db.executescript(CACHE_SCHEMA)
@@ -170,6 +170,7 @@ class Store:
         self.db.execute(f"DELETE FROM segments WHERE file=?{suffix}", (file,))
 
     def delete(self, file: int):
+        self._thumbnail_path(file).unlink(missing_ok=True)
         self.clear_segments(file)
         self.db.execute("DELETE FROM files WHERE id=?", (file,))
 
@@ -194,6 +195,8 @@ class Store:
               ocr_text="", detail=None):
         if len(segments) != len(vectors):
             raise ValueError("embedding precision fault")
+        if not info.get("thumb"):
+            self._thumbnail_path(file).unlink(missing_ok=True)
         with self.db:
             if not append:
                 self.clear_segments(file, keeping_name=True)
@@ -234,11 +237,14 @@ class Store:
     def skip(self, file: int, detail: str):
         self.write(file, [], [], state="skipped", info={}, detail=detail)
 
+    def _thumbnail_path(self, file: int) -> Path:
+        return self.path.parent.parent / "thumbs" / self.volume / f"{file}.jpg"
+
     def thumbnail(self, file: int, data: bytes) -> str:
-        directory = self.path.parent.parent / "thumbs" / self.volume
+        path = self._thumbnail_path(file)
+        directory = path.parent
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         directory.chmod(0o700)
-        path = directory / f"{file}.jpg"
         descriptor = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(data)
@@ -246,6 +252,7 @@ class Store:
         return str(path)
 
     def fail(self, file: int, detail: str):
+        self._thumbnail_path(file).unlink(missing_ok=True)
         with self.db:
             self.clear_segments(file, keeping_name=True)
             self.db.execute("UPDATE files SET state='failed',detail=? WHERE id=?", (detail, file))

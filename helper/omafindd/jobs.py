@@ -135,6 +135,8 @@ class Jobs:
                             args = [self.store.mount / row["path"], row["kind"], start]
                             if row["kind"] in ("image", "video", "audio"):
                                 args.extend([self.settings.audio, self.settings.image_budget])
+                            if row["kind"] == "video":
+                                args.append(info.get("frame_next") if append else 0.0)
                             future = pool.submit(extract, *args)
                             result = await asyncio.wrap_future(future)
                         except BrokenProcessPool as error:
@@ -194,6 +196,8 @@ class Jobs:
                         if result.thumbnail is not None:
                             result.info["thumb"] = self.store.thumbnail(file, result.thumbnail)
                         if append:
+                            info.pop("frame_next", None)
+                            info.pop("audio_next", None)
                             info.update(result.info)
                             result.info = info
                         self.store.write(

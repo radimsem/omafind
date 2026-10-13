@@ -89,7 +89,9 @@ Without `--root`, reindex reads the plugin's `roots` setting. With no configured
 roots it exits 2. `--volume UUID` limits reindexing to selected roots on that volume.
 A `--root` matching a configured root keeps that root's excludes and volume.
 Search accepts `img:`, `pdf:`, `vid:`, `aud:`, `doc:` and `code:`. Text, PDFs, images,
-video frames and audio windows are indexed. Code indexing is handled separately.
+video frames and audio windows are indexed. `codeRoots` selects git repositories
+indexed through `git ls-files`, searched only by `code:` queries, with `rg` reading
+the files live.
 Results are a flat list in score order, with page, source-line or second locations
 and a `weak` flag. Missing
 models degrade to keyword results. CLI search exits 0 for a reply (even empty),
@@ -97,20 +99,21 @@ models degrade to keyword results. CLI search exits 0 for a reply (even empty),
 
 Images use `imageBudget`; screenshots use 280 tokens and video frames use 70.
 Screenshot names (Screenshot, Screen Shot, CleanShot or SCR-, case-insensitive)
-and common screen dimensions enable OCR. OCR reads English only (`-l eng`);
-the host has `eng` and `osd` installed, so other languages are a known limit.
+and common screen dimensions enable OCR. OCR reads English only (`-l eng`), since
+only `eng` and `osd` traineddata ship by default, so non-English screenshot text
+reads badly.
 OCR text is searchable without a vector. JPEG thumbnails live in `thumbs/<uuid>/`.
 Video and audio results open through `mpv --start=<seconds>`.
 
 Audio uses 30 s windows with a 25 s hop, skips RMS at or below 0.003, and keeps
 tails with at least 2 s of new audio. `audio:false` skips audio files with detail
 `audio search is off` and indexes videos as frames only. Silent files are skipped.
-Long audio is extracted and committed in batches of at most 16 windows, keeping
-decoded payload memory bounded as well as streaming PCM one window at a time.
+Video frames are extracted and committed in passes of at most 16 frames before
+the soundtrack starts. Long audio is extracted and committed in batches of at most
+16 windows, keeping decoded payload memory bounded as well as streaming PCM one
+window at a time.
 A failed soundtrack leaves successfully embedded frames in a `partial` video.
 Size caps are 8 GiB for video, 2 GiB for audio, 512 MiB for PDF and 16 MiB otherwise.
-Index schema version 6 follows the existing unsupported-version policy: older
-indexes must be removed and rebuilt before indexing with this version.
 
 Indexes live in `$XDG_DATA_HOME/omafind/index/<uuid>.sqlite` (default
 `~/.local/share/omafind/index`), mode 0600. Paths are relative to each filesystem's

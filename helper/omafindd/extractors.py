@@ -356,19 +356,23 @@ class FramePiece:
     thumbnail: bytes | None = None
 
 
-def keyframes(path: Path, every=3.0, max_frames=1200, max_dist=4) -> Iterator[FramePiece]:
+def keyframes(
+    path: Path, every=3.0, max_frames=1200, max_dist=4, *, start=0.0
+) -> Iterator[FramePiece]:
     info = media_info(path)
     duration = info["duration"]
     if "video" not in info["streams"] or not duration:
         return
     step = sampling_interval(duration, every, max_frames)
-    first = min(0.5, duration / 2)
+    initial = min(0.5, duration / 2)
+    first = max(initial, start)
+    offset = round((first - initial) / step)
     previous = None
     last_hash = None
     stream = _stream([
         "ffmpeg", "-v", "error", "-ss", str(first), "-i", str(path), "-vf",
         f"fps=1/{step}:start_time=0:round=up,scale=8:8:flags=area,format=gray",
-        "-frames:v", str(max_frames),
+        "-frames:v", str(max_frames - offset),
         "-f", "rawvideo", "-",
     ], 64)
     try:
@@ -382,16 +386,18 @@ def keyframes(path: Path, every=3.0, max_frames=1200, max_dist=4) -> Iterator[Fr
             if last_hash is not None and (hashed ^ last_hash).bit_count() <= max_dist:
                 continue
             last_hash = hashed
+            if previous is not None:
+                # Look ahead with gray bytes only; closing a pass must not decode another PNG.
+                yield FramePiece(previous.image, previous.start, second, previous.thumbnail)
             data = _media_command([
                 "ffmpeg", "-v", "error", "-ss", str(second), "-i", str(path),
                 "-frames:v", "1", "-vf",
                 "scale=1024:1024:force_original_aspect_ratio=decrease", "-f", "image2pipe",
                 "-vcodec", "png", "-",
             ])
-            if previous is not None:
-                yield FramePiece(previous.image, previous.start, second, previous.thumbnail)
             previous = FramePiece(_image("-", 70, data=data), second, duration,
-                                  _thumbnail("-", data=data) if previous is None else None)
+                                  _thumbnail("-", data=data)
+                                  if previous is None and not start else None)
         if previous is not None:
             yield previous
     finally:
@@ -417,16 +423,28 @@ def extract_audio(path: Path, *, audio=True, start=0.0) -> Extracted:
                      detail="silent audio" if state == "skipped" else None)
 
 
-def extract_video(path: Path, *, audio=True, start=0.0) -> Extracted:
+def extract_video(path: Path, *, audio=True, start=0.0, frame_start=0.0) -> Extracted:
     info = media_info(path)
     segments = []
     thumbnail = None
-    if not start:
-        for piece in keyframes(path):
-            thumbnail = thumbnail or piece.thumbnail
-            segments.append(Segment("frame", "image", loc=piece.start, loc_end=piece.end,
-                                    image=piece.image))
+    if frame_start is not None and not start:
+        frames = keyframes(path, start=frame_start)
+        try:
+            for piece in islice(frames, 16):
+                thumbnail = thumbnail or piece.thumbnail
+                segments.append(Segment("frame", "image", loc=piece.start, loc_end=piece.end,
+                                        image=piece.image))
+        finally:
+            frames.close()
     result = Extracted(segments, {"duration": info["duration"]}, thumbnail=thumbnail)
+    if segments:
+        if segments[-1].loc_end < info["duration"]:
+            result.info["frame_next"] = segments[-1].loc_end
+            result.state = "partial"
+        elif audio and "audio" in info["streams"]:
+            result.info["audio_next"] = 0
+            result.state = "partial"
+        return result
     if audio and "audio" in info["streams"]:
         try:
             soundtrack = extract_audio(path, start=start)
@@ -435,7 +453,7 @@ def extract_video(path: Path, *, audio=True, start=0.0) -> Extracted:
             if soundtrack.state == "partial":
                 result.state = "partial"
         except ExtractionError as error:
-            if not segments and not start:
+            if frame_start is not None and not start:
                 raise
             result.state, result.detail = "partial", str(error)
     return result
@@ -445,8 +463,10 @@ EXTRACTORS = {"text": extract_text, "pdf": extract_pdf, "image": extract_image,
               "video": extract_video, "audio": extract_audio}
 
 
-def extract(path: Path, kind: str, start: int = 1, audio=True, image_budget=140) -> Extracted:
+def extract(
+    path: Path, kind: str, start: int = 1, audio=True, image_budget=140, frame_start=0.0
+) -> Extracted:
     options = {"pdf": {"start": start}, "image": {"image_budget": image_budget},
-               "video": {"audio": audio, "start": start - 1},
+               "video": {"audio": audio, "start": start - 1, "frame_start": frame_start},
                "audio": {"audio": audio, "start": start - 1}}
     return EXTRACTORS[kind](path, **options.get(kind, {}))
