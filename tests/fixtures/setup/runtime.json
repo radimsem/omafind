@@ -1,0 +1,32 @@
+{
+  "t": "runtime_progress",
+  "state": "running",
+  "step": "download",
+  "file": "mmproj",
+  "done": 512,
+  "total": 865,
+  "unit": "MB",
+  "left_seconds": 60,
+  "reason": null,
+  "build": {
+    "state": "ok",
+    "seconds": 192,
+    "tag": "b11461",
+    "backend": "Vulkan",
+    "gpu": "RTX 3060 12 GB"
+  },
+  "files": {
+    "model": {
+      "name": "embeddinggemma-2-Q8_0.gguf",
+      "state": "ok",
+      "done": 310,
+      "total": 310
+    },
+    "mmproj": {
+      "name": "mmproj-embeddinggemma-2-Q8_0.gguf",
+      "state": "run",
+      "done": 202,
+      "total": 555
+    }
+  }
+}

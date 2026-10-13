@@ -1,0 +1,661 @@
+{
+  "t": "discover_tree",
+  "root": "~/Documents",
+  "abs": "/home/u/Documents",
+  "scanned_at": 1760000000,
+  "candidate": {
+    "path": "/home/u/Documents",
+    "section": "home",
+    "checked": true,
+    "volume": "home-volume",
+    "git": false,
+    "dirs": 1550,
+    "found": 899,
+    "kept": 838,
+    "found_counts": {
+      "text": 806,
+      "pdf": 67,
+      "image": 26,
+      "video": 0,
+      "audio": 0
+    },
+    "counts": {
+      "text": 745,
+      "pdf": 67,
+      "image": 26,
+      "video": 0,
+      "audio": 0
+    },
+    "exts": [
+      [
+        ".md",
+        412
+      ],
+      [
+        ".pdf",
+        67
+      ]
+    ],
+    "excludes": [
+      "vault/exports",
+      "archive/old-backups"
+    ],
+    "left_out": [
+      {
+        "path": "vault/exports",
+        "rule": "generated",
+        "files": 58,
+        "counts": {
+          "text": 58,
+          "pdf": 0,
+          "image": 0,
+          "video": 0,
+          "audio": 0
+        },
+        "evidence": {
+          "pattern": "inv-YYYYMMDD.txt",
+          "match": [
+            58,
+            58
+          ],
+          "dataset_limit": 300
+        }
+      },
+      {
+        "path": "archive/old-backups",
+        "rule": "no-kind",
+        "files": 0,
+        "counts": {
+          "text": 0,
+          "pdf": 0,
+          "image": 0,
+          "video": 0,
+          "audio": 0
+        },
+        "evidence": {
+          "files": 37,
+          "exts": [
+            [
+              ".zip",
+              31
+            ],
+            [
+              ".tar.gz",
+              6
+            ]
+          ],
+          "searchable": 0
+        }
+      },
+      {
+        "path": "**",
+        "rule": "secrets",
+        "files": 3,
+        "counts": {
+          "text": 3,
+          "pdf": 0,
+          "image": 0,
+          "video": 0,
+          "audio": 0
+        },
+        "evidence": {
+          "exts": [
+            [
+              ".env",
+              3
+            ],
+            [
+              ".kdbx",
+              1
+            ]
+          ],
+          "in": [
+            "tax/2024",
+            "work/clients"
+          ]
+        }
+      }
+    ],
+    "index_bytes": 11593000,
+    "seconds": 80.58000000000001
+  },
+  "secrets": {
+    "files": 3,
+    "counts": {
+      "text": 3,
+      "pdf": 0,
+      "image": 0,
+      "video": 0,
+      "audio": 0
+    },
+    "evidence": {
+      "exts": [
+        [
+          ".env",
+          3
+        ],
+        [
+          ".kdbx",
+          1
+        ]
+      ],
+      "in": [
+        "tax/2024",
+        "work/clients"
+      ]
+    }
+  },
+  "dirs": [
+    {
+      "path": "",
+      "own": {
+        "text": 0,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 0,
+      "sub": {
+        "text": 803,
+        "pdf": 67,
+        "image": 26,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 933,
+      "dirs": 1550,
+      "exts": [
+        [
+          ".md",
+          727
+        ],
+        [
+          ".txt",
+          76
+        ],
+        [
+          ".pdf",
+          67
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "archive",
+      "own": {
+        "text": 0,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 0,
+      "sub": {
+        "text": 18,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 55,
+      "dirs": 3,
+      "exts": [
+        [
+          ".txt",
+          18
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "archive/2021-letters",
+      "own": {
+        "text": 18,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 18,
+      "sub": {
+        "text": 18,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 18,
+      "dirs": 1,
+      "exts": [
+        [
+          ".txt",
+          18
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "archive/old-backups",
+      "own": {
+        "text": 0,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 37,
+      "sub": {
+        "text": 0,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 37,
+      "dirs": 1,
+      "exts": [],
+      "rule": "no-kind",
+      "evidence": {
+        "files": 37,
+        "exts": [
+          [
+            ".zip",
+            31
+          ],
+          [
+            ".tar.gz",
+            6
+          ]
+        ],
+        "searchable": 0
+      }
+    },
+    {
+      "path": "manuals",
+      "own": {
+        "text": 0,
+        "pdf": 18,
+        "image": 2,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 20,
+      "sub": {
+        "text": 0,
+        "pdf": 18,
+        "image": 2,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 20,
+      "dirs": 1,
+      "exts": [
+        [
+          ".pdf",
+          18
+        ],
+        [
+          ".png",
+          2
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "notes",
+      "own": {
+        "text": 412,
+        "pdf": 0,
+        "image": 3,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 415,
+      "sub": {
+        "text": 412,
+        "pdf": 0,
+        "image": 3,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 415,
+      "dirs": 214,
+      "exts": [
+        [
+          ".md",
+          412
+        ],
+        [
+          ".png",
+          3
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "tax",
+      "own": {
+        "text": 0,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 0,
+      "sub": {
+        "text": 24,
+        "pdf": 40,
+        "image": 15,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 79,
+      "dirs": 3,
+      "exts": [
+        [
+          ".pdf",
+          40
+        ],
+        [
+          ".md",
+          24
+        ],
+        [
+          ".png",
+          15
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "tax/2023",
+      "own": {
+        "text": 10,
+        "pdf": 18,
+        "image": 6,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 34,
+      "sub": {
+        "text": 10,
+        "pdf": 18,
+        "image": 6,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 34,
+      "dirs": 1,
+      "exts": [
+        [
+          ".pdf",
+          18
+        ],
+        [
+          ".md",
+          10
+        ],
+        [
+          ".png",
+          6
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "tax/2024",
+      "own": {
+        "text": 14,
+        "pdf": 22,
+        "image": 9,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 45,
+      "sub": {
+        "text": 14,
+        "pdf": 22,
+        "image": 9,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 45,
+      "dirs": 1,
+      "exts": [
+        [
+          ".pdf",
+          22
+        ],
+        [
+          ".md",
+          14
+        ],
+        [
+          ".png",
+          9
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "vault",
+      "own": {
+        "text": 0,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 0,
+      "sub": {
+        "text": 148,
+        "pdf": 0,
+        "image": 2,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 150,
+      "dirs": 3,
+      "exts": [
+        [
+          ".md",
+          90
+        ],
+        [
+          ".txt",
+          58
+        ],
+        [
+          ".png",
+          2
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "vault/daily",
+      "own": {
+        "text": 90,
+        "pdf": 0,
+        "image": 2,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 92,
+      "sub": {
+        "text": 90,
+        "pdf": 0,
+        "image": 2,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 92,
+      "dirs": 1,
+      "exts": [
+        [
+          ".md",
+          90
+        ],
+        [
+          ".png",
+          2
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "vault/exports",
+      "own": {
+        "text": 58,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 58,
+      "sub": {
+        "text": 58,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 58,
+      "dirs": 1,
+      "exts": [
+        [
+          ".txt",
+          58
+        ]
+      ],
+      "rule": "generated",
+      "evidence": {
+        "pattern": "inv-YYYYMMDD.txt",
+        "match": [
+          58,
+          58
+        ],
+        "dataset_limit": 300
+      }
+    },
+    {
+      "path": "work",
+      "own": {
+        "text": 0,
+        "pdf": 0,
+        "image": 0,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 0,
+      "sub": {
+        "text": 201,
+        "pdf": 9,
+        "image": 4,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 214,
+      "dirs": 3,
+      "exts": [
+        [
+          ".md",
+          201
+        ],
+        [
+          ".pdf",
+          9
+        ],
+        [
+          ".jpg",
+          2
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "work/clients",
+      "own": {
+        "text": 160,
+        "pdf": 7,
+        "image": 2,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 169,
+      "sub": {
+        "text": 160,
+        "pdf": 7,
+        "image": 2,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 169,
+      "dirs": 1,
+      "exts": [
+        [
+          ".md",
+          160
+        ],
+        [
+          ".pdf",
+          7
+        ],
+        [
+          ".png",
+          2
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    },
+    {
+      "path": "work/talks",
+      "own": {
+        "text": 41,
+        "pdf": 2,
+        "image": 2,
+        "video": 0,
+        "audio": 0
+      },
+      "all_own": 45,
+      "sub": {
+        "text": 41,
+        "pdf": 2,
+        "image": 2,
+        "video": 0,
+        "audio": 0
+      },
+      "all_sub": 45,
+      "dirs": 1,
+      "exts": [
+        [
+          ".md",
+          41
+        ],
+        [
+          ".pdf",
+          2
+        ],
+        [
+          ".jpg",
+          2
+        ]
+      ],
+      "rule": null,
+      "evidence": null
+    }
+  ]
+}

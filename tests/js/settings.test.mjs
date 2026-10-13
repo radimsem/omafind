@@ -72,3 +72,26 @@ test('shortcut accepts MODS + KEY and falls back otherwise', () => {
     assert.equal(normalize({ shortcut: value }).shortcut, 'SUPER + E');
   }
 });
+
+test('findEntry searches bar sections before plugins and tolerates missing layouts', () => {
+  const { findEntry }=load('Settings.js');
+  const plugin={id:'omafind',roots:[]};
+  assert.deepEqual(plain(findEntry({plugins:[null,plugin]},'omafind')),plugin);
+  for(const section of ['left','center','right']) {
+    assert.deepEqual(plain(findEntry({bar:{layout:{[section]:[null,plugin]}}},'omafind')),plugin);
+  }
+  assert.equal(findEntry({bar:{layout:{left:[{id:'omafind',place:'bar'}]}},plugins:[plugin]},'omafind').place,'bar');
+  for(const config of [null,{}, {bar:{layout:{left:'bad'}},plugins:[] }]) assert.equal(findEntry(config,'omafind'),null);
+});
+
+test('setup writes retain nested roots and unrelated settings through JSON', () => {
+  const entry = {id: 'radimsem.omafind', enabled: true, future: {mode: 'keep'}};
+  const changes = {setupDone: true, roots: [{path: '/home/u/Documents', volume: 'v', excludes: ['tax/2024']}],
+    codeRoots: ['/home/u/personal/projects/omaone']};
+  const written = JSON.parse(JSON.stringify(merge(entry, changes)));
+  assert.equal(written.enabled, true);
+  assert.deepEqual(written.future, {mode: 'keep'});
+  assert.deepEqual(written.roots, changes.roots);
+  assert.deepEqual(written.codeRoots, changes.codeRoots);
+  assert.equal(normalize(written).setupDone, true);
+});
