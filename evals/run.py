@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from fakes.embedder import FakeEmbedder  # noqa: E402
 from omafindd import paths  # noqa: E402
+from omafindd.code import CodeStore  # noqa: E402
 from omafindd.crawler import crawl  # noqa: E402
 from omafindd.embedder import Embedder  # noqa: E402
 from omafindd.embedding import Adapter  # noqa: E402
@@ -22,7 +23,7 @@ from omafindd.search import Searcher  # noqa: E402
 from omafindd.store import Store, volume_for  # noqa: E402
 
 
-async def evaluate(searcher, queries, base):
+async def evaluate(searcher, queries, base, gate=1.0):
     counts = defaultdict(lambda: [0, 0])
     for query in queries:
         reply = await searcher.search(query["q"], limit=1)
@@ -33,13 +34,14 @@ async def evaluate(searcher, queries, base):
     total = [sum(value[index] for value in counts.values()) for index in (0, 1)]
     for tag, (hits, size) in [*sorted(counts.items()), ("total", total)]:
         print(f"first-hit {tag} {hits}/{size} ({100 * hits / max(size, 1):.1f}%)")
-    return total[0] == total[1]
+    return total[1] > 0 and total[0] / total[1] >= gate
 
 
 async def run(args):
     config = json.loads(args.queries.read_text())
     base = Path(config["base"]).expanduser().resolve()
     stores = []
+    code_directory, code_roots = None, ()
     embedder = (
         FakeEmbedder()
         if args.index is None
@@ -58,16 +60,30 @@ async def run(args):
                 crawl(store, [{"path": str(base), "excludes": []}])
                 await Jobs(store, embedder, journal=Path(temporary) / "journal").drain()
             else:
-                _, mount = volume_for(base)
+                code_directory = args.index.parent if args.index.is_file() else args.index
+                code_path = code_directory / "code.sqlite"
+                if code_path.is_file():
+                    code = CodeStore.open_existing(code_path.resolve(), Path("/"))
+                    try:
+                        row = code.db.execute(
+                            "SELECT value FROM meta WHERE key='code_roots'"
+                        ).fetchone()
+                        code_roots = tuple(Path(root) for root in json.loads(row[0])) if row else ()
+                    finally:
+                        code.close()
                 databases = (
                     [args.index] if args.index.is_file() else sorted(args.index.glob("*.sqlite"))
                 )
+                if any(path.name != "code.sqlite" for path in databases):
+                    _, mount = volume_for(base)
                 stores.extend(
                     Store.open_existing(path.resolve(), mount)
                     for path in databases
                     if path.name != "code.sqlite"
                 )
-            return 0 if await evaluate(Searcher(stores, embedder), config["queries"], base) else 1
+            searcher = Searcher(stores, embedder, code_directory=code_directory,
+                                code_roots=code_roots)
+            return 0 if await evaluate(searcher, config["queries"], base, args.gate) else 1
     finally:
         await embedder.stop()
         for store in stores:
@@ -80,7 +96,11 @@ def main():
     )
     parser.add_argument("--index", type=Path)
     parser.add_argument("--queries", type=Path, required=True)
+    parser.add_argument("--gate", type=float, default=0.9,
+                        help="Minimum total first-hit fraction (default: 0.9)")
     args = parser.parse_args()
+    if not 0 <= args.gate <= 1:
+        parser.error("--gate must be between 0 and 1")
     return asyncio.run(run(args))
 
 

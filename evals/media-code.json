@@ -1,0 +1,359 @@
+{
+  "base": "~",
+  "manual": true,
+  "notes": "Proposed expectations. Media filenames were listed, not visually inspected; confirm their contents before treating this set as a quality gate. Music is empty, so there are no audio queries. Opt in the pipeshub-ai and omaone repositories for the code queries.",
+  "queries": [
+    {
+      "q": "code: retry with backoff",
+      "expect": [
+        "personal/projects/pipeshub-ai/backend/python/app/utils/retry.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: retry_async",
+      "expect": [
+        "personal/projects/pipeshub-ai/backend/python/app/utils/retry.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: retry_model_call",
+      "expect": [
+        "personal/projects/pipeshub-ai/backend/python/app/agent_loop_lib/hooks/middleware/builtin/retry.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: remote_facts",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/router.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: questions_for",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/router.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: redact_descriptor",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/redact.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: cap_request",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/redact.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: purge_loop",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/images.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: build_sessions",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/sessions.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: lock_key",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/sessions.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: read_branch",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/sessions.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: valid_shortcut",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/settings.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: new_session_config",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/settings.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: find_entry",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/settings.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: fuse_seconds",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/settings.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: finite_number",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/settings.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: profile_config",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/settings.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: herdr_bin",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/machines.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: valid_label",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/machines.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: valid_host",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/machines.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: parse_machine_list",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/machines.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: list_machines",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/machines.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: status_version",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/machines.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: option_keys",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/descriptor.py"
+      ],
+      "tag": "code-lookup",
+      "manual": true
+    },
+    {
+      "q": "code: build a redacted session descriptor under a token cap",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/descriptor.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: score routing candidates by lexical term coverage",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/lexical.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: route a request using decider questions and session options",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/router.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: deliver messages to local and remote agent sessions",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/delivery.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: redact secrets and cap the length of a request",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/redact.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: rotate resize and store pasted images",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/images.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: serialize sessions and determine their lock key",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/sessions.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: parse a remote machine list and probe herdr versions",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/machines.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: hold a request during a fuse countdown before delivery",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/fuse.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "code: receive socket messages and validate image attachments",
+      "expect": [
+        "personal/projects/omaone/helper/omaoned/ipc.py"
+      ],
+      "tag": "code-meaning",
+      "manual": true
+    },
+    {
+      "q": "img: screenshot 2026-04-20_10-47-06",
+      "expect": [
+        "Pictures/screenshot-2026-04-20_10-47-06.png"
+      ],
+      "tag": "image",
+      "manual": true
+    },
+    {
+      "q": "img: screenshot 2026-04-20_11-13-12",
+      "expect": [
+        "Pictures/screenshot-2026-04-20_11-13-12.png"
+      ],
+      "tag": "image",
+      "manual": true
+    },
+    {
+      "q": "img: screenshot 2026-10-12_09-17-53",
+      "expect": [
+        "Pictures/screenshot-2026-10-12_09-17-53.png"
+      ],
+      "tag": "image",
+      "manual": true
+    },
+    {
+      "q": "img: externally-managed-environment",
+      "expect": [
+        "Pictures/screenshot-2026-04-20_10-47-06.png"
+      ],
+      "tag": "screenshot-ocr",
+      "manual": true
+    },
+    {
+      "q": "vid: screenrecording 2026-10-03_08-44-29",
+      "expect": [
+        "Videos/screenrecording-2026-10-03_08-44-29.mp4"
+      ],
+      "tag": "video",
+      "manual": true
+    },
+    {
+      "q": "vid: screenrecording 2026-10-03_08-45-31",
+      "expect": [
+        "Videos/screenrecording-2026-10-03_08-45-31.mp4"
+      ],
+      "tag": "video",
+      "manual": true
+    },
+    {
+      "q": "vid: screenrecording 2026-10-03_09-00-09",
+      "expect": [
+        "Videos/screenrecording-2026-10-03_09-00-09.mp4"
+      ],
+      "tag": "video",
+      "manual": true
+    },
+    {
+      "q": "vid: screenrecording 2026-10-08_21-31-06",
+      "expect": [
+        "Videos/screenrecording-2026-10-08_21-31-06.mp4"
+      ],
+      "tag": "video",
+      "manual": true
+    },
+    {
+      "q": "vid: screenrecording 2026-10-09_14-56-38",
+      "expect": [
+        "Videos/screenrecording-2026-10-09_14-56-38.mp4"
+      ],
+      "tag": "video",
+      "manual": true
+    },
+    {
+      "q": "vid: screenrecording 2026-10-09_14-58-27",
+      "expect": [
+        "Videos/screenrecording-2026-10-09_14-58-27.mp4"
+      ],
+      "tag": "video",
+      "manual": true
+    }
+  ]
+}
