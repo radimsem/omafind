@@ -66,7 +66,7 @@ def test_schema_pragmas_permissions_and_meta(store):
         "excerpt",
         "vec",
     ]
-    assert store.db.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert store.db.execute("PRAGMA user_version").fetchone()[0] == 6
     assert store.db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert store.db.execute("PRAGMA synchronous").fetchone()[0] == 1
     assert store.db.execute("PRAGMA foreign_keys").fetchone()[0] == 1

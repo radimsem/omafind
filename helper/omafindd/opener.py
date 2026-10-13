@@ -8,6 +8,8 @@ from pathlib import Path
 def command(item: Mapping, *, env: Mapping[str, str]) -> list[str]:
     path = item["path"]
     kind = item["kind"]
+    if kind in ("video", "audio"):
+        return ["mpv", f"--start={int(item.get('loc') or 0)}", path]
     if kind == "text" and shutil.which("omarchy-launch-editor", path=env.get("PATH")):
         default = Path(env["HOME"]) / ".local/state/omarchy/defaults/editor"
         try:

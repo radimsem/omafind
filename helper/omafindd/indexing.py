@@ -17,6 +17,7 @@ async def reindex(
     volume: str | None = None,
     volume_resolver=volume_for,
     progress=None,
+    settings=None,
 ):
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     directory.chmod(0o700)
@@ -46,7 +47,7 @@ async def reindex(
                 )
                 stores.append(store)
                 crawl(store, selected, force=True)
-                jobs = Jobs(store, embedder, journal=directory / "journal")
+                jobs = Jobs(store, embedder, journal=directory / "journal", settings=settings)
                 await jobs.drain(progress=progress or _progress)
             print("queued 0", file=sys.stderr)
         finally:

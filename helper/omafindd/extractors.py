@@ -1,13 +1,22 @@
 import bisect
 import html
+import io
+import json
 import math
 import re
 import subprocess
 import tempfile
+import wave
 import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from itertools import islice
 from pathlib import Path
 from xml.etree import ElementTree
+
+import numpy as np
+
+from .rules import screenshot_like
 
 
 class ExtractionError(Exception):
@@ -26,9 +35,10 @@ class Segment:
     kind: str
     modality: str
     text: str = ""
-    loc: int | None = None
-    loc_end: int | None = None
+    loc: float | None = None
+    loc_end: float | None = None
     image: ImagePart | None = None
+    audio: bytes | None = None
 
 
 @dataclass
@@ -36,6 +46,9 @@ class Extracted:
     segments: list[Segment]
     info: dict = field(default_factory=dict)
     state: str = "done"
+    thumbnail: bytes | None = None
+    ocr_text: str = ""
+    detail: str | None = None
 
 
 def chunks(text: str) -> list[Segment]:
@@ -197,5 +210,243 @@ def extract_pdf(path: Path, start: int = 1) -> Extracted:
     )
 
 
-def extract(path: Path, kind: str, start: int = 1) -> Extracted:
-    return extract_pdf(path, start) if kind == "pdf" else extract_text(path)
+def _image(source: str, budget: int, *, data=None) -> ImagePart:
+    dimensions = _media_command(
+        ["magick", source, "-auto-orient", "-format", "%w %h", "info:"], data=data
+    )
+    width, height = target_size(*map(int, dimensions.split()), budget)
+    resized = _media_command(
+        ["magick", source, "-auto-orient", "-filter", "Catrom", "-resize",
+         f"{width}x{height}!", "png:-"], data=data
+    )
+    return ImagePart(resized, width, height)
+
+
+def _thumbnail(source: str, *, data=None) -> bytes:
+    return _media_command(
+        ["magick", source, "-auto-orient", "-thumbnail", "128x128", "jpg:-"], data=data
+    )
+
+
+def _media_command(argv, *, data=None) -> bytes:
+    try:
+        result = subprocess.run(argv, input=data, capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired as error:
+        raise ExtractionError("timeout") from error
+    if result.returncode:
+        raise ExtractionError(f"{argv[0]} failed")
+    return result.stdout
+
+
+def extract_image(path: Path, *, image_budget=140) -> Extracted:
+    source = str(path) + "[0]"
+    width, height = map(int, _media_command(
+        ["magick", source, "-auto-orient", "-format", "%w %h", "info:"]
+    ).split())
+    screenshot = screenshot_like(path.name, width, height)
+    image = _image(source, 280 if screenshot else image_budget)
+    text = ""
+    if screenshot:
+        original = _media_command(["magick", source, "-auto-orient", "png:-"])
+        text = _media_command(["tesseract", "stdin", "stdout", "-l", "eng"],
+                              data=original).decode().strip()
+    return Extracted(
+        [Segment("image", "image", image=image)], {"width": width, "height": height},
+        thumbnail=_thumbnail(source), ocr_text=text,
+    )
+
+
+def media_info(path: Path) -> dict:
+    info = json.loads(_media_command([
+        "ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type",
+        "-of", "json", str(path),
+    ]))
+    duration = float(info.get("format", {}).get("duration", 0))
+    return {"duration": duration if math.isfinite(duration) and duration > 0 else 0,
+            "streams": {stream["codec_type"] for stream in info.get("streams", [])}}
+
+
+def _stream(argv, size: int) -> Iterator[bytes]:
+    # A file for stderr prevents pipe deadlock while stdout is consumed incrementally.
+    with tempfile.TemporaryFile() as errors:
+        with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=errors) as process:
+            try:
+                while block := process.stdout.read(size):
+                    yield block
+                if process.wait():
+                    raise ExtractionError(f"{argv[0]} failed")
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+
+
+@dataclass(frozen=True)
+class AudioPiece:
+    wav: bytes
+    start: float
+    end: float
+
+
+def audio_windows(
+    path: Path, window=30.0, hop=25.0, minimum=2.0, rms_gate=0.003, *, start=0.0
+) -> Iterator[AudioPiece]:
+    if "audio" not in media_info(path)["streams"]:
+        return
+    rate = 16000
+    size, step = int(window * rate) * 2, int(hop * rate) * 2
+    buffer = bytearray()
+    offset = int(start * rate) * 2
+    initial = offset
+
+    def emit():
+        samples = np.frombuffer(buffer, dtype="<i2").astype(np.float32) / 32768
+        if np.sqrt(np.mean(samples * samples)) <= rms_gate:
+            return None
+        output = io.BytesIO()
+        with wave.open(output, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(rate)
+            wav.writeframes(buffer)
+        return AudioPiece(output.getvalue(), offset / (rate * 2),
+                          (offset + len(buffer)) / (rate * 2))
+
+    stream = _stream([
+        "ffmpeg", "-v", "error", "-ss", str(start), "-i", str(path),
+        "-vn", "-ac", "1", "-ar", str(rate),
+        "-f", "s16le", "-",
+    ], 65536)
+    try:
+        for block in stream:
+            position = 0
+            while position < len(block):
+                count = min(size - len(buffer), len(block) - position)
+                buffer.extend(block[position:position + count])
+                position += count
+                if len(buffer) == size:
+                    piece = emit()
+                    if piece is not None:
+                        yield piece
+                    del buffer[:step]
+                    offset += step
+        covered = size - step if offset > initial or start else 0
+        if len(buffer) - covered >= int(minimum * rate) * 2:
+            piece = emit()
+            if piece is not None:
+                yield piece
+    finally:
+        stream.close()
+
+
+def sampling_interval(duration: float, every=3.0, max_frames=1200) -> float:
+    return max(every, duration / max_frames)
+
+
+def average_hash(sample: bytes) -> int:
+    mean = sum(sample) // len(sample)
+    return sum(1 << index for index, pixel in enumerate(sample) if pixel > mean)
+
+
+@dataclass(frozen=True)
+class FramePiece:
+    image: ImagePart
+    start: float
+    end: float
+    thumbnail: bytes | None = None
+
+
+def keyframes(path: Path, every=3.0, max_frames=1200, max_dist=4) -> Iterator[FramePiece]:
+    info = media_info(path)
+    duration = info["duration"]
+    if "video" not in info["streams"] or not duration:
+        return
+    step = sampling_interval(duration, every, max_frames)
+    first = min(0.5, duration / 2)
+    previous = None
+    last_hash = None
+    stream = _stream([
+        "ffmpeg", "-v", "error", "-ss", str(first), "-i", str(path), "-vf",
+        f"fps=1/{step}:start_time=0:round=up,scale=8:8:flags=area,format=gray",
+        "-frames:v", str(max_frames),
+        "-f", "rawvideo", "-",
+    ], 64)
+    try:
+        for index, sample in enumerate(stream):
+            if len(sample) != 64:
+                raise ExtractionError("incomplete frame sample")
+            second = first + index * step
+            if second >= duration:
+                break
+            hashed = average_hash(sample)
+            if last_hash is not None and (hashed ^ last_hash).bit_count() <= max_dist:
+                continue
+            last_hash = hashed
+            data = _media_command([
+                "ffmpeg", "-v", "error", "-ss", str(second), "-i", str(path),
+                "-frames:v", "1", "-vf",
+                "scale=1024:1024:force_original_aspect_ratio=decrease", "-f", "image2pipe",
+                "-vcodec", "png", "-",
+            ])
+            if previous is not None:
+                yield FramePiece(previous.image, previous.start, second, previous.thumbnail)
+            previous = FramePiece(_image("-", 70, data=data), second, duration,
+                                  _thumbnail("-", data=data) if previous is None else None)
+        if previous is not None:
+            yield previous
+    finally:
+        stream.close()
+
+
+def extract_audio(path: Path, *, audio=True, start=0.0) -> Extracted:
+    if not audio:
+        return Extracted([], state="skipped", detail="audio search is off")
+    duration = media_info(path)["duration"]
+    windows = audio_windows(path, start=start)
+    try:
+        segments = [Segment("audio", "audio", loc=p.start, loc_end=p.end, audio=p.wav)
+                    for p in islice(windows, 16)]
+    finally:
+        windows.close()
+    info = {"duration": duration}
+    state = "done" if segments or start else "skipped"
+    if len(segments) == 16 and duration - segments[-1].loc_end >= 2:
+        info["audio_next"] = segments[-1].loc + 25
+        state = "partial"
+    return Extracted(segments, info, state,
+                     detail="silent audio" if state == "skipped" else None)
+
+
+def extract_video(path: Path, *, audio=True, start=0.0) -> Extracted:
+    info = media_info(path)
+    segments = []
+    thumbnail = None
+    if not start:
+        for piece in keyframes(path):
+            thumbnail = thumbnail or piece.thumbnail
+            segments.append(Segment("frame", "image", loc=piece.start, loc_end=piece.end,
+                                    image=piece.image))
+    result = Extracted(segments, {"duration": info["duration"]}, thumbnail=thumbnail)
+    if audio and "audio" in info["streams"]:
+        try:
+            soundtrack = extract_audio(path, start=start)
+            result.segments.extend(soundtrack.segments)
+            result.info.update(soundtrack.info)
+            if soundtrack.state == "partial":
+                result.state = "partial"
+        except ExtractionError as error:
+            if not segments and not start:
+                raise
+            result.state, result.detail = "partial", str(error)
+    return result
+
+
+EXTRACTORS = {"text": extract_text, "pdf": extract_pdf, "image": extract_image,
+              "video": extract_video, "audio": extract_audio}
+
+
+def extract(path: Path, kind: str, start: int = 1, audio=True, image_budget=140) -> Extracted:
+    options = {"pdf": {"start": start}, "image": {"image_budget": image_budget},
+               "video": {"audio": audio, "start": start - 1},
+               "audio": {"audio": audio, "start": start - 1}}
+    return EXTRACTORS[kind](path, **options.get(kind, {}))

@@ -104,3 +104,13 @@ def test_reveal_calls_showitems_with_fake_runner():
             "",
         ]
     ]
+
+
+@pytest.mark.parametrize("kind", ["video", "audio"])
+@pytest.mark.parametrize("loc,expected", [(872.4, 872), (None, 0)])
+def test_media_opens_at_second(env, kind, loc, expected):
+    from omafindd.opener import command
+
+    assert command({"kind": kind, "path": "/tmp/media", "loc": loc}, env=env) == [
+        "mpv", f"--start={expected}", "/tmp/media",
+    ]

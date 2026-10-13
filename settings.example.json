@@ -3,6 +3,8 @@
   "gpu": "auto",
   "audio": true,
   "roots": [],
+  "codeRoots": [],
+  "imageBudget": 140,
   "maxResults": 40,
   "warmMinutes": 5
 }

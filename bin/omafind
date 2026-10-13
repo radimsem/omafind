@@ -297,7 +297,8 @@ def reindex(args, env, execve=os.execve):
     embedder = Adapter(Embedder(binary=directory / "runtime/bin/llama-server",
                                 model_dir=directory / "model"))
     try:
-        asyncio.run(index(roots, directory=directory, embedder=embedder, volume=parsed.volume))
+        asyncio.run(index(roots, directory=directory, embedder=embedder, volume=parsed.volume,
+                          settings=settings))
     except EmbeddingError as error:
         print(str(error), file=sys.stderr)
         return 1

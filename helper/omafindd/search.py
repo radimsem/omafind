@@ -347,6 +347,8 @@ class Searcher:
             file = store.db.execute("SELECT * FROM files WHERE id=?", (key[1],)).fetchone()
             semantic, word = best.get(key), keyword.get(key)
             use_meaning = semantic is not None and (semantic[0] >= 2 or word is None)
+            if word and word["kind"] == "ocr":
+                use_meaning = False
             segment_id = int(self.columns["id"][semantic[1]]) if use_meaning else word["id"]
             segment = store.db.execute(
                 "SELECT id,kind,loc,loc_end,excerpt FROM segments WHERE id=?", (segment_id,)
@@ -388,8 +390,10 @@ class Searcher:
                     "leg": leg,
                     "part": "image"
                     if segment["kind"] == "page_image"
-                    else "name"
-                    if segment["kind"] == "name"
+                    else "speech"
+                    if segment["kind"] == "audio" and file["kind"] == "video"
+                    else segment["kind"]
+                    if segment["kind"] in ("name", "ocr", "frame", "image", "audio")
                     else "text",
                     "z": semantic[0] if semantic else None,
                     "score": score,

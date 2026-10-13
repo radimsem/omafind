@@ -7,7 +7,17 @@ from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-INDEXED_KINDS = {"text": ("md", "txt", "html", "docx", "odt"), "pdf": ("pdf",)}
+INDEXED_KINDS = {
+    "text": ("md", "txt", "html", "docx", "odt"), "pdf": ("pdf",),
+    "image": ("jpg", "jpeg", "png", "webp", "heic", "heif", "avif", "gif", "bmp", "tif", "tiff"),
+    "video": ("mp4", "m4v", "mov", "mkv", "webm", "avi", "mpg", "mpeg", "ogv"),
+    "audio": ("wav", "mp3", "m4a", "aac", "flac", "ogg", "opus", "aiff", "aif", "wma"),
+}
+SIZE_CAPS = {"pdf": 512, "video": 8192, "audio": 2048}
+SCREEN_SIZES = {
+    (1280, 720), (1366, 768), (1440, 900), (1600, 900), (1920, 1080), (1920, 1200),
+    (2560, 1440), (2560, 1600), (2880, 1800), (3440, 1440), (3840, 2160), (5120, 2880),
+}
 HEAVY_GLOBS = (
     "node_modules",
     "bower_components",
@@ -91,6 +101,12 @@ def classify(path: Path) -> str | None:
     return next((kind for kind, extensions in INDEXED_KINDS.items() if ext in extensions), None)
 
 
+def screenshot_like(name: str, width: int, height: int) -> bool:
+    return name.lower().startswith(("screenshot", "screen shot", "cleanshot", "scr-")) or (
+        (width, height) in SCREEN_SIZES or (height, width) in SCREEN_SIZES
+    )
+
+
 def reason(path: Path) -> str | None:
     if any(fnmatch.fnmatchcase(part, glob) for part in path.parts for glob in SECRET_GLOBS):
         return "secrets"
@@ -163,7 +179,7 @@ def keep(paths: Iterable[Path], *, root: Path) -> Iterator[Path | Skip]:
             size = path.stat().st_size
         except FileNotFoundError:
             continue
-        cap = (512 if classify(path) == "pdf" else 16) * 1024 * 1024
+        cap = SIZE_CAPS.get(classify(path), 16) * 1024 * 1024
         yield Skip(path, "size-cap") if size > cap else path
 
 

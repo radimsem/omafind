@@ -25,7 +25,7 @@ CREATE TABLE segments(id INTEGER PRIMARY KEY, file INTEGER NOT NULL
 CREATE INDEX segments_file ON segments(file);
 CREATE VIRTUAL TABLE fts USING fts5(name, body, original UNINDEXED,
  tokenize = "porter unicode61 remove_diacritics 2 categories 'L* N* Co M*'");
-PRAGMA user_version = 5;
+PRAGMA user_version = 6;
 """
 CACHE_SCHEMA = """
 CREATE INDEX IF NOT EXISTS segments_vector_ids ON segments(id) WHERE vec IS NOT NULL;
@@ -137,7 +137,7 @@ class Store:
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         if version == 0:
             self.db.executescript(SCHEMA)
-        elif version != 5:
+        elif version != 6:
             self.close()
             raise ValueError(f"Unsupported index schema: {version}")
         self.db.executescript(CACHE_SCHEMA)
@@ -190,7 +190,8 @@ class Store:
             (normalized(Path(path).name), normalized(" ".join(Path(path).parent.parts)), file),
         )
 
-    def write(self, file: int, segments, vectors, *, state: str, info: dict, append=False):
+    def write(self, file: int, segments, vectors, *, state: str, info: dict, append=False,
+              ocr_text="", detail=None):
         if len(segments) != len(vectors):
             raise ValueError("embedding precision fault")
         with self.db:
@@ -216,10 +217,33 @@ class Store:
                         "INSERT INTO fts(rowid,name,body,original) VALUES(?,'',?,?)",
                         (row, body, segment.text if body != segment.text else None),
                     )
+            if ocr_text:
+                row = self.db.execute(
+                    "INSERT INTO segments(file,kind,modality,excerpt) VALUES(?,'ocr','none',?)",
+                    (file, ocr_text[:400]),
+                ).lastrowid
+                self.db.execute(
+                    "INSERT INTO fts(rowid,name,body,original) VALUES(?,'',?,?)",
+                    (row, normalized(ocr_text), ocr_text),
+                )
             self.db.execute(
-                "UPDATE files SET state=?,detail=NULL,info=?,indexed_at=? WHERE id=?",
-                (state, json.dumps(info), time.time(), file),
+                "UPDATE files SET state=?,detail=?,info=?,indexed_at=? WHERE id=?",
+                (state, detail, json.dumps(info), time.time(), file),
             )
+
+    def skip(self, file: int, detail: str):
+        self.write(file, [], [], state="skipped", info={}, detail=detail)
+
+    def thumbnail(self, file: int, data: bytes) -> str:
+        directory = self.path.parent.parent / "thumbs" / self.volume
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
+        path = directory / f"{file}.jpg"
+        descriptor = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+        path.chmod(0o600)
+        return str(path)
 
     def fail(self, file: int, detail: str):
         with self.db:

@@ -69,8 +69,11 @@ Results are flat in score order; grouping is client-side in #4.
 
 `id` is opaque, resolved only against that connection's latest results.
 `offline` is false until #6; `open_line` is null until #3. `loc` is a 1-based
-line or PDF page. Extracted HTML/docx/odt set `info.extracted:true`. `part` is
-`text`, `image` (a rendered PDF page), or `name`. `z` is null for words-only
+line or PDF page, or seconds for video and audio; images have a null location.
+`loc_end` is the next kept frame's second or the audio window's end second.
+Extracted HTML/docx/odt set `info.extracted:true`. `part` is `text`, `image`
+(an image or rendered PDF page), `name`, `ocr` (an OCR body match), `frame`,
+`speech` (a video soundtrack) or `audio`. `z` is null for words-only
 results. `weak` means score below half the top score. `total` counts qualified
 files before the limit; `weaker` counts weak items in the returned list.
 `degraded` is null or a reason string; embedding failures still return words.
@@ -87,7 +90,14 @@ The CLI sends seq 1 with both legs and prints the complete results object for
 3 for a silent socket.
 
 Settings in the plugin's shell.json entry now include `roots` (default `[]`),
-`maxResults` (10..200, default 40), and `warmMinutes` (0..60, default 5).
+`maxResults` (10..200, default 40), `warmMinutes` (0..60, default 5),
+`codeRoots` (absolute repository paths, default `[]`), and `imageBudget`
+(70, 140 or 280, default 140). Invalid paths are dropped; budgets are not coerced.
+`audio` (bool, default true) controls audio files and video soundtracks.
+With audio off, audio files have state `skipped` and detail `audio search is off`.
+Silent audio has detail `silent audio`. A failed soundtrack leaves frame vectors
+in state `partial`, with a failure detail; it is retried on an explicit reindex.
+`info.thumb` and `thumb` contain a cached JPEG path in `thumbs/<volume-uuid>/`.
 There is no editor setting; openers read the Omarchy default editor.
 
 Later issues append their messages here.

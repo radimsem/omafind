@@ -127,3 +127,17 @@ def test_selected_root_still_obeys_global_rules(tmp_path, folder):
     root.mkdir()
     (root / "ordinary.txt").write_text("fixture")
     assert list(walk(root, excludes=[])) == []
+
+
+@pytest.mark.parametrize("name,kind,cap", [("a.mp4", "video", 8192), ("a.flac", "audio", 2048)])
+def test_media_size_caps(tmp_path, name, kind, cap):
+    from omafindd.rules import Skip, classify, keep
+
+    path = tmp_path / name
+    with path.open("wb") as stream:
+        stream.truncate(cap * 1024 * 1024)
+    assert classify(path) == kind
+    assert list(keep([path], root=tmp_path)) == [path]
+    with path.open("ab") as stream:
+        stream.write(b"x")
+    assert list(keep([path], root=tmp_path)) == [Skip(path, "size-cap")]
