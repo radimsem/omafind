@@ -7,6 +7,7 @@ import "ui" as Parts
 import "lib/keys.js" as KeyMap
 import "lib/results.js" as Results
 import "lib/searchState.js" as SearchState
+import "lib/Update.js" as Update
 import "lib/volumes.js" as Volumes
 
 // The search overlay body: query row, banner, result list, preview and footer.
@@ -41,6 +42,8 @@ Item {
   readonly property var connection: service ? service.connection : null
   readonly property bool daemonDown: !service || (!service.ready && !!connection
     && (connection.unit === "missing" || connection.failures > 0))
+  // Set while Service.qml brings the daemon to the plugin's build (issue #16).
+  readonly property var updateBanner: service && service.update ? Update.banner(service.update) : null
   readonly property string degradedReason: reply && reply.degraded ? String(reply.degraded)
     : service && service.warmFailure ? service.warmFailure : ""
 
@@ -375,14 +378,20 @@ Item {
     anchors.top: query.bottom
     anchors.left: parent.left
     anchors.right: parent.right
-    visible: root.daemonDown || root.degradedReason !== "" || (!!root.reply && root.reply.t === "error")
+    visible: !!root.updateBanner || root.daemonDown || root.degradedReason !== ""
+      || (!!root.reply && root.reply.t === "error")
     height: visible ? implicitHeight : 0
-    lead: root.daemonDown ? "" : root.degradedReason !== "" ? "Semantic search unavailable:" : ""
-    text: root.daemonDown ? "omafindd is not running. Run systemctl --user start omafind, then retry."
+    action: root.updateBanner ? root.updateBanner.action : "Retry"
+    lead: root.updateBanner ? root.updateBanner.lead
+      : root.daemonDown ? "" : root.degradedReason !== "" ? "Semantic search unavailable:" : ""
+    text: root.updateBanner ? root.updateBanner.text
+      : root.daemonDown ? "omafindd is not running. Run systemctl --user start omafind, then retry."
       : root.degradedReason !== "" ? root.degradedClause(root.degradedReason) + ". Showing keyword matches."
       : root.reply && root.reply.reason ? String(root.reply.reason) : ""
     onTriggered: {
-      if (root.daemonDown) {
+      if (root.updateBanner) {
+        root.service.retryUpdate()
+      } else if (root.daemonDown) {
         if (root.service) {
           root.service.checkUnit()
           root.service.connectSocket()

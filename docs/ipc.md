@@ -16,14 +16,18 @@ Send one UTF-8 JSON object per line, terminated by `\n`. The line limit is 1 MiB
 
 | t | Fields | Behavior |
 |---|---|---|
-| `state` | `v:1`, `runtime:"ready"\|"missing"`, `model:"ready"\|"missing"`, `embedder:"stopped"\|"text"\|"full"` | Reply to `hello`. The state shape and pushing a full state whenever a field changes are proposed. |
+| `state` | `v:1`, `runtime:"ready"\|"missing"`, `model:"ready"\|"missing"`, `embedder:"stopped"\|"text"\|"full"`, `build:string` | Reply to `hello`. The state shape and pushing a full state whenever a field changes are proposed. |
 
 The scaffold implements the proposed state shape and push-on-change behavior. `runtime` checks for an executable runtime file. `model` checks that both pinned model files exist. `embedder` starts as `stopped`. Presence does not imply verified digests; `build-runtime` verifies them.
 
 ```json
 {"t":"hello","v":1}
-{"t":"state","v":1,"runtime":"missing","model":"missing","embedder":"stopped"}
+{"t":"state","v":1,"runtime":"missing","model":"missing","embedder":"stopped","build":"0.1.0+3f9a1c0d2b7e"}
 ```
+
+`build` is the fingerprint of the plugin code the daemon started from: the manifest version, `+`, then the first 12 hex digits of a sha256 over `helper/uv.lock`, `helper/pyproject.toml` and every `helper/omafindd/**/*.py`. It does not change while the daemon runs. `bin/omafind fingerprint` prints the same value for a plugin checkout.
+
+`Service.qml` runs `bin/omafind fingerprint` once when the plugin loads. When a `state` carries a different `build`, or none (a daemon older than this field), it runs `bin/omafind setup` once for that plugin build. A daemon that exits on a missing dependency sends no `state`, so after the third failed connect `Service.qml` runs `bin/omafind status --json` and treats a `stale` or `missing` venv the same way. A daemon that cannot fingerprint its own code reports `build:""`. Setup syncs the venv to the lock file and restarts the unit, and the plugin reconnects. While setup runs, the search view shows "Updating omafindd to match the installed plugin. Search returns when it restarts." If setup fails, it shows the last stderr line once, as "omafindd did not update: <line>. Press Retry to run bin/omafind setup again." It runs setup again only on Retry or for a newer plugin build. A `state` with the plugin's build clears the failure.
 
 ## Search and warm-up (issue #2)
 
