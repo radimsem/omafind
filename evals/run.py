@@ -34,6 +34,9 @@ async def evaluate_sets(searcher, query_sets, gate=1.0):
             reply = await searcher.search(query["q"], limit=1)
             expected = {(base / path).resolve() for path in query["expect"]}
             first = bool(reply["items"] and Path(reply["items"][0]["path"]).resolve() in expected)
+            if not first:
+                top = reply["items"][0]["path"] if reply["items"] else "-"
+                print(f"miss {query['tag']} {query['q']!r} top {top}", file=sys.stderr)
             counts[query["tag"]][0] += int(first)
             counts[query["tag"]][1] += 1
     total = [sum(value[index] for value in counts.values()) for index in (0, 1)]
