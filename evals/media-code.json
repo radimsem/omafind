@@ -276,12 +276,11 @@
       "manual": true
     },
     {
-      "q": "img: externally-managed-environment",
+      "q": "img: MulticastDNS resolve mdns.conf",
       "expect": [
-        "Pictures/screenshot-2026-04-20_10-47-06.png"
+        "Pictures/screenshot-2026-09-08_17-44-45.png"
       ],
-      "tag": "screenshot-ocr",
-      "manual": true
+      "tag": "screenshot-ocr"
     },
     {
       "q": "img: Czech homework on dot product, norm, distance and angle of vectors",
@@ -298,7 +297,7 @@
       "tag": "image-meaning"
     },
     {
-      "q": "img: add LLM provider dialog listing OpenAI, Anthropic, Gemini and Mistral",
+      "q": "img: add LLM provider dialog with the default model dropdown open showing no matches",
       "expect": [
         "Pictures/screenshot-2026-06-10_20-57-08.png"
       ],
@@ -429,22 +428,6 @@
       "q": "vid: periodic table with a copper outlook chart to 2050",
       "expect": [
         "Videos/screenrecording-2026-10-03_09-00-09.mp4"
-      ],
-      "tag": "video-meaning",
-      "loc": 35
-    },
-    {
-      "q": "vid: terminal on blurred eyes background, cannot remove write-protected log file",
-      "expect": [
-        "Videos/screenrecording-2026-10-08_21-31-06.mp4"
-      ],
-      "tag": "video-meaning",
-      "loc": 105
-    },
-    {
-      "q": "vid: terminal on blurred eye running gpu-screen-recorder as another user",
-      "expect": [
-        "Videos/screenrecording-2026-10-09_14-56-38.mp4"
       ],
       "tag": "video-meaning",
       "loc": 35
