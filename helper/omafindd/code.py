@@ -242,7 +242,8 @@ async def index_code(roots: Sequence[Path], directory: Path, embedder):
     store = CodeStore(directory / "code.sqlite")
     seen = set()
     try:
-        await embedder.start("text")
+        # Text mode caps a request at 512 tokens; an 1800-character code stretch often needs more.
+        await embedder.start("full")
         for root in roots:
             for path in repository_files(root):
                 relative = path.relative_to(store.mount).as_posix()

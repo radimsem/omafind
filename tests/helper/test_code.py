@@ -463,3 +463,18 @@ def test_cli_bootstrap_before_venv_has_no_third_party_imports(tmp_path):
     assert result.returncode == 1
     assert "venv missing" in result.stderr
     assert "ModuleNotFoundError" not in result.stderr
+
+
+async def test_code_index_starts_server_with_full_context(repo, tmp_path):
+    from omafindd.code import index_code
+
+    tracked(repo, "one.py", "def first(): pass")
+    modes = []
+
+    class Recording(FakeEmbedder):
+        async def start(self, mode):
+            modes.append(mode)
+            await super().start(mode)
+
+    await index_code([repo], tmp_path, Recording())
+    assert modes == ["full"]
