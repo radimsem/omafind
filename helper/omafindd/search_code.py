@@ -60,11 +60,22 @@ async def words_leg(roots: Sequence[Path], words: Sequence[str], files: dict) ->
     hits = {}
     with tempfile.TemporaryFile() as errors:
         process = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=errors,
+            *args, stdout=asyncio.subprocess.PIPE, stderr=errors, limit=1 << 20,
         )
         try:
-            while line := await process.stdout.readline():
-                event = json.loads(line)
+            while True:
+                # A match on a multi-megabyte line overruns the limit; that line is skipped,
+                # and the rest of it fails to parse as an event.
+                try:
+                    line = await process.stdout.readline()
+                except ValueError:
+                    continue
+                if not line:
+                    break
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
                 if event["type"] != "match":
                     continue
                 data = event["data"]

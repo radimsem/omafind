@@ -478,3 +478,15 @@ async def test_code_index_starts_server_with_full_context(repo, tmp_path):
 
     await index_code([repo], tmp_path, Recording())
     assert modes == ["full"]
+
+
+async def test_words_leg_skips_a_line_over_the_reader_limit(tmp_path):
+    from omafindd.search_code import words_leg
+
+    huge, small = tmp_path / "huge.txt", tmp_path / "small.py"
+    huge.write_text("retry " + "x" * (3 << 20) + "\nretry backoff\n")
+    small.write_text("def retry_backoff(): pass\n")
+    files = {str(huge): 1, str(small): 2}
+    hits = await words_leg([tmp_path], ["retry", "backoff"], files)
+    assert hits[str(small)]["words"] == {"retry", "backoff"}
+    assert hits[str(huge)]["line"] == 2
