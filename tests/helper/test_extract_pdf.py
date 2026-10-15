@@ -114,3 +114,16 @@ def test_pdf_tools_have_timeout_and_report_timeout(monkeypatch, tool):
     monkeypatch.setattr(subprocess, "run", run)
     with pytest.raises(ExtractionError, match="^timeout$"):
         _pdf_command([tool, "fixture"])
+
+
+def test_long_pdf_page_becomes_several_segments_on_one_page(tmp_path):
+    from omafindd.extractors import TOKEN_CAP, estimated_tokens, extract
+    from support.corpus import pdf
+
+    path = tmp_path / "long.pdf"
+    pdf(path, ["word " * 1500])
+    result = extract(path, "pdf", 1)
+    pages = [segment for segment in result.segments if segment.kind == "page"]
+    assert len(pages) >= 3
+    assert {(segment.loc, segment.loc_end) for segment in pages} == {(1, 1)}
+    assert all(estimated_tokens(segment.text) <= TOKEN_CAP for segment in pages)

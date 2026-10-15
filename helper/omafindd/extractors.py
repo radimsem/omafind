@@ -51,6 +51,15 @@ class Extracted:
     detail: str | None = None
 
 
+# embeddinggemma reads at most 2,048 tokens per input, prefix included. Its tokenizer falls
+# back to single bytes, so a token always covers at least one UTF-8 byte.
+TOKEN_CAP = 1800
+
+
+def estimated_tokens(text: str) -> int:
+    return len(text.encode())
+
+
 def chunks(text: str) -> list[Segment]:
     newlines = [i for i, character in enumerate(text) if character == "\n"]
     result = []
@@ -61,6 +70,8 @@ def chunks(text: str) -> list[Segment]:
             space = next((i for i in range(end - 1, start + 900, -1) if text[i].isspace()), None)
             if space is not None:
                 end = space
+        while end - start > 1 and estimated_tokens(text[start:end]) > TOKEN_CAP:
+            end = start + (end - start) * 3 // 4
         left, right = start, end
         while left < right and text[left].isspace():
             left += 1
@@ -167,7 +178,8 @@ def extract_pdf(path: Path, start: int = 1) -> Extracted:
         for page, body in enumerate(texts, start):
             body = body.strip()
             if len(body) >= 200:
-                segments.append(Segment("page", "text", body, loc=page))
+                for piece in chunks(body):
+                    segments.append(Segment("page", "text", piece.text, loc=page, loc_end=page))
                 continue
             prefix = Path(directory) / "page"
             _pdf_command(
