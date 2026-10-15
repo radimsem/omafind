@@ -535,3 +535,21 @@ async def test_definitions_leg_matches_last_component_and_respects_scope(repo, t
     tracked(repo, "unindexed.py", f"def {name}(): pass\n")
     files = dict.fromkeys(expected | excluded)
     assert await definitions_leg([repo], f"RetryPolicy.{name}()", files) == expected
+
+
+async def test_code_search_without_an_index_says_so(tmp_path):
+    from omafindd.search_code import search_code
+
+    reply = await search_code(None, "parse arguments", roots=[], directory=tmp_path,
+                              legs=["words", "meaning"], limit=10, seq=4, begun=0.0)
+    assert reply["notice"] == "no-code-index" and reply["degraded"] is None
+    assert reply["items"] == []
+
+
+async def test_code_search_before_the_first_code_index_says_it_is_pending(tmp_path):
+    from omafindd.search_code import search_code
+
+    reply = await search_code(None, "parse arguments", roots=[tmp_path], directory=tmp_path,
+                              legs=["words", "meaning"], limit=10, seq=4, begun=0.0)
+    assert reply["notice"] == "code-index-pending" and reply["degraded"] is None
+    assert reply["items"] == []

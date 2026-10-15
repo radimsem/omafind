@@ -132,3 +132,17 @@ test('jump moves by selectable rows and clamps at both ends', () => {
   assert.equal(jump(rows, -1, 1), indexes[0]);
   assert.equal(jump([], 0, 1), -1);
 });
+
+test('a code search with no code index explains the empty result', () => {
+  const R = load('format.js', 'results.js');
+  assert.equal(R.footerLeft({ phase: 'done', prefix: 'code:',
+    reply: { total: 0, items: [], notice: 'no-code-index' } }),
+    'No code is indexed yet. Turn on Code for a repository in setup.');
+});
+
+test('a code search before the first code index says the index is pending', () => {
+  const R = load('format.js', 'results.js');
+  assert.equal(R.footerLeft({ phase: 'done', prefix: 'code:',
+    reply: { total: 0, items: [], notice: 'code-index-pending' } }),
+    'The code index is not built yet. It is built on the next index run.');
+});

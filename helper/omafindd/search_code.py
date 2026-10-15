@@ -160,6 +160,8 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
     available = bool(roots and path is not None and path.is_file())
     reply = {"t": "results", "seq": seq, "legs": list(legs), "ms": {}, "total": 0,
              "weaker": 0, "degraded": None, "items": []}
+    if not available:
+        reply["notice"] = "code-index-pending" if roots else "no-code-index"
     embed_ms = words_ms = scan_ms = 0
     if q and available:
         store = CodeStore.open_existing(path.absolute(), Path("/"))
