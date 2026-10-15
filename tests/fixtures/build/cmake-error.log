@@ -1,0 +1,4 @@
+-- The C compiler identification is GNU 15.2.1
+CMake Error at ggml/src/ggml-vulkan/CMakeLists.txt:4 (find_package):
+  Could not find a package configuration file provided by "Vulkan".
+-- Configuring incomplete, errors occurred!

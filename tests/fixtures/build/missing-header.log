@@ -1,0 +1,6 @@
+[212/298] Building CXX object ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o
+FAILED: ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o
+In file included from /home/u/.local/share/omafind/cache/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:1:
+/home/u/.local/share/omafind/cache/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan-types.h:5:10: fatal error: vulkan/vulkan_core.h: No such file or directory
+compilation terminated.
+ninja: build stopped: subcommand failed.
