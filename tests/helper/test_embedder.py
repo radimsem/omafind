@@ -536,3 +536,50 @@ def test_shared_server_url_accepts_daemon_loopback():
     from omafindd.embedder import loopback_url
 
     assert loopback_url('http://127.0.0.1:42065') == 'http://127.0.0.1:42065'
+
+
+async def test_http_error_raises_rejected_with_server_message(monkeypatch):
+    import httpx
+    from omafindd.embedder import Embedder, EmbeddingRejected, Text
+
+    def handler(request):
+        if request.url.path == "/health":
+            return httpx.Response(200)
+        return httpx.Response(500, json={"error": {"message": "input (3359 tokens) is too large"}})
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kwargs: client(**kwargs, transport=httpx.MockTransport(handler)))
+    embedder = Embedder(base_url="http://test", api_key="k")
+    await embedder.start("full")
+    try:
+        with pytest.raises(
+                EmbeddingRejected, match=r"HTTP 500: input \(3359 tokens\) is too large"):
+            await embedder.embed([Text("x")])
+    finally:
+        await embedder.stop()
+
+
+@pytest.mark.parametrize(('status', 'rejected'), [
+    (400, True), (413, True), (500, True),
+    (401, False), (403, False), (429, False), (503, False),
+])
+async def test_only_input_errors_reject_the_file(monkeypatch, status, rejected):
+    from omafindd.embedder import EmbeddingRejected
+
+    def handler(request):
+        if request.url.path == "/health":
+            return httpx.Response(200)
+        return httpx.Response(status, json={"error": {"message": "nope"}})
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kwargs: client(**kwargs, transport=httpx.MockTransport(handler)))
+    embedder = Embedder(base_url="http://test", api_key="k")
+    await embedder.start("full")
+    try:
+        with pytest.raises(EmbeddingError, match=rf"^HTTP {status}: nope$") as caught:
+            await embedder.embed([Text("x")])
+        assert isinstance(caught.value, EmbeddingRejected) is rejected
+    finally:
+        await embedder.stop()

@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import logging
 import multiprocessing
 import os
 import signal
@@ -10,11 +11,19 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-from .embedder import EmbeddingError, InputAudio, _parent_death_signal, document_text
+from .embedder import (
+    EmbeddingError,
+    EmbeddingRejected,
+    InputAudio,
+    _parent_death_signal,
+    document_text,
+)
 from .embedding import Embedder, validated
 from .extractors import ExtractionError, extract
 from .settings import Settings
 from .store import Store
+
+logger = logging.getLogger(__name__)
 
 
 def _worker(parent):
@@ -216,6 +225,12 @@ class Jobs:
                         )
                     except ExtractionError as error:
                         self.store.fail(file, str(error))
+                    except EmbeddingRejected as error:
+                        logger.warning("Embedding rejected file %s (%s)", file, error)
+                        if append:
+                            self.store.halt(file, "embedding-failed")
+                        else:
+                            self.store.fail(file, "embedding-failed")
                     except EmbeddingError as error:
                         if str(error) != "embedding precision fault":
                             raise

@@ -429,3 +429,52 @@ async def test_extraction_await_uses_future_completion_and_can_cancel(
     finally:
         pending.cancel()
         await asyncio.gather(pending, return_exceptions=True)
+
+
+async def test_rejected_file_fails_and_the_run_continues(store, tmp_path, inline_pool, caplog):
+    from omafindd.embedder import EmbeddingRejected
+    from omafindd.jobs import Jobs
+
+    (tmp_path / "bad.txt").write_text("reject me")
+    (tmp_path / "good.txt").write_text("keep me")
+    crawl(store, [{"path": str(tmp_path)}])
+
+    class Picky(FakeEmbedder):
+        async def embed_documents(self, parts):
+            if any("reject" in part for part in parts if isinstance(part, str)):
+                raise EmbeddingRejected("HTTP 500: input (3359 tokens) is too large")
+            return await super().embed_documents(parts)
+
+    await Jobs(store, Picky(), journal=tmp_path / "journal").drain()
+    states = dict(store.db.execute(
+        "SELECT path, state || ':' || coalesce(detail, '') FROM files"))
+    assert states == {"bad.txt": "failed:embedding-failed", "good.txt": "done:"}
+    assert "HTTP 500" in caplog.text and "reject me" not in caplog.text
+
+
+async def test_rejected_pdf_window_keeps_earlier_pages(store, tmp_path, monkeypatch, inline_pool):
+    from omafindd import jobs
+    from omafindd.embedder import EmbeddingRejected
+    from omafindd.extractors import Extracted, Segment
+
+    (tmp_path / "long.pdf").write_text("fixture")
+    crawl(store, [{"path": str(tmp_path)}])
+
+    def window(path, kind, start):
+        end = 30 if start == 1 else 58
+        segments = [Segment("page", "text", f"page {page}", loc=page, loc_end=page)
+                    for page in range(start, end + 1)]
+        return Extracted(segments, {"pages": 58, "read_to": end},
+                         "partial" if end < 58 else "done")
+
+    class Second(FakeEmbedder):
+        async def embed_documents(self, parts):
+            if any("page 31" in part for part in parts):
+                raise EmbeddingRejected("HTTP 500: too large")
+            return await super().embed_documents(parts)
+
+    monkeypatch.setattr(jobs, "extract", window)
+    await jobs.Jobs(store, Second(), journal=tmp_path / "journal").drain()
+    row = store.db.execute("SELECT state, detail FROM files").fetchone()
+    assert tuple(row) == ("partial", "embedding-failed")
+    assert store.db.execute("SELECT count(*) FROM segments WHERE kind='page'").fetchone()[0] == 30

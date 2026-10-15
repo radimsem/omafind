@@ -290,6 +290,12 @@ class Store:
             self.clear_segments(file, keeping_name=True)
             self.db.execute("UPDATE files SET state='failed',detail=? WHERE id=?", (detail, file))
 
+    def halt(self, file: int, detail: str):
+        """Stops a partial file where it is: its segments stay and it leaves the queue."""
+        with self.db:
+            self.db.execute("UPDATE files SET detail=? WHERE id=? AND state='partial'",
+                            (detail, file))
+
     @classmethod
     def open_existing(cls, path: Path, mount: Path):
         store = cls.__new__(cls)

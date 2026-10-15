@@ -41,6 +41,10 @@ class EmbeddingError(Exception):
     pass
 
 
+class EmbeddingRejected(EmbeddingError):
+    """The server answered with an error status; the input, not the server, is at fault."""
+
+
 @dataclass(frozen=True)
 class Text:
     text: str
@@ -276,6 +280,15 @@ class Embedder:
                 try:
                     response = await client.post("/v1/embeddings", json=build_request(batch))
                     response.raise_for_status()
+                except httpx.HTTPStatusError as error:
+                    try:
+                        message = str(error.response.json()["error"]["message"])
+                    except (ValueError, KeyError, TypeError):
+                        message = error.response.reason_phrase
+                    status = error.response.status_code
+                    # llama-server answers 500 when the input is over its batch size.
+                    rejection = EmbeddingRejected if status in (400, 413, 500) else EmbeddingError
+                    raise rejection(f"HTTP {status}: {message[:200]}") from error
                 except (httpx.HTTPError, RuntimeError) as error:
                     raise EmbeddingError("Embedding request failed") from error
                 if process is not None and process.returncode is not None:
