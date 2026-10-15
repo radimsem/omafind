@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from omafindd import errors
 from omafindd.ipc import IpcServer
 from omafindd.service import SearchService
 from omafindd.settings import Settings
@@ -103,7 +104,7 @@ async def test_volume_and_paused_replayed_after_hello(tmp_path):
     server = IpcServer(tmp_path / 'ui.sock', State(), peer_uid=lambda _: __import__('os').getuid())
     volume = {'t': 'volume', 'uuid': 'usb', 'label': 'Photos2024', 'fs': 'exfat',
               'size': 123, 'mount': '/media/Photos2024', 'online': True, 'known': False}
-    paused = {'t': 'paused', 'reason': 'disk', 'free_gb': 1.4, 'need_gb': 2}
+    paused = {'t': 'paused', 'error': errors.disk_low().to_dict(), 'free_gb': 1.4, 'need_gb': 2}
     server.replay = lambda: [volume, paused]
     reader, writer = memory_client(server)
     try:
@@ -229,7 +230,7 @@ async def test_disk_transitions_are_broadcast_and_replayed(freshness, monkeypatc
     await freshness.check_disk()
     await freshness.check_disk()
     assert freshness.test_pushes == [
-        {'t': 'paused', 'reason': 'disk', 'free_gb': 1.4, 'need_gb': 2}]
+        {'t': 'paused', 'error': errors.disk_low().to_dict(), 'free_gb': 1.4, 'need_gb': 2}]
     assert freshness.replay() == freshness.test_pushes
     monkeypatch.setattr(freshness.guard, 'free_bytes', lambda: 2_100_000_000)
     await freshness.check_disk()
@@ -372,7 +373,8 @@ async def test_unverified_meaning_only_search_returns_words(tmp_path):
         result = await service.handle({'t': 'search', 'seq': 1, 'q': 'note',
                                        'legs': ['meaning']})
         assert result['legs'] == ['words']
-        assert result['degraded'] == 'embedding model failed verification'
+        assert result['degraded'] == errors.embedding_unavailable(
+            'embedding model failed verification').to_dict()
         assert result['items'][0]['name'] == 'note.txt'
     finally:
         await service.stop()

@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 
 import pytest
-from omafindd import discovery
+from omafindd import discovery, errors
+from omafindd.errors import UserFailure
 
 
 class Process:
@@ -46,8 +47,10 @@ def test_list_dirs_hides_dot_and_heavy_and_reports_missing(tmp_path):
     (tmp_path / 'file').touch()
     assert discovery.list_dirs('~', home=tmp_path) == {
         'path': '~', 'abs': str(tmp_path), 'dirs': ['apple', 'Zebra'], 'error': None}
-    assert discovery.list_dirs('~/missing', home=tmp_path)['error'] == 'missing'
-    assert discovery.list_dirs('~/file', home=tmp_path)['error'] == 'not-a-directory'
+    assert discovery.list_dirs('~/missing', home=tmp_path)['error'] == errors.scan_failed(
+        str(tmp_path / 'missing'), 'No such file or directory').to_dict()
+    assert discovery.list_dirs('~/file', home=tmp_path)['error'] == errors.scan_failed(
+        str(tmp_path / 'file'), 'Not a directory').to_dict()
 
 
 def test_list_dirs_reports_an_unreadable_directory(tmp_path, monkeypatch):
@@ -56,7 +59,8 @@ def test_list_dirs_reports_an_unreadable_directory(tmp_path, monkeypatch):
 
     monkeypatch.setattr(discovery.os, 'scandir', denied)
     assert discovery.list_dirs('/root', home=tmp_path) == {
-        'path': '/root', 'abs': '/root', 'dirs': [], 'error': 'denied'}
+        'path': '/root', 'abs': '/root', 'dirs': [],
+        'error': errors.scan_failed('/root', 'Permission denied').to_dict()}
 
 
 def test_xdg_dirs_reads_home_and_omits_home_itself(tmp_path):
@@ -132,8 +136,25 @@ def test_top_for_a_volume_lists_the_mount(tmp_path):
     assert body["roots"] == [{"path": str(drive), "volume": "usb"}]
     assert [(r["name"], r["volume"], r["xdg"]) for r in body["folders"]] == [
         ("Photos", "usb", False)]
-    with pytest.raises(ValueError):
+    with pytest.raises(UserFailure) as raised:
         discovery.top(home=tmp_path / "home", volume="gone", lsblk=lsblk)
+    assert raised.value.error == errors.drive_not_mounted("The drive")
+
+
+def test_top_for_an_unmounted_volume_names_the_drive(tmp_path):
+    lsblk = {"blockdevices": [{"uuid": "disk", "children": [
+        {"uuid": "usb", "label": "Photos2024", "mountpoints": [None]}]}]}
+    with pytest.raises(UserFailure) as raised:
+        discovery.top(home=tmp_path / "home", volume="usb", lsblk=lsblk)
+    assert raised.value.error == errors.drive_not_mounted("Photos2024")
+
+
+def test_top_of_an_unreadable_home_names_the_folder(tmp_path):
+    with pytest.raises(UserFailure) as raised:
+        discovery.top(home=tmp_path / "gone", lsblk={"blockdevices": []}, xdg={},
+                      volume_of=lambda path: ("root", path))
+    assert raised.value.error == errors.scan_failed(str(tmp_path / "gone"),
+                                                    "No such file or directory")
 
 
 def test_top_caps_rows_at_limit(tmp_path, monkeypatch):
@@ -191,7 +212,9 @@ def test_walk_of_a_missing_root_ends_with_error(tmp_path):
     walk = discovery.Walk(tmp_path / "gone")
     batches = []
     walk.run(batches.append)
-    assert batches[-1]["done"] is True and batches[-1]["error"]
+    assert batches[-1]["done"] is True
+    assert batches[-1]["error"] == errors.scan_failed(
+        str(tmp_path / "gone"), "No such file or directory").to_dict()
     assert walk.snapshot()["error"] == batches[-1]["error"]
 
 
@@ -223,7 +246,8 @@ def test_children_mark_datasets_with_evidence(tmp_path):
 def test_children_of_unreadable_folder_report_error(tmp_path):
     body = discovery.children(tmp_path / "missing")
     assert body == {"path": str(tmp_path / "missing"), "dirs": [],
-                    "error": "No such file or directory"}
+                    "error": errors.scan_failed(str(tmp_path / "missing"),
+                                                "No such file or directory").to_dict()}
 
 
 def test_stop_terminates_and_reaps_the_fd_process(tmp_path):

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from fakes.embedder import FakeEmbedder
+from omafindd import errors
 from omafindd.crawler import crawl
 from omafindd.extractors import Segment
 from omafindd.ipc import IpcServer
@@ -91,7 +92,7 @@ async def test_item_shape_and_same_seq_later_reply(store, tmp_path):
     await service.stop()
 
 
-async def test_warm_failed_reports_reason(tmp_path):
+async def test_warm_failed_reports_the_error(tmp_path):
     from omafindd.embedder import EmbeddingError
     from omafindd.service import SearchService
 
@@ -101,9 +102,34 @@ async def test_warm_failed_reports_reason(tmp_path):
 
     service = SearchService(tmp_path, lambda: Settings(), Failed(), State())
     reply = await service.handle({"t": "warm"})
-    assert reply["t"] == "warm_failed"
-    assert reply["reason"] == "Vulkan device lost"
+    assert reply == {"t": "warm_failed",
+                     "error": errors.embedding_unavailable("Vulkan device lost").to_dict()}
     await service.stop()
+
+
+async def test_start_failure_keeps_its_error_object(store, tmp_path):
+    from omafindd.embedder import EmbeddingError
+    from omafindd.service import SearchService
+
+    await seeded_search(store, tmp_path)
+    failure = errors.server_start_failed("it exited with code 1", tmp_path / "llama-server.log")
+
+    class Failed(FakeEmbedder):
+        async def start(self, mode):
+            raise EmbeddingError("Embedding server failed to start", user_error=failure)
+
+    service = SearchService(
+        store.path.parent, lambda: Settings(), Failed(), State(model="ready"),
+        volume_resolver=lambda path, **kwargs: ("v", tmp_path), mounts_resolver=lambda: {}
+    )
+    try:
+        assert await service.handle({"t": "warm"}) == {"t": "warm_failed",
+                                                       "error": failure.to_dict()}
+        reply = await service.handle({"t": "search", "seq": 1, "q": "lunar"})
+        assert reply["degraded"] == failure.to_dict()
+        assert reply["items"][0]["name"] == "notes.txt"
+    finally:
+        await service.stop()
 
 
 async def test_warm_server_stops_after_idle_timeout(tmp_path):
@@ -130,7 +156,7 @@ async def test_daemon_sees_db_added_by_cli(tmp_path):
         volume_resolver=lambda path, **kwargs: ("v", tmp_path),
     )
     first = await service.handle({"t": "search", "seq": 1, "q": "lunar"})
-    assert first["code"] == "no-index"
+    assert first == {"t": "error", "seq": 1, **errors.no_index().to_dict()}
     store = Store(tmp_path / "index/v.sqlite", volume="v", mount=tmp_path)
     await seeded_search(store, tmp_path)
     second = await service.handle({"t": "search", "seq": 2, "q": "lunar"})
@@ -263,7 +289,7 @@ async def test_socket_dispatch_stores_connection_latest_items(store, tmp_path):
     "response,code",
     [
         ({"t": "results", "seq": 1, "items": []}, 0),
-        ({"t": "error", "code": "no-index", "reason": "Run omafind reindex"}, 1),
+        ({"t": "error", "seq": 1, **errors.no_index().to_dict()}, 1),
         (False, 3),
     ],
 )
@@ -276,7 +302,7 @@ def test_cli_search_exit_codes(cli, env, capsys, response, code):
     if code == 0:
         assert json.loads(output.out) == response
     elif code == 1:
-        assert "omafind reindex" in output.err
+        assert output.err == "Nothing is indexed yet. Open setup and start the first index.\n"
 
 
 @pytest.mark.parametrize(
@@ -575,7 +601,7 @@ async def test_query_while_server_starting_returns_words_without_waiting(
                     await service.yield_to_indexer()
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     locked = await service.handle(query)
-                    assert locked['degraded'] == 'indexing in progress'
+                    assert locked['degraded'] == errors.index_running().to_dict()
             embedder.blocked = True
         elif startup == 'warm-request':
             warming = asyncio.create_task(service.handle({'t': 'warm'}))
@@ -584,7 +610,7 @@ async def test_query_while_server_starting_returns_words_without_waiting(
         await asyncio.wait_for(entered.wait(), .5)
         assert not release.is_set()
         assert reply['legs'] == ['words']
-        assert reply['degraded'] == 'the embedding server is starting'
+        assert reply['degraded'] == errors.server_starting().to_dict()
         assert reply['items'][0]['name'] == 'notes.txt'
         assert reply['items'][0]['leg'] == 'words'
         repeated = await asyncio.wait_for(service.handle(query), .1)
@@ -624,11 +650,12 @@ async def test_background_startup_failure_is_reported_by_next_query(store, tmp_p
     )
     query = {'t': 'search', 'seq': 1, 'q': 'lunar'}
     try:
-        assert (await service.handle(query))['degraded'] == 'the embedding server is starting'
+        assert (await service.handle(query))['degraded'] == errors.server_starting().to_dict()
         release.set()
         await asyncio.wait_for(failed.wait(), .5)
         reply = await service.handle(query)
-        assert reply['degraded'] == 'the embedding server did not start'
+        assert reply['degraded'] == errors.embedding_unavailable(
+            'the embedding server did not start').to_dict()
         assert reply['items'][0]['name'] == 'notes.txt'
         assert service._index_lock is None
         assert service.embedder.starts == 1
@@ -760,9 +787,9 @@ async def test_reindex_lock_forces_words_and_rejects_warm(store, tmp_path, legs)
         with (tmp_path / "index.lock").open("w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             warm = await service.handle({"t": "warm"})
-            assert warm == {"t": "warm_failed", "reason": "indexing in progress"}
+            assert warm == {"t": "warm_failed", "error": errors.index_running().to_dict()}
             reply = await service.handle({"t": "search", "seq": 1, "q": "lunar", "legs": legs})
-            assert reply["degraded"] == "indexing in progress"
+            assert reply["degraded"] == errors.index_running().to_dict()
             assert reply["legs"] == ["words"]
             assert reply["items"][0]["leg"] == "words"
             assert embedder.starts == 0
@@ -923,21 +950,21 @@ async def test_waiting_reindex_stops_warm_server_and_holds_intent(tmp_path, monk
             release.wait(2)
             await super().stop()
 
-    errors = []
+    raised = []
 
     def index():
         try:
             asyncio.run(reindex([], directory=tmp_path, embedder=Indexer()))
         except BaseException as error:
-            errors.append(error)
+            raised.append(error)
 
     async def wait(event):
         for _ in range(100):
-            if event.is_set() or errors:
+            if event.is_set() or raised:
                 break
             await asyncio.sleep(0.01)
-        if errors:
-            raise errors[0]
+        if raised:
+            raise raised[0]
         assert event.is_set()
 
     monkeypatch.setattr(fcntl, "flock", observe)
@@ -951,11 +978,11 @@ async def test_waiting_reindex_stops_warm_server_and_holds_intent(tmp_path, monk
         await wait(acquired)
         reply = await service.handle({"t": "search", "seq": 1, "q": "lunar"})
         assert reply["legs"] == ["words"]
-        assert reply["degraded"] == "indexing in progress"
+        assert reply["degraded"] == errors.index_running().to_dict()
         assert reply["items"][0]["name"] == "notes.txt"
         assert service.embedder.mode is None
         assert await service.handle({"t": "warm"}) == {
-            "t": "warm_failed", "reason": "indexing in progress"
+            "t": "warm_failed", "error": errors.index_running().to_dict()
         }
         assert capsys.readouterr().err.splitlines() == [
             "waiting index.lock", "queued 0"
@@ -1052,14 +1079,15 @@ async def test_service_exception_replies_with_error_and_keeps_connection(tmp_pat
         reader.feed_eof()
         await client
     replies = [json.loads(line) for line in writer.data.splitlines()]
-    assert replies[1] == {"t": "error", "seq": 7, "reason": str(error)}
+    assert replies[1] == {"t": "error", "seq": 7, **errors.internal(str(error)).to_dict()}
     assert replies[2] == {"t": "results", "seq": 8, "items": []}
 
 
-def test_cli_service_error_prints_reason_and_exits_one(cli, env, capsys):
-    reply = {"t": "error", "seq": 1, "reason": "no such table: meta"}
+def test_cli_service_error_prints_title_and_detail_and_exits_one(cli, env, capsys):
+    reply = {"t": "error", "seq": 1, **errors.internal("no such table: meta").to_dict()}
     assert cli.main(["search", "--json", "lunar"], env, request=lambda *args: reply) == 1
-    assert capsys.readouterr().err == "no such table: meta\n"
+    assert capsys.readouterr().err == (
+        "Something failed inside the omafind service. No such table: meta.\n")
 
 
 @pytest.mark.parametrize("kinds", [None, "image", ["img"], [1], [{}]])
@@ -1069,7 +1097,8 @@ async def test_service_rejects_invalid_kinds(tmp_path, kinds):
     service = SearchService(tmp_path / "index", lambda: Settings(), FakeEmbedder(), State())
     try:
         reply = await service.handle({"t": "search", "seq": 1, "q": "needle", "kinds": kinds})
-        assert reply["code"] == "bad-request"
+        assert reply == {"t": "error", "seq": 1,
+                         **errors.bad_request("Invalid search arguments").to_dict()}
     finally:
         await service.stop()
 

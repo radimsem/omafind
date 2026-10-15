@@ -171,6 +171,12 @@ def disk_low() -> UserError:
     )
 
 
+def index_running() -> UserError:
+    return UserError(
+        "index-running", "Indexing is running.", "Showing keyword matches until it finishes."
+    )
+
+
 def index_exited(code: int, log=None) -> UserError:
     return UserError(
         "index-exited",

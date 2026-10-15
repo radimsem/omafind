@@ -6,7 +6,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import rules
+from . import errors, rules
 
 KINDS = ('text', 'pdf', 'image', 'video', 'audio')
 RATES = {
@@ -110,6 +110,24 @@ def folders(path) -> list[dict]:
     return rows
 
 
+def _scanned(path) -> list[dict]:
+    try:
+        return folders(path)
+    except OSError as error:
+        failure = errors.scan_failed(str(path), error.strerror or str(error))
+        raise errors.UserFailure(failure) from error
+
+
+def _label(lsblk: dict, uuid: str) -> str | None:
+    devices = list(lsblk.get('blockdevices', []))
+    while devices:
+        device = devices.pop()
+        if device.get('uuid') == uuid and device.get('label'):
+            return device['label']
+        devices.extend(device.get('children', []))
+    return None
+
+
 def top(*, home: Path, volume: str | None = None, run=subprocess.run, lsblk=None, xdg=None,
         volume_of=None) -> dict:
     """The first level of the Folders step: one directory read per root.
@@ -126,13 +144,13 @@ def top(*, home: Path, volume: str | None = None, run=subprocess.run, lsblk=None
     if volume is not None:
         mount = next((path for uuid, path in volumes if uuid == volume), None)
         if mount is None:
-            raise ValueError("That drive is not mounted. Plug it in and try again.")
-        rows = [dict(row, xdg=False, volume=volume) for row in folders(mount)]
+            raise errors.UserFailure(errors.drive_not_mounted(_label(lsblk, volume) or "The drive"))
+        rows = [dict(row, xdg=False, volume=volume) for row in _scanned(mount)]
         return {"roots": [{"path": str(mount), "volume": volume}], "folders": rows}
     xdg = xdg_dirs(home) if xdg is None else xdg
     picks = {str(xdg[name]) for name in XDG_PICKS if name in xdg}
     lookup = _volume_lookup(lsblk) if volume_of is None else volume_of
-    rows = [dict(row, xdg=row["path"] in picks) for row in folders(home)]
+    rows = [dict(row, xdg=row["path"] in picks) for row in _scanned(home)]
     roots = [{"path": str(home), "volume": lookup(home)[0]}]
     for uuid, mount in volumes:
         roots.append({"path": str(mount), "volume": uuid})
@@ -269,7 +287,8 @@ class Walk:
                     changed, last = set(), now
         except OSError as error:
             if not self._stop:
-                self.error = str(error) or type(error).__name__
+                self.error = errors.scan_failed(
+                    root, error.strerror or str(error) or type(error).__name__).to_dict()
         finally:
             if listing is not None:
                 listing.close()
@@ -297,7 +316,8 @@ def children(path, walk=None) -> dict:
     try:
         rows = folders(path)
     except OSError as error:
-        return {"path": str(path), "dirs": [], "error": error.strerror or str(error)}
+        return {"path": str(path), "dirs": [],
+                "error": errors.scan_failed(str(path), error.strerror or str(error)).to_dict()}
     for row in rows:
         row["counts"] = walk.count(row["path"]) if walk is not None else None
         row["evidence"] = walk.dataset(row["path"]) if walk is not None else None
@@ -370,10 +390,6 @@ def list_dirs(path: str, *, home: Path) -> dict:
                                      if not entry.name.startswith('.')
                                      and entry.name not in rules.HEAVY_GLOBS
                                      and entry.is_dir()), key=lambda n: (n.casefold(), n))[:500]
-    except FileNotFoundError:
-        result['error'] = 'missing'
-    except NotADirectoryError:
-        result['error'] = 'not-a-directory'
-    except PermissionError:
-        result['error'] = 'denied'
+    except OSError as error:
+        result['error'] = errors.scan_failed(str(absolute), error.strerror or str(error)).to_dict()
     return result

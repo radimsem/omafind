@@ -335,7 +335,7 @@ def search(args, env, request):
         print("socket silent", file=sys.stderr)
         return 3
     if reply["t"] == "error":
-        print(reply["reason"], file=sys.stderr)
+        print(f'{reply["title"]} {reply["detail"]}'.strip(), file=sys.stderr)
         return 2 if reply.get("code") == "bad-request" else 1
     if parsed.json:
         print(json.dumps(reply, separators=(",", ":"), ensure_ascii=False))
@@ -414,9 +414,13 @@ def discover(args, env, execve=os.execve):
         return execve(str(python), [str(python), str(PLUGIN_ROOT / "bin/omafind"),
                                   "discover", *args], env)
     from omafindd.discovery import snapshot
+    from omafindd.errors import UserFailure
 
     try:
         body = snapshot(home=Path(env["HOME"]), volume=parsed.volume)
+    except UserFailure as failure:
+        print(f"{failure.error.title} {failure.error.detail}", file=sys.stderr)
+        return 1
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(" ".join(str(error).splitlines()), file=sys.stderr)
         return 1

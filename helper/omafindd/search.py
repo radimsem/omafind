@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import errors
 from .embedder import EmbeddingError
 from .embedding import Embedder, validated
 from .search_text import normalized, pattern, snippet_parts, terms
@@ -262,13 +263,15 @@ class Searcher:
         if not enabled:
             return None, None, 0
         if self.embedder is None:
-            return None, "embedding model unavailable", 0
+            return None, errors.embedding_unavailable("embedding model unavailable").to_dict(), 0
         try:
             await (self.start or self.embedder.start)("text")
             vector = validated(await self.embedder.embed_query(text)).astype(np.float32)
             return vector, None, (time.monotonic() - begun) * 1000
         except (EmbeddingError, OSError, ValueError) as error:
-            return None, str(error), (time.monotonic() - begun) * 1000
+            failure = getattr(error, "user_error", None) or errors.embedding_unavailable(
+                str(error) or type(error).__name__)
+            return None, failure.to_dict(), (time.monotonic() - begun) * 1000
 
     async def search(self, q: str, *, legs=("words", "meaning"), limit=40, seq=1,
                      kinds=None) -> dict:

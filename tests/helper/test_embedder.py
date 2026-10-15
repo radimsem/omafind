@@ -618,3 +618,13 @@ async def test_only_input_errors_reject_the_file(monkeypatch, status, rejected):
         assert isinstance(caught.value, EmbeddingRejected) is rejected
     finally:
         await embedder.stop()
+
+
+def test_embedding_error_carries_an_optional_error_object():
+    from omafindd import errors
+
+    failure = errors.server_starting()
+    error = EmbeddingError("the embedding server is starting", user_error=failure)
+    assert error.user_error is failure
+    assert str(error) == "the embedding server is starting"
+    assert EmbeddingError("Embedding server is not running").user_error is None

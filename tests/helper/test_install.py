@@ -3,7 +3,7 @@ import os
 from types import SimpleNamespace
 
 import pytest
-from omafindd import models
+from omafindd import errors, models
 from omafindd.install import RuntimeJob, gpu_name
 
 
@@ -152,23 +152,55 @@ async def test_pause_during_download_stops_at_next_chunk_and_resume_continues(jo
 
 async def test_build_failure_reports_last_stderr_line(job_factory):
     job, _, _ = job_factory(process=Process(1, b"first\nlast error\n"))
+    assert job.snapshot()["error"] is None and "reason" not in job.snapshot()
     await job.start()
     await finish(job)
     assert job.snapshot()["build"]["state"] == "failed"
-    assert job.snapshot()["reason"] == (
-        "The runtime build failed: last error. "
-        "Run bin/omafind build-runtime in a terminal for the full log."
-    )
+    assert job.snapshot()["error"] == errors.build_failed("last error").to_dict()
 
 
-async def test_digest_mismatch_fails_with_resume_hint(job_factory):
+async def test_digest_mismatch_fails_with_model_verify_failed(job_factory):
     job, _, _ = job_factory(valid=lambda directory: {f.name: False for f in models.FILES})
     await job.start()
     await finish(job)
     assert job.snapshot()["state"] == "failed"
-    assert job.snapshot()["reason"] == (
-        f"Model sha256 mismatch: {models.FILES[0].name}. Press Resume to download it again."
-    )
+    assert job.snapshot()["error"] == errors.model_verify_failed(models.FILES[0].name).to_dict()
+
+
+@pytest.mark.parametrize("raised,expected", [
+    (OSError("connection refused"), errors.model_download_failed("connection refused")),
+    (ValueError(f"Model sha256 mismatch: {models.FILES[1].name}"),
+     errors.model_verify_failed(models.FILES[1].name)),
+])
+async def test_download_failure_names_its_cause(job_factory, raised, expected):
+    def fetch(directory, *, progress):
+        raise raised
+
+    job, _, _ = job_factory(download=fetch)
+    await job.start()
+    await finish(job)
+    assert job.snapshot()["state"] == "failed"
+    assert job.snapshot()["build"]["state"] == "ok"
+    assert job.snapshot()["error"] == expected.to_dict()
+
+
+async def test_unexpected_failure_is_internal(job_factory):
+    def broken(directory):
+        raise RuntimeError("disk vanished")
+
+    job, _, _ = job_factory(valid=broken)
+    await job.start()
+    await finish(job)
+    assert job.snapshot()["error"] == errors.internal("disk vanished").to_dict()
+
+
+async def test_restart_clears_the_error(job_factory):
+    job, _, _ = job_factory(process=Process(1, b"boom\n"))
+    await job.start()
+    await finish(job)
+    assert job.snapshot()["error"]["code"] == "build-failed"
+    assert (await job.start())["error"] is None
+    await finish(job)
 
 
 async def test_existing_runtime_reports_installed_without_seconds(job_factory, tmp_path):
@@ -239,7 +271,7 @@ async def test_build_refuses_unavailable_memory_scope(job_factory, monkeypatch):
     await job.start()
     await finish(job)
     assert job.snapshot()["state"] == "failed"
-    assert "memory" in job.snapshot()["reason"]
+    assert job.snapshot()["error"] == errors.build_no_scope().to_dict()
     assert not calls
 
 

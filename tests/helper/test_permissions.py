@@ -82,7 +82,7 @@ def test_fix_dirs_is_shallow_and_does_not_follow_symlinks(tmp_path):
 
 
 def test_bad_model_digest_makes_search_words_only(tmp_path, monkeypatch):
-    from omafindd import models, paths
+    from omafindd import errors, models, paths
     from omafindd.state import State
 
     monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path))
@@ -118,7 +118,8 @@ def test_bad_model_digest_makes_search_words_only(tmp_path, monkeypatch):
         try:
             reply = await service.handle({'t': 'search', 'seq': 1, 'q': 'note'})
             assert reply['legs'] == ['words']
-            assert reply['degraded'] == 'embedding model failed verification'
+            assert reply['degraded'] == errors.embedding_unavailable(
+                'embedding model failed verification').to_dict()
             assert reply['items'][0]['name'] == 'note.txt'
         finally:
             await service.stop()

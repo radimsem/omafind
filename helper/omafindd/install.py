@@ -8,7 +8,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from . import models
+from . import errors, models
 
 
 class Paused(Exception):
@@ -57,7 +57,7 @@ class RuntimeJob:
             "total": round(sum(f.size for f in models.FILES) / 1e6),
             "unit": "MB",
             "left_seconds": None,
-            "reason": None,
+            "error": None,
             "build": {
                 "state": "wait",
                 "seconds": None,
@@ -133,7 +133,7 @@ class RuntimeJob:
             if self._message["build"]["state"] == "ok" and all(
                 f["state"] == "ok" for f in self._message["files"].values()
             ):
-                self._message.update(state="done", step=None, file=None, reason=None)
+                self._message.update(state="done", step=None, file=None, error=None)
             elif self._message["state"] == "done":
                 self._message.update(state="idle", step=None, file=None)
             return self.snapshot()
@@ -150,7 +150,7 @@ class RuntimeJob:
                 return self.snapshot()
             self._paused = self._stopping = False
             self._samples.clear()
-            self._message.update(state="running", reason=None, left_seconds=None)
+            self._message.update(state="running", error=None, left_seconds=None)
             self._loop = asyncio.get_running_loop()
             self._task = asyncio.create_task(self._launch())
             return self.snapshot()
@@ -176,10 +176,7 @@ class RuntimeJob:
             self._message["build"]["state"] = "ok"
             return
         if not await self._scope_available():
-            raise RuntimeError(
-                "Cannot build safely: the systemd user memory scope is unavailable. "
-                "Run bin/omafind build-runtime in a user session."
-            )
+            raise errors.UserFailure(errors.build_no_scope())
         if self._paused:
             raise Paused
         self._message.update(step="build", file=None)
@@ -216,11 +213,9 @@ class RuntimeJob:
             raise Paused
         if code:
             self._message["build"]["state"] = "failed"
-            last = next((line for line in reversed(lines) if line), f"exit {code}")
-            raise RuntimeError(
-                f"The runtime build failed: {last}. "
-                "Run bin/omafind build-runtime in a terminal for the full log."
-            )
+            last = next((line for line in reversed(lines) if line),
+                        f"The build exited with code {code}")
+            raise errors.UserFailure(errors.build_failed(last))
         self._message["build"].update(state="ok", seconds=round(self.clock() - started))
         await self._push(changed=True)
 
@@ -262,15 +257,24 @@ class RuntimeJob:
                 raise Paused
             self._message.update(step="download", file=None)
             await self._push(changed=True)
-            await asyncio.to_thread(self.download, self.data_dir / "model", progress=self._progress)
+            try:
+                await asyncio.to_thread(
+                    self.download, self.data_dir / "model", progress=self._progress)
+            except Paused:
+                raise
+            except Exception as error:
+                # models.download names a damaged file only in its message.
+                prefix = "Model sha256 mismatch: "
+                failure = (errors.model_verify_failed(str(error).removeprefix(prefix))
+                           if str(error).startswith(prefix)
+                           else errors.model_download_failed(str(error) or type(error).__name__))
+                raise errors.UserFailure(failure) from error
             if self._paused:
                 raise Paused
             verified = await asyncio.to_thread(self.valid, self.data_dir / "model")
             for key, file in zip(("model", "mmproj"), models.FILES, strict=True):
                 if not verified.get(file.name, False):
-                    raise RuntimeError(
-                        f"Model sha256 mismatch: {file.name}. Press Resume to download it again."
-                    )
+                    raise errors.UserFailure(errors.model_verify_failed(file.name))
                 self._bytes[file.name] = file.size
                 self._message["files"][key].update(state="ok", done=round(file.size / 1e6))
                 await self._push(changed=True)
@@ -280,11 +284,11 @@ class RuntimeJob:
             )
         except Paused:
             self._message.update(state="paused", left_seconds=None)
+        except errors.UserFailure as failure:
+            self._message.update(state="failed", error=failure.error.to_dict(), left_seconds=None)
         except Exception as error:
-            reason = str(error)
-            if reason.startswith("Model sha256 mismatch:") and "Press Resume" not in reason:
-                reason += ". Press Resume to download it again."
-            self._message.update(state="failed", reason=reason, left_seconds=None)
+            failure = errors.internal(str(error) or type(error).__name__)
+            self._message.update(state="failed", error=failure.to_dict(), left_seconds=None)
         await self._push(changed=True)
 
     def _terminate(self):

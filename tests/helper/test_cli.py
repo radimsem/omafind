@@ -363,6 +363,21 @@ def test_discover_failure_exits_1_with_one_stderr_line(cli, env, monkeypatch, ca
     assert capsys.readouterr().err.splitlines() == ['scan failed more details']
 
 
+def test_discover_user_failure_prints_title_and_detail(cli, env, monkeypatch, capsys):
+    from omafindd import discovery, errors
+
+    python = Path(env['HOME']) / '.local/share/omafind/venv/bin/python'
+    monkeypatch.setattr(sys, 'prefix', str(python.parent.parent))
+
+    def snapshot(**kwargs):
+        raise errors.UserFailure(errors.drive_not_mounted('Photos2024'))
+
+    monkeypatch.setattr(discovery, 'snapshot', snapshot)
+    assert cli.main(['discover', '--json', '--volume', 'usb'], env) == 1
+    assert capsys.readouterr().err == (
+        'Photos2024 is not connected. Connect it, then press Retry.\n')
+
+
 def test_reindex_incremental_passes_force_false(cli, env, monkeypatch):
     from omafindd import indexing
     from omafindd.settings import Settings

@@ -11,7 +11,7 @@ from contextlib import closing
 from pathlib import Path
 from threading import Lock
 
-from . import opener
+from . import errors, opener
 from .state import State
 
 PROTOCOL_VERSION = 1
@@ -26,6 +26,16 @@ def peer_uid(sock) -> int:
 
 class AlreadyRunning(Exception):
     pass
+
+
+def _failure(error) -> errors.UserError:
+    if isinstance(error, errors.UserFailure):
+        return error.error
+    return errors.internal(str(error) or type(error).__name__)
+
+
+def _name(item) -> str:
+    return Path(item["path"]).name if item else "The file"
 
 
 class IpcServer:
@@ -169,7 +179,7 @@ class IpcServer:
             try:
                 reply = await self.setup.handle(message, client=writer)
             except Exception as error:
-                reply = {"t": "error", "for": message["t"], "reason": str(error)}
+                reply = errors.reply(message["t"], _failure(error))
             try:
                 await self._send(writer, reply)
             except (ConnectionError, OSError):
@@ -184,7 +194,7 @@ class IpcServer:
                 try:
                     reply = await self._overlay(writer, message)
                 except Exception as error:
-                    reply = {"t": "error", "id": message.get("id"), "reason": str(error)}
+                    reply = {"t": "error", "id": message.get("id"), **_failure(error).to_dict()}
                 if pending["latest"] is not token:
                     return
                 if reply["t"] == "preview":
@@ -204,7 +214,7 @@ class IpcServer:
             else:
                 return
         except Exception as error:
-            reply = {"t": "error", "seq": message.get("seq"), "reason": str(error)}
+            reply = {"t": "error", "seq": message.get("seq"), **_failure(error).to_dict()}
             if message["t"] == "open":
                 reply.update({"id": message.get("id"), "for": "open"})
         if reply["t"] == "results":
@@ -233,11 +243,11 @@ class IpcServer:
             from . import preview
 
             if item is None or (not item.get("offline") and not Path(item["path"]).is_file()):
-                return {"t": "error", "id": item_id, "code": "missing", "reason": "File is missing"}
+                return {"t": "error", "id": item_id, **errors.file_missing(_name(item)).to_dict()}
             query = message.get("q", "")
             if not isinstance(query, str):
-                return {"t": "error", "id": item_id, "code": "bad-request",
-                        "reason": "Invalid preview arguments"}
+                return {"t": "error", "id": item_id,
+                        **errors.bad_request("Invalid preview arguments").to_dict()}
             rendering = asyncio.create_task(asyncio.to_thread(preview.render, item, query))
             try:
                 reply = await asyncio.shield(rendering)
@@ -248,26 +258,23 @@ class IpcServer:
             # A later reply of the same search rebuilds item dicts, so compare the path.
             current = self.resolve(writer, item_id)
             if current is None or current.get("path") != item.get("path"):
-                reply = {"t": "error", "id": item_id, "code": "missing",
-                         "reason": "File is missing"}
+                reply = {"t": "error", "id": item_id, **errors.file_missing(_name(item)).to_dict()}
             return reply
-        if item is None:
-            reason = "missing"
+        if item is None or (not item.get("offline") and not Path(item["path"]).is_file()):
+            failure = errors.file_missing(_name(item))
         elif item.get("offline"):
-            reason = "offline"
-        elif not Path(item["path"]).is_file():
-            reason = "missing"
+            failure = errors.drive_not_mounted(item.get("label") or "The drive")
         else:
-            reason = None
-        if reason:
-            return {"t": "open_failed", "id": item_id, "reason": reason}
+            failure = None
+        if failure:
+            return {"t": "open_failed", "id": item_id, "error": failure.to_dict()}
         how = message.get("how", "open")
         line = message.get("line")
         if how not in ("open", "reveal") or (
             "line" in message and (type(line) is not int or line < 1)
         ):
-            return {"t": "error", "id": item_id, "for": "open", "code": "bad-request",
-                    "reason": "Invalid open arguments"}
+            return {"t": "error", "id": item_id, "for": "open",
+                    **errors.bad_request("Invalid open arguments").to_dict()}
         target = dict(item)
         if target.get("kind") not in ("text", "code"):
             line = None
@@ -276,7 +283,13 @@ class IpcServer:
             target["loc"] = jump
             if target["kind"] == "code":
                 target["open_line"] = jump
-        opener.launch(target, how=how)
+        try:
+            opener.launch(target, how=how)
+        except OSError as error:
+            reason = (f"{error.filename}: {error.strerror}" if error.filename and error.strerror
+                      else str(error) or type(error).__name__)
+            return {"t": "open_failed", "id": item_id,
+                    "error": errors.open_failed(_name(item), reason).to_dict()}
         return {"t": "opened", "id": item_id, **opener.description(target, how=how)}
 
     def status_message(self):

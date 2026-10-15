@@ -18,6 +18,7 @@ SAMPLES = {
     "server_starting": (),
     "embedding_unavailable": ("embedding model failed verification",),
     "disk_low": (),
+    "index_running": (),
     "index_exited": (3, "/tmp/reindex.log"),
     "no_roots": (),
     "drive_not_mounted": ("Photos2024",),

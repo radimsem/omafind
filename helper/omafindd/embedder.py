@@ -39,7 +39,11 @@ def loopback_url(url):
 
 
 class EmbeddingError(Exception):
-    pass
+    user_error = None
+
+    def __init__(self, *args, user_error=None):
+        super().__init__(*args)
+        self.user_error = user_error
 
 
 class EmbeddingRejected(EmbeddingError):
