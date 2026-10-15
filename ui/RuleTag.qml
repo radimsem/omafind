@@ -9,7 +9,7 @@ Rectangle {
   property string rule: ""
 
   readonly property color tone: rule === "user" ? Color.accent
-    : rule === "generated" ? Plugin.Palette.yellow
+    : (rule === "generated" || rule === "dataset") ? Plugin.Palette.yellow
     : rule === "secrets" ? Plugin.Palette.green
     : Plugin.Tokens.dim
 
@@ -18,7 +18,7 @@ Rectangle {
   color: "transparent"
   border.width: 1
   border.color: rule === "user" ? Util.alpha(Color.accent, 0.5)
-    : rule === "generated" ? Util.alpha(Plugin.Palette.yellow, 0.42)
+    : (rule === "generated" || rule === "dataset") ? Util.alpha(Plugin.Palette.yellow, 0.42)
     : rule === "secrets" ? Util.alpha(Plugin.Palette.green, 0.42)
     : Plugin.Tokens.sep
 
@@ -35,15 +35,15 @@ Rectangle {
       color: root.tone
     }
 
-    Text {
+    Label {
       anchors.verticalCenter: parent.verticalCenter
       text: root.rule
       textFormat: Text.PlainText
       color: root.tone
       font.family: Style.font.family
-      font.pixelSize: Plugin.Tokens.tiny
+      font.pixelSize: Style.font.bodySmall
       font.capitalization: Font.AllUppercase
-      font.letterSpacing: Plugin.Tokens.tiny * Plugin.Tokens.tagTracking
+      font.letterSpacing: Math.round(Style.font.bodySmall * Plugin.Tokens.tracking)
     }
   }
 }

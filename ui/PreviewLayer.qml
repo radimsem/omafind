@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtMultimedia
 import Quickshell
 import qs.Commons
@@ -35,8 +36,12 @@ Item {
   readonly property bool playingHere: mine && player.playing
   // The daemon's preview picks the line the opener jumps to; actions name that line.
   readonly property var jump: preview && (kind === "text" || kind === "code") ? preview.jump : null
+  // Set when Qt cannot decode the full image (for example a missing image plugin).
+  property bool fullFailed: false
+  onPreviewChanged: fullFailed = false
   readonly property string imageSource: {
-    var path = preview && preview.image ? preview.image : entry.thumb || (kind === "image" ? entry.path : "")
+    var full = preview && preview.image && !fullFailed ? preview.image : ""
+    var path = full || entry.thumb || (kind === "image" ? entry.path : "")
     return path ? Util.fileUrl(path) : ""
   }
 
@@ -91,11 +96,17 @@ Item {
 
       Image {
         id: frame
+        autoTransform: true
         anchors.fill: parent
         source: root.imageSource
         fillMode: Image.PreserveAspectFit
         asynchronous: true
+        // The box has stable dimensions; changing the decode size reloads the image.
+        sourceSize: Qt.size(Math.round(width * Screen.devicePixelRatio), Math.round(height * Screen.devicePixelRatio))
+        mipmap: true
+        smooth: true
         opacity: root.offline ? 0.5 : 1
+        onStatusChanged: if (status === Image.Error && root.preview && source == Util.fileUrl(root.preview.image)) root.fullFailed = true
       }
 
       VideoOutput {
@@ -114,7 +125,7 @@ Item {
         radius: Style.cornerRadius
         color: Plugin.Tokens.chip
 
-        Text {
+        Label {
           id: offlineText
           anchors.centerIn: parent
           text: "offline"
@@ -164,7 +175,7 @@ Item {
           radius: Style.cornerRadius
           color: Plugin.Tokens.chip
 
-          Text {
+          Label {
             id: chipText
             anchors.centerIn: parent
             text: root.mine ? Format.duration(root.playhead) + " / " + Format.duration(root.total)
@@ -347,7 +358,7 @@ Item {
           }
         }
 
-        Text {
+        Label {
           id: time
           visible: root.mine
           anchors.right: parent.right
@@ -363,7 +374,7 @@ Item {
         }
       }
 
-      Text {
+      Label {
         anchors.top: controls.bottom
         anchors.topMargin: Style.space(22)
         anchors.horizontalCenter: parent.horizontalCenter
@@ -380,8 +391,8 @@ Item {
     Rectangle {
       anchors.centerIn: parent
       visible: root.kind === "pdf" && !root.offline
-      width: Style.space(330)
-      height: Style.space(410)
+      width: Style.space(600)
+      height: Plugin.Tokens.mediaHeight
       radius: Style.cornerRadius
       color: Color.popups.background
       clip: true
@@ -391,6 +402,10 @@ Item {
         source: root.kind === "pdf" ? root.imageSource : ""
         fillMode: Image.PreserveAspectFit
         asynchronous: true
+        // The box has stable dimensions; changing the decode size reloads the image.
+        sourceSize: Qt.size(Math.round(width * Screen.devicePixelRatio), Math.round(height * Screen.devicePixelRatio))
+        mipmap: true
+        smooth: true
       }
 
       Rectangle {
@@ -402,7 +417,7 @@ Item {
         radius: Style.cornerRadius
         color: Plugin.Tokens.chip
 
-        Text {
+        Label {
           id: pageText
           anchors.centerIn: parent
           text: Format.at(root.entry) || ""
@@ -466,7 +481,7 @@ Item {
             height: well.lineHeight
             color: modelData.hit ? well.hitLine : "transparent"
 
-            Text {
+            Label {
               id: number
               width: Style.space(48)
               rightPadding: Style.space(14)
@@ -479,7 +494,7 @@ Item {
               font.pixelSize: Style.font.body
             }
 
-            Text {
+            Label {
               anchors.left: number.right
               anchors.right: parent.right
               anchors.rightMargin: Style.space(14)
@@ -507,7 +522,7 @@ Item {
         border.width: 1
         border.color: Plugin.Tokens.sep
 
-        Text {
+        Label {
           id: rangeText
           anchors.centerIn: parent
           text: root.preview && root.preview.range ? "lines " + root.preview.range[0] + "–" + root.preview.range[1] : ""
@@ -535,7 +550,7 @@ Item {
       width: parent.width
       spacing: Style.space(6)
 
-      Text {
+      Label {
         width: parent.width
         text: root.entry.name || ""
         textFormat: Text.PlainText
@@ -546,7 +561,7 @@ Item {
         font.bold: true
       }
 
-      Text {
+      Label {
         width: parent.width
         text: root.folder(root.entry)
         textFormat: Text.PlainText
@@ -556,7 +571,7 @@ Item {
         font.pixelSize: Style.font.body
       }
 
-      Text {
+      Label {
         width: parent.width
         text: root.item ? Format.meta(root.entry) : ""
         textFormat: Text.PlainText

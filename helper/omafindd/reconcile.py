@@ -24,7 +24,7 @@ def reconcile(store, roots: list[dict], *, only=None, force=False, skipped=None,
         found = {}
         try:
             for candidate in rules.keep(
-                rules.walk(root, excludes=setting.get('excludes', []), only=only), root=root
+                rules.walk(root, excludes=setting.get('excludes', []), only=only)
             ):
                 if isinstance(candidate, rules.Skip):
                     if skipped is not None:

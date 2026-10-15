@@ -38,6 +38,7 @@ class IpcServer:
         self._results = {}
         self._jumps = {}
         self._previews = {}
+        self._seqs = {}
         self._status = None
         self._status_at = float("-inf")
         self._status_signature = None
@@ -149,11 +150,14 @@ class IpcServer:
             for task in requests:
                 task.cancel()
             await asyncio.gather(*requests, return_exceptions=True)
+            if self.setup is not None:
+                await self.setup.disconnect(writer)
             self._clients.discard(writer)
             self._ready.discard(writer)
             self._results.pop(writer, None)
             self._jumps.pop(writer, None)
             self._previews.pop(writer, None)
+            self._seqs.pop(writer, None)
             writer.close()
             try:
                 await writer.wait_closed()
@@ -163,7 +167,7 @@ class IpcServer:
     async def dispatch(self, writer, message: dict) -> None:
         if self.setup is not None and message["t"] in self.setup.TYPES:
             try:
-                reply = await self.setup.handle(message)
+                reply = await self.setup.handle(message, client=writer)
             except Exception as error:
                 reply = {"t": "error", "for": message["t"], "reason": str(error)}
             try:
@@ -205,7 +209,15 @@ class IpcServer:
                 reply.update({"id": message.get("id"), "for": "open"})
         if reply["t"] == "results":
             self._results[writer] = {item["id"]: item for item in reply["items"]}
-            self._jumps.pop(writer, None)
+            # The meaning leg keeps preview lines for results still in the same search.
+            if reply.get("seq") is not None and reply.get("seq") == self._seqs.get(writer):
+                self._jumps[writer] = {
+                    key: line for key, line in self._jumps.get(writer, {}).items()
+                    if key in self._results[writer]
+                }
+            else:
+                self._jumps.pop(writer, None)
+            self._seqs[writer] = reply.get("seq")
         try:
             await self._send(writer, reply)
         except (ConnectionError, OSError):
@@ -233,7 +245,9 @@ class IpcServer:
                 # Cancelling to_thread does not stop its renderer; retain the connection slot.
                 await asyncio.gather(rendering, return_exceptions=True)
                 raise
-            if self.resolve(writer, item_id) is not item:
+            # A later reply of the same search rebuilds item dicts, so compare the path.
+            current = self.resolve(writer, item_id)
+            if current is None or current.get("path") != item.get("path"):
                 reply = {"t": "error", "id": item_id, "code": "missing",
                          "reason": "File is missing"}
             return reply
@@ -248,11 +262,16 @@ class IpcServer:
         if reason:
             return {"t": "open_failed", "id": item_id, "reason": reason}
         how = message.get("how", "open")
-        if how not in ("open", "reveal"):
+        line = message.get("line")
+        if how not in ("open", "reveal") or (
+            "line" in message and (type(line) is not int or line < 1)
+        ):
             return {"t": "error", "id": item_id, "for": "open", "code": "bad-request",
                     "reason": "Invalid open arguments"}
         target = dict(item)
-        jump = self._jumps.get(writer, {}).get(item_id)
+        if target.get("kind") not in ("text", "code"):
+            line = None
+        jump = line if line is not None else self._jumps.get(writer, {}).get(item_id)
         if jump is not None:
             target["loc"] = jump
             if target["kind"] == "code":

@@ -23,6 +23,37 @@ def _run(argv):
     return result.stdout
 
 
+# Formats Qt's installed image plugins decode; HEIC, AVIF and RAW go through magick.
+QT_IMAGES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff"}
+# Twice the 600 x 420 preview box, so a 2x display still gets a full-size picture.
+RENDER_SIDE = 1200
+
+
+def _cache_key(path, *parts):
+    stamp = ":".join(str(part) for part in (path, path.stat().st_mtime_ns, *parts))
+    return hashlib.sha256(stamp.encode()).hexdigest()
+
+
+def _publish(image, argv_for):
+    if not image.exists():
+        with tempfile.TemporaryDirectory(dir=image.parent) as directory:
+            temporary = Path(directory) / image.name
+            produced = argv_for(temporary)
+            os.replace(produced, image)
+    return image
+
+
+def _still(path):
+    image = paths.preview_dir() / (_cache_key(path, "still", RENDER_SIDE) + ".jpg")
+
+    def convert(temporary):
+        _run(["magick", f"{path}[0]", "-auto-orient", "-resize",
+              f"{RENDER_SIDE}x{RENDER_SIDE * 7 // 10}>", "-quality", "90", str(temporary)])
+        return temporary
+
+    return _publish(image, convert)
+
+
 def _lines(item, query):
     path = Path(item["path"])
     temporary = None
@@ -132,25 +163,28 @@ def render(item, query="") -> dict:
         if kind == "code":
             target["open_line"] = reply["jump"]
     elif kind == "image":
-        reply.update(mode="image", image=item.get("thumb") or item["path"])
+        path = Path(item["path"])
+        image = path if path.suffix.lower() in QT_IMAGES else _still(path)
+        reply.update(mode="image", image=str(image))
     elif kind == "audio":
         reply.update(mode="bars", bars=_bars(Path(item["path"])))
     elif kind in ("pdf", "video"):
         path = Path(item["path"])
         jump = max(1, int(item.get("loc") or 1)) if kind == "pdf" else item.get("loc") or 0
-        key = hashlib.sha256(f"{path}:{path.stat().st_mtime_ns}:{jump}".encode()).hexdigest()
-        prefix = paths.preview_dir() / key
-        image = prefix.with_suffix(".png" if kind == "pdf" else ".jpg")
-        if not image.exists():
-            with tempfile.TemporaryDirectory(dir=prefix.parent) as directory:
-                temporary = Path(directory) / image.name
-                if kind == "pdf":
-                    _run(["pdftoppm", "-f", str(jump), "-l", str(jump), "-scale-to", "1024",
-                          "-singlefile", "-png", str(path), str(temporary.with_suffix(""))])
-                else:
-                    _run(["ffmpeg", "-v", "error", "-ss", str(jump), "-i", str(path),
-                          "-frames:v", "1", "-vf", "scale=1024:-2", "-y", str(temporary)])
-                os.replace(temporary, image)
+        side = RENDER_SIDE if kind == "pdf" else 1024
+        image = paths.preview_dir() / (
+            _cache_key(path, jump, side) + (".png" if kind == "pdf" else ".jpg"))
+
+        def draw(temporary):
+            if kind == "pdf":
+                _run(["pdftoppm", "-f", str(jump), "-l", str(jump), "-scale-to", str(side),
+                      "-singlefile", "-png", str(path), str(temporary.with_suffix(""))])
+            else:
+                _run(["ffmpeg", "-v", "error", "-ss", str(jump), "-i", str(path),
+                      "-frames:v", "1", "-vf", f"scale={side}:-2", "-y", str(temporary)])
+            return temporary
+
+        _publish(image, draw)
         reply.update(mode="image", jump=jump, image=str(image))
     reply["opener"] = opener.description(target)["opener"]
     if kind in ("text", "code"):

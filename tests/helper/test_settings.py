@@ -205,3 +205,12 @@ def test_mount_aliases_rebase_roots_and_excludes_without_writing_shell(tmp_path,
     health.write(paths.health_path(), {'mounts': {'usb': {
         'current': '/media/again', 'previous': ['/media/old', '/media/new']}}})
     assert reader.read().roots[0]['path'] == '/media/again/docs'
+
+
+@pytest.mark.parametrize("value,valid", [("F9", True), ("F35", True), ("SUPER + F9", True),
+                                         ("F36", False), ("F0", False), ("E", False),
+                                         ("SUPER + SHIFT + SPACE", True)])
+def test_shortcut_accepts_a_lone_function_key(value, valid):
+    from omafindd.settings import valid_shortcut
+
+    assert valid_shortcut(value) is valid

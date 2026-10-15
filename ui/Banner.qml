@@ -33,7 +33,7 @@ Rectangle {
     color: Plugin.Palette.yellow
   }
 
-  Text {
+  Label {
     id: body
     visible: !root.factual
     anchors.left: glyph.right
@@ -57,7 +57,7 @@ Rectangle {
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(10)
 
-    Text {
+    Label {
       anchors.verticalCenter: parent.verticalCenter
       text: root.lead
       textFormat: Text.PlainText
@@ -73,7 +73,7 @@ Rectangle {
       fontSize: Style.font.body
     }
 
-    Text {
+    Label {
       anchors.verticalCenter: parent.verticalCenter
       text: root.text
       textFormat: Text.PlainText

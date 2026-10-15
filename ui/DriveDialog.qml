@@ -2,7 +2,6 @@ import QtQuick
 import qs.Commons
 import ".." as Plugin
 import "../lib/setup.js" as Setup
-import "../lib/ledger.js" as Ledger
 import "../lib/tree.js" as Tree
 import "../lib/volumes.js" as Volumes
 
@@ -15,17 +14,12 @@ FocusScope {
 
   property var service: null
   property string uuid: ""
-  // Session state. Maps are replaced, never mutated, so bindings see each change.
-  property var checked: ({})
-  property var excludes: ({})
-  property var chosenIn: ({})
+  property var choices: Tree.initial([])
+  property bool seeded: false
+  property var proposed: []
   // "pick", then "run" after Index this drive, then "done".
   property string phase: "pick"
   property bool sawProgress: false
-  // "" or "tree" (board 11b on a drive folder).
-  property string sub: ""
-  property string treeRoot: ""
-  property var firstRow: null
 
   signal closeRequested()
 
@@ -33,40 +27,29 @@ FocusScope {
     : ({uuid: uuid, label: "", fs: "", size: 0, mount: null})
   readonly property var discover: service && service.driveDiscover && service.driveDiscover.volume === uuid
     ? service.driveDiscover : null
-  readonly property string mount: volume.mount || (discover && discover.scan && discover.scan.roots
-    && discover.scan.roots.length ? discover.scan.roots[0] : "")
+  readonly property string mount: volume.mount || (discover && discover.roots && discover.roots.length
+    ? discover.roots[0].path : "")
   readonly property string label: Volumes.driveLabel({uuid: uuid, label: volume.label, mount: mount})
   readonly property bool scanning: !!service && service.driveScanning
-  readonly property var candidates: discover && discover.candidates ? discover.candidates : []
+  readonly property var folders: discover && Array.isArray(discover.folders) ? discover.folders : []
+  readonly property var walk: service && mount && service.walks[mount] ? service.walks[mount] : null
   readonly property var rates: discover ? discover.rates : null
   readonly property string device: discover && discover.device ? discover.device : "gpu"
-  readonly property var trees: service ? service.trees : ({})
-  readonly property var kept: {
-    var out = {}
-    for (var i = 0; i < candidates.length; i++) out[candidates[i].path] = keptFor(candidates[i])
-    return out
-  }
-  readonly property var totals: Setup.totals(candidates.map(c => ({checked: isChecked(c), counts: kept[c.path]})), rates, device)
-  readonly property bool anyChecked: candidates.some(c => isChecked(c))
+  readonly property bool anyChecked: choices.chosen.length > 0
   readonly property var progress: service ? service.progress : null
   readonly property var footer: Volumes.dialogFooter(progress, uuid, label)
-  readonly property var datasets: discover && discover.not_proposed && Array.isArray(discover.not_proposed.datasets)
-    ? discover.not_proposed.datasets : []
-  readonly property string errorText: service ? service.setupError || service.driveError : ""
+  readonly property string errorText: service ? service.setupError || service.driveError || (walk ? walk.error : "") : ""
 
   readonly property real panelWidth: Style.space(1120)
   // The 4 covers the card border on both edges.
-  readonly property real panelHeight: sub === "tree" ? Style.space(948)
-    : body.implicitHeight + 2 * Plugin.Tokens.setupPadding + 4
+  readonly property real panelHeight: body.implicitHeight + 2 * Plugin.Tokens.setupPadding + 4
 
   function reset() {
-    checked = {}
-    excludes = {}
-    chosenIn = {}
+    choices = Tree.initial([])
+    seeded = false
+    proposed = []
     phase = "pick"
     sawProgress = false
-    sub = ""
-    treeRoot = ""
     closeTimer.stop()
   }
 
@@ -75,125 +58,49 @@ FocusScope {
   }
 
   function focusFirst() {
-    if (sub === "tree" && treeLoader.item) treeLoader.item.focusFirst()
-    else if (firstRow) firstRow.focusCheck()
-    else if (start.enabled) start.forceActiveFocus()
+    if (tree.focusFirst()) return
+    if (start.enabled) start.forceActiveFocus()
     else cancel.forceActiveFocus()
   }
 
   function handleKey(event) {
-    var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
-    if (sub === "tree") {
-      if (event.key === Qt.Key_Escape) {
-        closeTree()
-        event.accepted = true
-      } else if (ctrl && event.key === Qt.Key_Z && treeLoader.item) {
-        treeLoader.item.undo()
-        event.accepted = true
-      }
-      return
-    }
     if (event.key === Qt.Key_Escape) {
       root.closeRequested()
       event.accepted = true
     }
   }
 
-  function rel(path) {
-    return Volumes.relPath(path, mount)
+  // Every folder on the drive starts checked.
+  function seed() {
+    if (seeded || !folders.length) return
+    choices = {chosen: folders.map(folder => folder.path), skipped: [], code: []}
+    seeded = true
+    offerDatasets()
   }
 
-  function isChecked(c) {
-    return checked[c.path] !== undefined ? checked[c.path] : !!c.checked
-  }
-
-  function ruleOf(c, path) {
-    var entries = c.left_out || []
-    for (var i = 0; i < entries.length; i++)
-      if (entries[i].path === path) return entries[i].rule
-    return "user"
-  }
-
-  function excludesFor(c) {
-    if (excludes[c.path] !== undefined) return excludes[c.path]
-    return (c.excludes || []).map(path => ({path: path, rule: ruleOf(c, path)}))
-  }
-
-  function chosenFor(c) {
-    return chosenIn[c.path] || []
-  }
-
-  // Counts after the leave-outs; the scan's own counts until a tree edit asks for the tree.
-  function keptFor(c) {
-    var tree = trees ? trees[c.path] : null
-    if (tree && excludes[c.path] !== undefined) return Tree.ledger(tree, excludesFor(c), chosenFor(c), Ledger.compute).kept
-    return c.counts || {}
-  }
-
-  function setMap(name, key, value) {
-    var next = Object.assign({}, root[name])
-    next[key] = value
-    root[name] = next
-  }
-
-  function rowFacts(c) {
-    var tokens = [{k: "dirs", v: Setup.count(c.dirs || 0), tone: "plain"}]
-    var out = excludesFor(c).filter(e => e.rule !== "secrets").length
-    if (out) tokens.push({k: "left out", v: Setup.count(out), tone: "plain"})
-    return tokens.concat((c.exts || []).slice(0, 2).map(ext => ({k: ext[0], v: Setup.count(ext[1]), tone: "plain"})))
+  function offerDatasets() {
+    if (!service || !seeded) return
+    var list = Object.keys(service.datasets).map(path => service.datasets[path])
+    choices = Tree.addDatasets(choices, list, proposed)
+    proposed = proposed.concat(list.map(entry => entry.path).filter(path => proposed.indexOf(path) < 0))
   }
 
   function seconds(value) {
     return value < 90 ? Math.round(value) + " s" : Math.round(value / 60) + " min"
   }
 
-  function datasetFacts(list) {
-    if (!list.length) return []
-    var tokens = [{k: "not proposed", v: "", tone: "plain"}]
-    list.forEach(d => {
-      tokens.push({k: "dataset", v: rel(d.path), tone: "plain"})
-      tokens.push({k: "files", v: Setup.count(d.files), tone: "plain"})
-      if (d.match && d.match.length === 2) tokens.push({k: "match", v: Setup.count(d.match[0]) + "/" + Setup.count(d.match[1]), tone: "plain"})
-    })
-    return tokens
-  }
-
-  function showTree(path) {
-    treeRoot = path
-    if (service && !(trees && trees[path])) service.requestTree(path)
-    sub = "tree"
-    Qt.callLater(focusFirst)
-  }
-
-  function closeTree() {
-    sub = ""
-    Qt.callLater(focusFirst)
-  }
-
-  function commitExcludes(path, list, chosen) {
-    setMap("excludes", path, list)
-    setMap("chosenIn", path, chosen || [])
-  }
-
   // Appends the chosen folders to `roots` under this volume, replacing any root at the same path.
   function startIndexing() {
-    var chosen = []
-    var skipped = []
-    candidates.forEach(c => {
-      if (!isChecked(c)) return
-      chosen.push(c.path)
-      chosenFor(c).forEach(folder => chosen.push(c.path + "/" + folder))
-      excludesFor(c).forEach(e => {
-        if (e.rule !== "secrets") skipped.push(e.path === "" ? c.path : c.path + "/" + e.path)
-      })
-    })
-    var fresh = Tree.toRoots(chosen, skipped, () => root.uuid)
+    var fresh = Tree.toRoots(choices.chosen, choices.skipped, () => root.uuid)
     var paths = fresh.map(r => r.path)
     var roots = service.settings.roots.filter(r => paths.indexOf(r.path) < 0).concat(fresh)
-    if (!service.startIndexing(roots, null, uuid)) return
+    var code = service.settings.codeRoots.filter(path => !Tree.isInside(path, mount)).concat(choices.code)
+    if (!service.startIndexing(roots, code, uuid)) return
     sawProgress = false
     phase = "run"
   }
+
+  onFoldersChanged: seed()
 
   // sawProgress is set only while indexing, so a finished run from before the click does not count.
   readonly property bool finished: {
@@ -216,6 +123,7 @@ FocusScope {
   Connections {
     target: root.service
     ignoreUnknownSignals: true
+    function onDatasetsChanged() { root.offerDatasets() }
     function onProgressChanged() { if (root.phase === "run") root.sawProgress = true }
   }
 
@@ -229,10 +137,6 @@ FocusScope {
   Item {
     anchors.fill: parent
     anchors.margins: Plugin.Tokens.setupPadding
-    opacity: root.sub === "" ? 1 : 0
-    visible: opacity > 0
-    enabled: root.sub === ""
-    Behavior on opacity { NumberAnimation { duration: 120 } }
 
     Column {
       id: body
@@ -250,7 +154,7 @@ FocusScope {
           width: parent.width - tag.width - Style.space(12)
           spacing: Style.space(4)
 
-          Text {
+          Label {
             text: root.label
             textFormat: Text.PlainText
             color: Color.foreground
@@ -263,7 +167,8 @@ FocusScope {
             width: Math.min(implicitWidth, parent.width)
             fontSize: Style.font.bodySmall
             tokens: Volumes.driveFacts({mount: root.mount, fs: root.volume.fs},
-              root.scanning ? {running: true} : root.discover && root.discover.scan ? {seconds: root.discover.scan.seconds} : null)
+              root.scanning || (root.walk && !root.walk.done) ? {running: true}
+              : root.walk ? {seconds: root.walk.seconds || 0} : null)
           }
         }
 
@@ -276,14 +181,14 @@ FocusScope {
           radius: Style.cornerRadius
           color: Style.hoverFill
 
-          Text {
+          Label {
             id: tagText
             anchors.centerIn: parent
             text: "removable"
             textFormat: Text.PlainText
             color: Plugin.Tokens.fg2
             font.family: Style.font.family
-            font.pixelSize: Style.font.caption
+            font.pixelSize: Style.font.bodySmall
             font.bold: true
           }
         }
@@ -300,48 +205,19 @@ FocusScope {
           folderLabel: "Folder on the drive"
         }
 
-        Repeater {
-          model: root.candidates
-          onItemAdded: (index, item) => { if (index === 0) root.firstRow = item }
-
-          delegate: FolderRow {
-            required property var modelData
-            required property int index
-            readonly property var c: modelData
-            readonly property var counts: root.kept[c.path] || {}
-            readonly property var estimate: Setup.estimate(counts, root.rates, root.device)
-            objectName: "omafindDriveRow"
-            width: header.width
-            table: header
-            path: c.path
-            check: root.isChecked(c) ? "on" : "off"
-            checkLabel: "Include " + root.rel(c.path).replace(/^\//, "")
-            name: root.rel(c.path)
-            facts: root.rowFacts(c)
-            cells: Setup.KINDS.map(k => ({n: counts[k] || 0, cut: false}))
-            indexText: root.rates ? Setup.mb(estimate.bytes) : ""
-            timeText: root.rates ? root.seconds(estimate.seconds) : ""
-            action: "filter"
-            actionLabel: "Add an exclude to " + root.rel(c.path).replace(/^\//, "")
-            fill: root.isChecked(c) ? "on" : ""
-            enabled: root.phase === "pick"
-            onToggled: root.setMap("checked", c.path, !root.isChecked(c))
-            onActionClicked: root.showTree(c.path)
-          }
-        }
-
-        Item {
-          visible: root.datasets.length > 0
+        FolderTree {
+          id: tree
           width: parent.width
-          height: visible ? Style.space(12) + datasetRow.implicitHeight : 0
-
-          SetupFacts {
-            id: datasetRow
-            x: Plugin.Tokens.tablePadding
-            y: Style.space(12)
-            width: Math.min(implicitWidth, parent.width - 2 * x)
-            tokens: root.datasetFacts(root.datasets)
-          }
+          height: Math.max(1, Math.min(tree.count, 10)) * Plugin.Tokens.tableRow
+          service: root.service
+          table: header
+          folders: root.folders
+          choices: root.choices
+          mount: root.mount
+          rates: root.rates
+          device: root.device
+          locked: root.phase !== "pick"
+          onChoicesEdited: next => root.choices = next
         }
       }
 
@@ -352,7 +228,7 @@ FocusScope {
         tokens: [{k: "watch", v: "off · removable", tone: "plain"}, {k: "reconcile", v: "on mount", tone: "plain"}]
       }
 
-      Text {
+      Label {
         visible: root.errorText !== ""
         width: parent.width
         wrapMode: Text.Wrap
@@ -381,9 +257,9 @@ FocusScope {
             width: Math.min(implicitWidth, parent.width - buttons.width - Style.space(8))
             fontSize: Style.font.body
             gap: Style.space(18)
-            tokens: [{k: "selected", v: "<b>" + Setup.count(root.totals.files) + "</b> files", tone: "plain"},
-              {k: "index", v: "<b>" + Setup.mb(root.totals.bytes) + "</b>", tone: "plain"},
-              {k: "time", v: "<b>" + root.seconds(root.totals.seconds) + "</b>", tone: "plain"}]
+            tokens: [{k: "selected", v: "<b>" + Setup.count(tree.totals.files) + "</b> files", tone: "plain"},
+              {k: "index", v: "<b>" + Setup.mb(tree.totals.bytes) + "</b>", tone: "plain"},
+              {k: "time", v: "<b>" + root.seconds(tree.totals.seconds) + "</b>", tone: "plain"}]
           }
 
           Row {
@@ -420,7 +296,7 @@ FocusScope {
           spacing: Style.space(8)
           Behavior on opacity { NumberAnimation { duration: 180 } }
 
-          Text {
+          Label {
             id: indexLabel
             anchors.verticalCenter: parent.verticalCenter
             text: root.footer.text
@@ -438,7 +314,7 @@ FocusScope {
             done: root.phase === "done"
           }
 
-          Text {
+          Label {
             id: indexCount
             anchors.verticalCenter: parent.verticalCenter
             width: Math.max(implicitWidth, Style.space(120))
@@ -455,30 +331,4 @@ FocusScope {
     }
   }
 
-  Loader {
-    id: treeLoader
-    anchors.fill: parent
-    anchors.margins: Plugin.Tokens.setupPadding
-    active: root.sub === "tree" && root.treeRoot !== ""
-    sourceComponent: SetupLeaveOut {
-      service: root.service
-      rootPath: root.treeRoot
-      home: ""
-      rates: root.rates
-      device: root.device
-      initialExcludes: {
-        var c = root.candidates.find(row => row.path === root.treeRoot)
-        return c ? root.excludesFor(c) : []
-      }
-      initialChosen: {
-        var c = root.candidates.find(row => row.path === root.treeRoot)
-        return c ? root.chosenFor(c) : []
-      }
-      onDone: (excludes, chosen) => {
-        root.commitExcludes(root.treeRoot, excludes, chosen)
-        root.closeTree()
-      }
-      onCancelled: root.closeTree()
-    }
-  }
 }

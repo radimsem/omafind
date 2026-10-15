@@ -96,7 +96,7 @@ PanelWindow {
           color: root.error ? Color.urgent : Color.accent
         }
 
-        Text {
+        Label {
           anchors.verticalCenter: parent.verticalCenter
           width: Math.min(implicitWidth, column.width - Style.space(22))
           elide: Text.ElideMiddle
@@ -113,7 +113,7 @@ PanelWindow {
         visible: root.tokens.length > 0
         width: Math.min(implicitWidth, column.width)
         tokens: root.tokens
-        fontSize: Style.font.caption
+        fontSize: Style.font.bodySmall
       }
     }
   }

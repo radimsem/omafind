@@ -73,7 +73,7 @@ Rectangle {
       color: label.color
     }
 
-    Text {
+    Label {
       id: label
       anchors.verticalCenter: parent.verticalCenter
       text: root.text

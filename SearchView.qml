@@ -5,6 +5,7 @@ import qs.Commons
 import "." as Plugin
 import "ui" as Parts
 import "lib/keys.js" as KeyMap
+import "lib/setup.js" as Setup
 import "lib/results.js" as Results
 import "lib/searchState.js" as SearchState
 import "lib/Update.js" as Update
@@ -17,6 +18,7 @@ Item {
   property var service: null
   property var search: SearchState.initial()
   property bool expanded: false
+  property bool progressOpen: false
   property var rows: []
   property int selectedIndex: -1
   // True once the user moves the selection, so a re-rank keeps it on its row instead of the top hit.
@@ -65,6 +67,7 @@ Item {
     player.stop()
     flash = ""
     expanded = false
+    progressOpen = false
     userMoved = false
     shownSeq = -1
     freshTimer.stop()
@@ -155,13 +158,14 @@ Item {
     selectedIndex = index
   }
 
-  function expand() {
-    var weakAt = selectedIndex
-    expanded = true
-    var result = Results.group(reply.items, {expanded: true}).rows
+  // Keep selection on the fold row in both states.
+  function toggleWeak() {
+    expanded = !expanded
+    var result = Results.group(reply.items, {expanded: expanded}).rows
+    var weakAt = -1
+    for (var i = 0; i < result.length; i++) if (result[i].type === "weak") weakAt = i
     rows = result
-    // The first unfolded hit takes the place of the fold row.
-    selectedIndex = weakAt < result.length ? weakAt : Results.firstSelection(result)
+    selectedIndex = weakAt >= 0 ? weakAt : Results.firstSelection(result)
     userMoved = true
   }
 
@@ -171,6 +175,19 @@ Item {
       selectedIndex = next
       userMoved = true
     }
+  }
+
+  function jumpBy(steps) {
+    var next = Results.jump(rows, selectedIndex, steps)
+    if (next !== selectedIndex) {
+      selectedIndex = next
+      userMoved = true
+    }
+  }
+
+  // One visible page of rows, less one row of overlap.
+  function pageSize() {
+    return Math.max(1, Math.floor(list.height / Plugin.Tokens.rowHeight) - 1)
   }
 
   function select(index) {
@@ -231,20 +248,34 @@ Item {
       toastRequested("Path copied", [{k: "path", v: folder(item) + "/" + item.name, tone: "plain"}], false)
       return
     }
-    if (pending || !service || !service.send({t: "open", id: item.id, how: how})) return
+    var message = {t: "open", id: item.id, how: how}
+    var line = jumpFor(item)
+    if (how === "open" && line != null) message.line = line
+    if (pending || !service || !service.send(message)) return
     player.stop()
     flash = how === "open" ? "acc" : "sec"
     openStarted(item, how)
   }
 
+  function toggleProgress() {
+    progressOpen = !progressOpen
+    if (progressOpen && service) service.requestProgress()
+  }
+
   function handleKey(event) {
+    // Close the popover before clearing the query or closing the overlay.
+    if (progressOpen && event.key === Qt.Key_Escape) {
+      progressOpen = false
+      event.accepted = true
+      return
+    }
     if (event.key === Qt.Key_U && event.modifiers === Qt.ControlModifier) {
       query.setText("")
       event.accepted = true
       return
     }
     var action = KeyMap.action({key: event.key, text: event.text, modifiers: event.modifiers},
-      {query: search.query, row: selectedRow})
+      {query: search.query, row: selectedRow, selection: query.input.selectedText !== ""})
     switch (action) {
     case "clear":
       query.setText("")
@@ -258,15 +289,30 @@ Item {
     case "down":
       move(1)
       break
+    case "pageup":
+      jumpBy(-pageSize())
+      break
+    case "pagedown":
+      jumpBy(pageSize())
+      break
+    case "first":
+      jumpBy(-Infinity)
+      break
+    case "last":
+      jumpBy(Infinity)
+      break
     case "open":
     case "reveal":
       act(action)
       break
-    case "expand":
-      expand()
+    case "toggle-weak":
+      toggleWeak()
       break
     case "play":
       player.toggle(selectedItem)
+      break
+    case "progress":
+      toggleProgress()
       break
     case "copy":
       act("copy")
@@ -474,6 +520,7 @@ Item {
           rows: root.rows
           selectedIndex: root.selectedIndex
           onPicked: index => root.select(index)
+          onWeakToggled: index => root.toggleWeak()
         }
 
         Rectangle {
@@ -519,10 +566,74 @@ Item {
         phase: root.reply ? root.search.phase : "words"})
     offline: root.idle && root.service && root.service.status && root.service.status.offline
       ? root.service.status.offline : []
-    progress: root.idle && idleFacts ? idleFacts.progress : null
+    progress: idleFacts ? idleFacts.progress : null
     indexed: !root.idle && root.service && root.service.status && typeof root.service.status.files === "number"
       ? root.service.status.files : -1
     reconcile: root.service && root.service.volumes ? Volumes.footer(root.service.volumes, root.service.clock) : null
-    hints: root.idle || !root.reply ? [{keys: ["Esc"], label: "close", dim: false}] : root.hintsFor(root.selectedRow)
+    hints: root.idle || !root.reply
+      ? (idleFacts && idleFacts.progress ? [{keys: ["Ctrl", "I"], label: "progress"}] : []).concat([{keys: ["Esc"], label: "close"}])
+      : root.hintsFor(root.selectedRow)
+    onProgressClicked: root.toggleProgress()
+  }
+
+  Rectangle {
+    id: progressPopover
+    readonly property var progress: root.service ? root.service.progress : null
+    visible: root.progressOpen
+    anchors.right: parent.right
+    anchors.rightMargin: Style.space(18)
+    anchors.bottom: footer.top
+    anchors.bottomMargin: Style.space(6)
+    width: Style.space(460)
+    height: popoverColumn.implicitHeight + 2 * Style.space(14)
+    radius: Style.cornerRadius
+    color: Color.popups.background
+    border.width: 1
+    border.color: Plugin.Tokens.sep
+
+    Column {
+      id: popoverColumn
+      x: Style.space(14)
+      y: Style.space(14)
+      width: parent.width - 2 * x
+      spacing: Style.space(10)
+
+      Row {
+        id: popoverHead
+        readonly property var head: Setup.indexHead(progressPopover.progress, null)
+        spacing: Style.space(10)
+
+        Parts.Label {
+          id: popoverTitle
+          text: {
+            var title = Setup.indexTitle(progressPopover.progress, "")
+            return title === "Indexing your files" ? "Indexing" : title
+          }
+          color: Color.foreground
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+
+        Parts.Label {
+          anchors.baseline: popoverTitle.baseline
+          text: popoverHead.head.count
+          color: Color.foreground
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+
+        Parts.SetupFacts {
+          anchors.baseline: popoverTitle.baseline
+          tokens: popoverHead.head.facts
+        }
+      }
+
+      Parts.KindProgress {
+        width: parent.width
+        progress: progressPopover.progress
+        labelWidth: Style.space(64)
+        textWidth: Style.space(170)
+      }
+    }
   }
 }

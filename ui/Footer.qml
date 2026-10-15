@@ -9,6 +9,8 @@ import "../lib/format.js" as Format
 Item {
   id: root
 
+  signal progressClicked()
+
   property string text: ""
   // Labels of offline drives, shown in yellow after `text` while idle.
   property var offline: []
@@ -63,7 +65,7 @@ Item {
       opacity: root.reconcile ? 0 : 1
       Behavior on opacity { NumberAnimation { duration: 200 } }
 
-      Text {
+      Label {
         anchors.verticalCenter: parent.verticalCenter
         width: Math.min(implicitWidth, parent.width - (indexedRow.visible ? indexedRow.width + parent.spacing : 0))
         elide: Text.ElideRight
@@ -86,7 +88,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.space(8)
 
-        Text {
+        Label {
           anchors.verticalCenter: parent.verticalCenter
           text: "·"
           textFormat: Text.PlainText
@@ -99,7 +101,7 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(5)
 
-          Text {
+          Label {
             text: "indexed"
             textFormat: Text.PlainText
             color: Plugin.Tokens.dim
@@ -107,7 +109,7 @@ Item {
             font.pixelSize: Style.font.bodySmall
           }
 
-          Text {
+          Label {
             objectName: "omafindIndexed"
             text: Format.count(Math.max(0, root.indexed))
             textFormat: Text.PlainText
@@ -131,7 +133,7 @@ Item {
       visible: opacity > 0
       Behavior on opacity { NumberAnimation { duration: 200 } }
 
-      Text {
+      Label {
         anchors.verticalCenter: parent.verticalCenter
         text: root.shownReconcile ? root.shownReconcile.text : ""
         textFormat: Text.PlainText
@@ -165,11 +167,12 @@ Item {
     spacing: Style.space(16)
 
     Row {
+      id: progressRow
       visible: !!root.progress
       spacing: Style.space(6)
       anchors.verticalCenter: parent.verticalCenter
 
-      Text {
+      Label {
         anchors.verticalCenter: parent.verticalCenter
         text: root.progress ? root.progress.text : ""
         textFormat: Text.PlainText
@@ -201,7 +204,6 @@ Item {
         required property var modelData
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.space(6)
-        opacity: modelData.dim ? 0.4 : 1
 
         Row {
           anchors.verticalCenter: parent.verticalCenter
@@ -215,7 +217,7 @@ Item {
           }
         }
 
-        Text {
+        Label {
           anchors.verticalCenter: parent.verticalCenter
           text: modelData.label
           textFormat: Text.PlainText
@@ -225,5 +227,15 @@ Item {
         }
       }
     }
+  }
+
+  MouseArea {
+    x: right.x + progressRow.x
+    y: right.y + progressRow.y
+    width: progressRow.width
+    height: progressRow.height
+    visible: progressRow.visible
+    cursorShape: Qt.PointingHandCursor
+    onClicked: root.progressClicked()
   }
 }

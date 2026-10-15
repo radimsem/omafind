@@ -89,7 +89,7 @@ def test_chosen_folder_inside_skipped_one_is_walked(tmp_path):
         store.close()
 
 
-def test_crawl_counts_size_cap_and_dataset_skips(tmp_path):
+def test_crawl_counts_size_cap_and_indexes_checked_dataset(tmp_path):
     write(tmp_path, ['huge.pdf'])
     os.truncate(tmp_path / 'huge.pdf', 600 * 1024 * 1024)
     write(tmp_path, [f'data/clip_{n:06}.png' for n in range(300)])
@@ -97,8 +97,8 @@ def test_crawl_counts_size_cap_and_dataset_skips(tmp_path):
     try:
         skipped = Counter()
         crawler.crawl(store, [{'path': str(tmp_path)}], skipped=skipped)
-        assert skipped == {'size-cap': 1, 'dataset': 300}
-        assert paths(store) == set()
+        assert skipped == {'size-cap': 1}
+        assert paths(store) == {f'data/clip_{n:06}.png' for n in range(300)}
     finally:
         store.close()
 

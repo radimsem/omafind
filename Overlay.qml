@@ -24,6 +24,7 @@ Item {
   property bool timing: false
 
   function open(payload) {
+    if (setup.item) setup.item.stop()
     var parsed = {}
     try {
       parsed = payload ? JSON.parse(payload) : {}
@@ -66,6 +67,8 @@ Item {
 
   // "Save shortcut and open search" leaves setup for an empty search.
   function showSearch() {
+    if (setup.item) setup.item.stop()
+    if (service && view !== "search") service.stopDiscovery()
     view = "search"
     searchView.reset()
     if (service) {
@@ -77,8 +80,10 @@ Item {
 
   // Idempotent: shell.hide() calls it again after dismiss().
   function close() {
+    if (setup.item) setup.item.stop()
     if (!opened) return
     opened = false
+    if (service && view !== "search") service.stopDiscovery()
     closeTimer.stop()
     searchView.stopPlayback()
     searchView.flash = ""

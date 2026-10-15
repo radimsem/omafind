@@ -44,7 +44,7 @@ Item {
       color: Plugin.Palette.yellow
     }
 
-    Text {
+    Label {
       anchors.verticalCenter: parent.verticalCenter
       width: parent.width - Style.space(23)
       text: (root.item.label || "This drive") + " is not connected. Connect it to open this file."
@@ -84,7 +84,7 @@ Item {
     width: parent.width
     spacing: Style.space(8)
 
-    Text {
+    Label {
       width: Style.space(15)
       text: "Aa"
       textFormat: Text.PlainText
@@ -105,7 +105,7 @@ Item {
         spacing: Style.space(16)
       }
 
-      Text {
+      Label {
         width: parent.width
         text: root.snippetMarkup()
         textFormat: Text.StyledText

@@ -2,6 +2,7 @@ import fnmatch
 import os
 import re
 import subprocess
+import tempfile
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
@@ -88,6 +89,13 @@ _CAMERA_PREFIXES = (
     "photo",
     "whatsapp",
     "screenshot",
+)
+
+MEDIA_KINDS = ("image", "video", "audio")
+# ISO-date stems are camera and phone exports.
+_ISO_DATE = re.compile(
+    r"(?:\d{4}-\d{2}-\d{2}(?:[-_ T.].*)?|"
+    r"(?:19|20)\d\d(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?:[-_ T.]?.*)?)"
 )
 
 
@@ -193,50 +201,64 @@ def walk(
         # The --full-path pattern holds resolved paths, so fd must see the resolved root too.
         root = root.resolve()
     args = fd_args(root, excludes=excludes, kinds=INDEXED_KINDS, only=only)
-    with run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=root) as process:
+    # fd can fill a stderr pipe before it closes stdout, blocking both readers.
+    with tempfile.TemporaryFile() as errors, run(
+        args, stdout=subprocess.PIPE, stderr=errors, cwd=root
+    ) as process:
         pending = b""
         while block := process.stdout.read(65536):
             pieces = (pending + block).split(b"\0")
             pending = pieces.pop()
             for piece in pieces:
                 yield Path(os.fsdecode(piece))
-        error = process.stderr.read()
         if process.wait():
-            raise OSError(f"fd failed: {os.fsdecode(error).strip()}")
+            errors.seek(0, os.SEEK_END)
+            errors.seek(max(0, errors.tell() - 65536))
+            lines = os.fsdecode(errors.read()).strip().splitlines()
+            raise OSError(f"fd failed: {lines[-1] if lines else 'unknown error'}")
 
 
 def looks_machine_named(stem: str) -> bool:
     name = stem.lower()
-    return not name.startswith(_CAMERA_PREFIXES) and bool(
+    if name.startswith(_CAMERA_PREFIXES) or _ISO_DATE.fullmatch(name):
+        return False
+    return bool(
         re.fullmatch(r"[0-9a-f]{8,}([-_][0-9a-f]{4,})*", name)
         or re.fullmatch(r"[a-z]{0,16}[-_. ]?\d{3,}([-_.]\d+)*", name)
     )
 
 
-def datasets(paths: Iterable[Path | str], *, root: Path) -> set[Path]:
-    groups = defaultdict(list)
+def datasets(paths: Iterable[Path | str], *, root: Path) -> dict[Path, dict]:
+    """Media folders that look generated: 300+ files of one media kind, 70%+ machine-named.
+
+    Reads names only. `root` itself is never a dataset.
+    """
+    groups = defaultdict(lambda: [0, 0])
     root = str(root)
     for path in paths:
         name = str(path)
         parent = os.path.dirname(name) or '.'
-        if parent != root:
-            basename = os.path.basename(name)
-            stem, suffix = os.path.splitext(basename)
-            groups[parent, classify_name(basename)].append(basename if suffix == '.' else stem)
-    return {
-        Path(folder)
-        for (folder, _), stems in groups.items()
-        if len(stems) >= 300 and sum(map(looks_machine_named, stems)) / len(stems) >= 0.7
-    }
+        basename = os.path.basename(name)
+        kind = classify_name(basename)
+        if parent != root and kind in MEDIA_KINDS:
+            stem = os.path.splitext(basename)[0]
+            groups[parent, kind][0] += 1
+            groups[parent, kind][1] += looks_machine_named(stem)
+    return dataset_counts(groups)
 
 
-def keep(paths: Iterable[Path], *, root: Path) -> Iterator[Path | Skip]:
-    paths = list(paths)
-    skipped = datasets(paths, root=root)
+def dataset_counts(groups: dict[tuple[str, str], list[int]]) -> dict[Path, dict]:
+    """Dataset evidence from (folder, kind) -> [total, machine-named] tallies."""
+    found = {}
+    for (folder, kind), (total, named) in groups.items():
+        if total >= 300 and named / total >= 0.7:
+            found[Path(folder)] = {"kind": kind, "files": total,
+                                   "named": round(100 * named / total)}
+    return found
+
+
+def keep(paths: Iterable[Path]) -> Iterator[Path | Skip]:
     for path in paths:
-        if any(folder == path.parent or folder in path.parents for folder in skipped):
-            yield Skip(path, "dataset")
-            continue
         try:
             size = path.stat().st_size
         except FileNotFoundError:
@@ -260,56 +282,3 @@ def is_excluded(rel: str, excludes: Sequence[str]) -> bool:
     return any(not e or rel == e or rel.startswith(e + "/")
                for e in (os.path.normpath(e).strip("/") if e not in ("", ".") else ""
                          for e in excludes))
-
-
-def removed(root: Path, rule: str, *, run=subprocess.run, as_paths=True, baseline=None) -> set:
-    args = fd_args(root, excludes=[], kinds=INDEXED_KINDS)
-
-    def listing(argv):
-        result = run(argv, cwd=root, capture_output=True, check=True)
-        names = {os.fsdecode(p) for p in result.stdout.split(b"\0") if p}
-        return {Path(name) for name in names} if as_paths else names
-
-    baseline = listing(args) if baseline is None else set(baseline)
-    if rule == "dot":
-        return listing([args[0], "-H", *args[1:]]) - baseline
-    globs = {"heavy": HEAVY_GLOBS, "secrets": SECRET_GLOBS}[rule]
-    relaxed = []
-    index = 0
-    while index < len(args):
-        if args[index] == "-E" and args[index + 1] in globs:
-            index += 2
-        else:
-            relaxed.append(args[index])
-            index += 1
-    return listing(relaxed) - baseline
-
-
-def explain(root: Path, *, run=subprocess.run) -> dict[str, int]:
-    return {rule: len(removed(root, rule, run=run)) for rule in ("dot", "heavy", "secrets")}
-
-
-def rule_dirs(paths: Iterable[Path], rule: str, *, root: Path) -> int:
-    triggered = set()
-    prefix = str(root).rstrip('/') + '/'
-    heavy = set(HEAVY_GLOBS)
-    for path in paths:
-        name = str(path)
-        rel = name[len(prefix):] if name.startswith(prefix) else os.path.relpath(name, root)
-        parts = rel.split('/')[:-1]
-        for index, part in enumerate(parts):
-            if (rule == "dot" and part.startswith(".")) or (rule == "heavy" and part in heavy):
-                triggered.add('/'.join(parts[:index + 1]))
-                break
-    return len(triggered)
-
-
-def secret_family(name: str) -> str:
-    lower = name.lower()
-    for prefix in _SECRET_PREFIXES:
-        if lower.startswith(prefix):
-            return prefix
-    for ext in _SECRET_TYPES:
-        if lower.endswith("." + ext):
-            return "." + ext
-    return name

@@ -7,7 +7,7 @@ Row {
   id: root
 
   property var tokens: []
-  property real fontSize: Style.font.caption
+  property real fontSize: Style.font.bodySmall
 
   spacing: Style.space(14)
   clip: true
@@ -19,7 +19,7 @@ Row {
       required property var modelData
       spacing: Style.space(5)
 
-      Text {
+      Label {
         text: modelData.k
         textFormat: Text.PlainText
         color: Plugin.Tokens.dim
@@ -27,7 +27,7 @@ Row {
         font.pixelSize: root.fontSize
       }
 
-      Text {
+      Label {
         text: modelData.v
         textFormat: Text.PlainText
         color: modelData.tone === "hit" ? Color.accent

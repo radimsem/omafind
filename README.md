@@ -68,7 +68,7 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
 | `imageBudget` | 70, 140 or 280 | `140` |
 | `maxResults` | int, clamped to 10..200 | `40` |
 | `warmMinutes` | int, clamped to 0..60 | `5` |
-| `shortcut` | uppercase `MODS + KEY`; mods: SUPER, SHIFT, CTRL, ALT | `"SUPER + E"` |
+| `shortcut` | uppercase `MODS + KEY` (mods: SUPER, SHIFT, CTRL, ALT) or a lone `F1` to `F35` | `"SUPER + E"` |
 
 ## Threat model
 
@@ -124,9 +124,10 @@ systemd-run --user --scope --quiet --collect -p MemoryMax=8G -p MemorySwapMax=0 
 bin/omafind search --json --limit 40 "invoice 4412"
 ```
 
-`bin/omafind discover --json [--volume UUID]` prints the name-only setup scan.
+`bin/omafind discover --json [--volume UUID]` prints the first level of the Folders step (roots and folders) as JSON.
 It exits 0 with JSON, 1 with one error line on stderr, or 2 without `--json`.
-The optional volume UUID scans only that mounted non-system volume.
+The optional volume UUID lists only that mounted non-system volume.
+The overlay requests children on expansion and receives streamed file counts.
 
 `reindex --incremental` keeps unchanged files and their vectors. The setup view
 starts this command after saving selected folders; progress remains available
@@ -154,7 +155,7 @@ bin/omafind bindings menu add
 bin/omafind bindings menu remove
 ```
 
-`check` reports conflicts and suggests a free shortcut. `check` and `write`
+`check` reports whether the shortcut is free, bound by omafind or taken, and by what. `check` and `write`
 use the `shortcut` setting when `--chord` is omitted. `write` and `remove`
 manage only omafind's marked block in `$XDG_CONFIG_HOME/hypr/bindings.lua` and
 reload Hyprland when it changes. The menu commands manage a marked Find files
@@ -192,9 +193,8 @@ returns, reuse the daemon's server, so search keeps its meaning results while
 they run.
 
 The shared fd rules exclude hidden files, ignored paths, heavy directories and
-DigUp's secret-name patterns, including encrypted key stores. Machine-named
-folders with at least 300 same-kind files and 70% machine names are excluded unless
-selected as roots. Text is capped at 16 MiB and PDFs at 512 MiB. HTML and Office
+DigUp's secret-name patterns, including encrypted key stores. Media folders with at least 300 files of one kind and 70% machine names
+are visible dataset proposals. Checked folders are indexed, including datasets. Text is capped at 16 MiB and PDFs at 512 MiB. HTML and Office
 line numbers describe extracted text; their openers omit the line argument.
 
 Offline fixture evals use FakeEmbedder and never start a model:

@@ -67,6 +67,9 @@ test('media budgets and code roots validate without coercion', () => {
 });
 
 test('shortcut accepts MODS + KEY and falls back otherwise', () => {
+  for (const value of ['F9', 'F35', 'SUPER + F9']) assert.equal(normalize({ shortcut: value }).shortcut, value);
+  for (const value of ['F36', 'F0']) assert.equal(normalize({ shortcut: value }).shortcut, 'SUPER + E');
+
   assert.equal(normalize({ shortcut: 'SUPER + SHIFT + D' }).shortcut, 'SUPER + SHIFT + D');
   for (const value of ['super + e', 'SUPER', 'SUPER + SUPER + E', 'E', 7, 'SUPER + CTRL']) {
     assert.equal(normalize({ shortcut: value }).shortcut, 'SUPER + E');

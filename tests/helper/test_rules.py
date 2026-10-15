@@ -71,31 +71,54 @@ def test_root_excludes_apply_as_paths(tmp_path):
     assert list(walk(tmp_path, excludes=[str(tmp_path / "out")])) == [tmp_path / "yes.txt"]
 
 
-@pytest.mark.parametrize("at_root,rule", [(False, "dataset"), (True, None)])
-def test_dataset_threshold_and_root_exemption(tmp_path, at_root, rule):
-    from omafindd.rules import Skip, keep
+def test_keep_never_drops_a_checked_dataset(tmp_path):
+    from omafindd.rules import keep
 
-    folder = tmp_path if at_root else tmp_path / "data"
-    folder.mkdir(exist_ok=True)
+    folder = tmp_path / "data"
+    folder.mkdir()
     paths = []
     for n in range(300):
-        path = folder / f"clip_{n:06}.txt"
-        path.write_text("fixture")
+        path = folder / f"clip_{n:06}.png"
+        path.write_bytes(b"png")
         paths.append(path)
-    kept = list(keep(paths, root=tmp_path))
-    assert len(kept) == 300
-    assert all(
-        (isinstance(p, Skip) and p.rule == rule) if rule else isinstance(p, Path) for p in kept
-    )
+    assert list(keep(paths)) == paths
 
 
-def test_camera_names_are_not_datasets(tmp_path):
+@pytest.mark.parametrize("count,suffix,expected", [
+    (300, "png", {"kind": "image", "files": 300, "named": 100}),
+    (299, "png", None),
+    (300, "txt", None),
+    (300, "pdf", None),
+    (300, "mp4", {"kind": "video", "files": 300, "named": 100}),
+    (300, "flac", {"kind": "audio", "files": 300, "named": 100}),
+])
+def test_dataset_is_media_only_with_evidence(count, suffix, expected):
+    from omafindd.rules import datasets
+
+    paths = [Path(f"/h/data/clip_{n:06}.{suffix}") for n in range(count)]
+    found = datasets(paths, root=Path("/h"))
+    assert found == ({Path("/h/data"): expected} if expected else {})
+
+
+def test_dataset_root_is_exempt():
+    from omafindd.rules import datasets
+
+    assert datasets([Path(f"/h/clip_{n:06}.png") for n in range(300)], root=Path("/h")) == {}
+
+
+@pytest.mark.parametrize("stem,machine", [
+    ("frame-0042", True), ("3f9a1c0e-abcd", True),
+    ("IMG_000123", False), ("DSCN0042", False), ("PXL_20240518_101010", False),
+    ("MVIMG_0001", False), ("VID_0042", False), ("GOPR0042", False),
+    ("2024-05-18", False), ("2024-05-18_10-10-10", False), ("2024-05-18 101010", False),
+    ("20240518", False), ("20240518_101010", False), ("20240518101010", False),
+    ("19991231-235959", False), ("20241318", True), ("20240532", True),
+    ("invoice", False),
+])
+def test_camera_and_date_names_are_not_machine_names(stem, machine):
     from omafindd.rules import looks_machine_named
 
-    assert looks_machine_named("frame-0042")
-    assert looks_machine_named("3f9a1c0e-abcd")
-    assert not looks_machine_named("IMG_000123")
-    assert not looks_machine_named("invoice")
+    assert looks_machine_named(stem) is machine
 
 
 def test_size_cap_is_post_filter(tmp_path):
@@ -104,19 +127,17 @@ def test_size_cap_is_post_filter(tmp_path):
     path = tmp_path / "large.txt"
     with path.open("wb") as stream:
         stream.truncate(16 * 1024 * 1024 + 1)
-    assert list(keep([path], root=tmp_path)) == [Skip(path, "size-cap")]
+    assert list(keep([path])) == [Skip(path, "size-cap")]
 
 
-def test_explain_counts_names_without_opening_files(tmp_path):
-    from omafindd.rules import explain, walk
+def test_walk_leaves_out_hidden_heavy_and_secret_names(tmp_path):
+    from omafindd.rules import walk
 
     (tmp_path / "visible.txt").write_text("fixture")
     (tmp_path / ".hidden.txt").write_text("fixture")
     (tmp_path / "secret.txt").write_text("fixture")
     (tmp_path / "build").mkdir()
     (tmp_path / "build/a.txt").write_text("fixture")
-    counts = explain(tmp_path)
-    assert counts == {"dot": 1, "heavy": 1, "secrets": 1}
     assert list(walk(tmp_path, excludes=[])) == [tmp_path / "visible.txt"]
 
 
@@ -138,10 +159,10 @@ def test_media_size_caps(tmp_path, name, kind, cap):
     with path.open("wb") as stream:
         stream.truncate(cap * 1024 * 1024)
     assert classify(path) == kind
-    assert list(keep([path], root=tmp_path)) == [path]
+    assert list(keep([path])) == [path]
     with path.open("ab") as stream:
         stream.write(b"x")
-    assert list(keep([path], root=tmp_path)) == [Skip(path, "size-cap")]
+    assert list(keep([path])) == [Skip(path, "size-cap")]
 
 
 def test_datasets_never_stat(monkeypatch):
@@ -150,38 +171,12 @@ def test_datasets_never_stat(monkeypatch):
     def stat(*args, **kwargs):
         raise AssertionError('dataset detection must read names only')
 
-    monkeypatch.setattr(Path, 'stat', stat)
-    monkeypatch.setattr(os, 'stat', stat)
     paths = [Path(f'/h/data/clip_{n:06}.png') for n in range(300)]
-    assert datasets(paths, root=Path('/h')) == {Path('/h/data')}
-
-
-def test_explain_unchanged_after_refactor(tmp_path):
-    from omafindd.rules import explain, removed, rule_dirs
-
-    for name in ('a.txt', '.hidden/a.txt', '.hidden/deeper/b.txt', 'build/a.txt', 'secret.md'):
-        path = tmp_path / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.touch()
-    assert explain(tmp_path) == {'dot': 2, 'heavy': 1, 'secrets': 1}
-    assert rule_dirs(removed(tmp_path, 'dot'), 'dot', root=tmp_path) == 1
-    assert rule_dirs(removed(tmp_path, 'heavy'), 'heavy', root=tmp_path) == 1
-
-
-@pytest.mark.parametrize('name,family', [('.env.md', '.env'), ('.ENV.local.md', '.env'),
-                                      ('ID_RSA.txt', 'id_rsa'), ('passwords.kdbx', '.kdbx'),
-                                      ('Certificate.PEM', '.pem'), ('secrets.md', 'secret')])
-def test_secret_family_names(name, family):
-    from omafindd.rules import secret_family
-
-    assert secret_family(name) == family
-
-
-def test_explain_keeps_existing_hidden_secret_counts(tmp_path):
-    from omafindd.rules import explain
-
-    (tmp_path / '.env.txt').touch()
-    assert explain(tmp_path) == {'dot': 0, 'heavy': 0, 'secrets': 0}
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'stat', stat)
+        patch.setattr(os, 'stat', stat)
+        found = datasets(paths, root=Path('/h'))
+    assert found == {Path('/h/data'): {'kind': 'image', 'files': 300, 'named': 100}}
 
 
 def test_reason_matches_secret_globs_for_names_and_ancestors():
@@ -209,22 +204,37 @@ def test_classify_name_matches_path_suffix(name):
     assert rules.classify_name(name) == rules.classify(Path(name))
 
 
-def test_rule_directory_counts_do_not_need_a_baseline(tmp_path):
-    from omafindd import rules
-
-    for name in ('visible.md', '.hidden/note.md', 'build/note.md'):
-        path = tmp_path / name
-        path.parent.mkdir(exist_ok=True)
-        path.touch()
-    for rule in ('dot', 'heavy'):
-        actual = rules.rule_dirs(rules.removed(tmp_path, rule), rule, root=tmp_path)
-        relaxed = rules.removed(tmp_path, rule, as_paths=False, baseline=())
-        assert rules.rule_dirs(relaxed, rule, root=tmp_path) == actual == 1
-
-
 def test_reason_handles_deep_paths_without_recursion():
     from omafindd import rules
 
     parent = Path(*(['a'] * 1200))
     assert rules.reason(parent / 'note.md') is None
     assert rules.reason(parent / '.env.md') == 'secrets'
+
+
+
+def test_walk_drains_large_stderr_without_a_pipe(tmp_path):
+    import io
+
+    from omafindd.rules import walk
+
+    class Process:
+        stdout = io.BytesIO(b"")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def wait(self):
+            return 1
+
+    def run(args, *, stdout, stderr, cwd):
+        # A pipe would block a child before it can close stdout.
+        assert stderr != subprocess.PIPE
+        stderr.write(b"permission warning\n" * 10000 + b"last warning.\n")
+        return Process()
+
+    with pytest.raises(OSError, match=r"^fd failed: last warning\.$"):
+        list(walk(tmp_path, excludes=[], run=run))

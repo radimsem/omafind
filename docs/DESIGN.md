@@ -29,11 +29,13 @@ Canvas title: "omafind desktop designs". Boards in canvas order, as `File: title
 - MotionSetup: "M3 · Motion: first run"
 - MotionFresh: "M4 · Motion: new files and drives"
 
+The Folders step follows `docs/superpowers/specs/2026-10-14-setup-and-search-refinements-design.md`. Its lazy tree replaces the Discover and Exclusions boards' older ledger and toolbar.
+
 ## Principles
 
 - omafind looks like the Omarchy shell. It reads the current theme, follows the user's font and corner rounding, and adds no palette of its own. The canvas is rendered in Catppuccin, which is one Omarchy theme.
-- Flat surfaces. A 2 px border, no shadow, no blur. Tone and borders separate parts. The one gradient is the hatching that marks something not indexed.
-- The accent means "this is the selection or the match". Yellow means a hit word, an offline drive or a generated folder. Red means a removed count or a failure. Green means done, kept or protected.
+- Flat surfaces. A 2 px border, no shadow, no blur. Tone and borders separate parts.
+- The accent means "this is the selection or the match". Yellow means a hit word, an offline drive or a dataset proposal. Red means a failure. Green means done, kept or protected.
 - Square corners by default, as Omarchy is. Corners follow Hyprland `decoration:rounding` (0 by default, 8 on the author's machine).
 - The overlay is summoned, never parked. It opens on an empty query and closes after Enter or Esc.
 - Facts, not prose. omafind computes every status, so it shows the computed values as key/value tokens and keeps sentences for instructions, errors with a fix, and titles.
@@ -50,7 +52,7 @@ The canvas tokens live in `:root` of `omaone.css`. The plugin never holds a hex 
 |---|---|---|---|
 | `--base` | `#1e1e2e` | Overlay fill, text on a filled button or accent chip | `Color.popups.background`, `Color.background` |
 | `--mantle` | `#181825` | Code and text excerpt well, desktop behind the boards | `Color.menu.background`. Desktop is the user's wallpaper. |
-| `--crust` | `#11111b` | Chip on a thumbnail (at 0.85), left-out row wash (at 0.42), drive window well | `Util.alpha(Color.background, n)` with the same `n` |
+| `--crust` | `#11111b` | Chip on a thumbnail (at 0.85), drive window well | `Util.alpha(Color.background, n)` with the same `n` |
 | `--surface0` | `#313244` | Thumbnail well, player card, waveform well | none, derived: `Util.alpha(Color.foreground, 0.11)` over the overlay (computed from Mocha, check by screenshot) |
 | `--fg` | `#cdd6f4` | Primary text, file names, hit words in a list row | `Color.foreground`, `Color.popups.text` |
 | `--fg2` | `#b2bad4` | Secondary text, paths, snippets, key cap text | `Util.alpha(Color.foreground, 0.85)` |
@@ -58,10 +60,10 @@ The canvas tokens live in `:root` of `omaone.css`. The plugin never holds a hex 
 | `--placeholder` | `#808598` | Placeholder in the query field | `Util.alpha(Color.foreground, 0.55)` |
 | `--muted` | `#585b70` | Line numbers in text and code excerpts | `Color.muted` |
 | `--accent` | `#89b4fa` | Selected row, focus border, prefix, hit facts, progress, waveform match | `Color.accent` |
-| `--red` | `#f38ba8` | Removed counts, PDF in the composition bar, failures | `Color.urgent` |
-| `--yellow` | `#f9e2af` | Hit words, offline, generated rule, audio in the composition bar | none, see below |
+| `--red` | `#f38ba8` | Failures | `Color.urgent` |
+| `--yellow` | `#f9e2af` | Hit words, offline, dataset tag | none, see below |
 | `--green` | `#a6e3a1` | Done, kept, secrets rule, verified | none, see below |
-| `--cyan` | `#94e2d5` | Images in the composition bar | none, see below |
+| `--cyan` | `#94e2d5` | Image accents | none, see below |
 | `--fill-normal` | fg at 0.04 | Idle control fill | `Style.normalFill` |
 | `--fill-hover` | fg at 0.08 | Badge fill, icon well, progress track | `Style.hoverFill` |
 | `--fill-selected` | fg at 0.18 | Chosen tile | `Style.selectedFill` |
@@ -70,16 +72,6 @@ The canvas tokens live in `:root` of `omaone.css`. The plugin never holds a hex 
 | selected row | accent at 0.22 plus 1 px accent inset | Selected result row (`.it.on`) | `Util.alpha(Color.accent, 0.22)`. `Style.selectedAccentFill` is 0.18, so the board and the token differ. |
 | accent washes | accent at 0.06 to 0.20 | Included table row, mixed checkbox, active kind chip | `Util.alpha(Color.accent, n)` |
 | scrim | base at 0.5 | Behind the overlay, below the bar | `Color.menu.scrim` |
-
-Kind colors. Only the Exclusions board colors by kind. The composition bar on each folder row and the legend dots use these five, in column order:
-
-| Kind | Canvas value | Source |
-|---|---|---|
-| Text | `#b2bad4` | `--fg2` as a literal, so `Util.alpha(Color.foreground, 0.85)` |
-| PDF | `var(--red)` | `Color.urgent` |
-| Images | `var(--cyan)` | `Palette.cyan` |
-| Video | `var(--accent)` | `Color.accent` |
-| Audio | `var(--yellow)` | `Palette.yellow` |
 
 The boards show no colored section icons. Section headers and result thumbnails stay in `--fg2` and `--dim` (see Open questions).
 
@@ -94,17 +86,16 @@ Surface roles:
 
 ### Canvas colors with no Omarchy equivalent
 
-`Color` does not expose `green`, `yellow` or `cyan`, and `Color.qml` ignores every `colors.toml` key except foreground, background, accent, muted, `color0`, `color4`, `color7`, `color8` and red. omafind needs yellow (hit words, offline, generated tag, audio), green (done, kept, secrets tag, verified) and cyan (images in the composition bar). The first issue that needs them adds `Palette.qml`, a singleton that reads `Color.currentThemePath + "/colors.toml"` for `green`, `yellow` and `cyan`, as omaone's does. The omafind plugin shares no state with omaone, so it carries its own copy. Omaone falls back to `Color.foreground` for green and to `Color.urgent` for yellow. The canvas gives no fallback for cyan: not found, decide it in the issue. That singleton is the only place these colors enter the plugin.
+`Color` does not expose `green`, `yellow` or `cyan`, and `Color.qml` ignores every `colors.toml` key except foreground, background, accent, muted, `color0`, `color4`, `color7`, `color8` and red. omafind needs yellow (hit words, offline, dataset tag), green (done, kept, secrets tag, verified) and cyan (image accents). The first issue that needs them adds `Palette.qml`, a singleton that reads `Color.currentThemePath + "/colors.toml"` for `green`, `yellow` and `cyan`, as omaone's does. The omafind plugin shares no state with omaone, so it carries its own copy. Omaone falls back to `Color.foreground` for green and to `Color.urgent` for yellow. The canvas gives no fallback for cyan: not found, decide it in the issue. That singleton is the only place these colors enter the plugin.
 
 Other values with no theme token, derived in QML from the roles above:
 
 - Caption chips on images and frames `rgba(17,17,27,.85)`: `Util.alpha(Color.background, 0.85)`. The player play button uses 0.78.
 - Hit wash behind a word `rgba(249,226,175,.18)`: `Util.alpha(Palette.yellow, 0.18)`, text in `Palette.yellow`.
 - Offline badge fill: `Palette.yellow` at 0.12. Done step fill: `Palette.green` at 0.16. Running step fill: accent at 0.12.
-- Rule tag borders: accent at 0.5, yellow at 0.42, green at 0.42, `--sep` for `no-kind`.
+- Rule tag borders: accent for repos and yellow for datasets.
 - Rendered PDF page `#e6e9ef` with text `#4c4f69`, and its hit highlight `rgba(223,142,29,.35)`: these draw page content, not shell chrome. They stay fixed in every theme.
 - Placeholder image tints `#2c3a52`, `#3a3346`, `#2f3f3d`, `#403a33`, `#33364a`: mock photo content. The real thumbnail replaces them.
-- Hatching: `repeating-linear-gradient` at 135 degrees, foreground at 0.16 with a 1 px line every 6 px (4 px in the legend, 3 px in the `no-kind` bar, foreground at 0.25 there). Draw it with a Canvas or a tiled image.
 - Popup 0.97 alpha: `Color.popups.background` is opaque by default. Use the theme value. Do not force 0.97.
 
 ## Type
@@ -115,20 +106,21 @@ Sizes follow `Style.font` (base size 12). Use the token, not the number.
 
 | Canvas size | `Style.font` token | Use |
 |---|---|---|
-| 9 | none, below caption | Rule tags (`.tg`), key caps inside table rows |
-| 10 | `caption` | Section headers, table headers, badges, fact tokens, file name under a tile |
-| 11 | `bodySmall` | Folder line, footer, why line, meta, status, hints, table counts caption |
+| 10 | `caption` | Bold uppercase section headers only |
+| 11 | `bodySmall` | Table headers, badges, fact tokens, rule tags, key caps, folder line, footer, why line, meta, status, hints |
 | 12 | `body` | Table rows, paths, buttons, preview path and meta, banners, toasts |
 | 13 | `subtitle` | Result file name (700), task titles, empty-state hint text |
 | 15 | none | Empty state headline |
 | 16 | `heading` | Setup panel title (700) |
-| 18 | `iconLarge` is the nearest, but it is an icon token | Preview file name (700), ledger totals (700) |
+| 18 | `iconLarge` is the nearest, but it is an icon token | Preview file name (700) |
 | 22 | none, `display` is 24 | Query text |
 | 28 | `displayLarge` | Board titles only. Not in the product. |
 
+Static text uses `ui/Label.qml` (native rendering). Letter spacing is rounded to whole pixels.
+
 The sizes 15, 18 and 22 have no exact token. Pick the nearest and record it in the pull request.
 
-Weights: 400 body, 700 for result file names, the preview name, the setup title, section headers, badges, tags and primary buttons. Section headers are uppercase with 0.1em tracking, table headers and the weaker-matches row 0.08em, rule tags 0.06em. Numbers in tables use tabular figures. Line height is 30 for the query, 16 for snippets and 14 for fact tokens.
+Weights: 400 body, 700 for result file names, the preview name, the setup title, section headers, badges, tags and primary buttons. Section headers are uppercase with 0.1em tracking, table headers, the weaker-matches row and rule tags 0.08em. Numbers in tables use tabular figures. Line height is 30 for the query, 16 for snippets and 14 for fact tokens.
 
 ## Shape, border and spacing
 
@@ -138,8 +130,8 @@ Borders:
 
 - The overlay and the setup panel: 2 px, accent (`.surf.focus`). The panel is always focused. A toast is also 2 px accent.
 - Hairlines: 1 px `--sep` under the query row, between the panes, above the footer, under table headers.
-- Controls (checkboxes, key caps, secondary buttons, rule tags): 1 px `--ctl-border`. Dashed 1 px for exclude chips and the "Leave out a subfolder" and "Add folder" rows.
-- Selected result row: accent at 0.22 and a 1 px accent inset ring. Focused table row: 1 px accent inset. A just-restored row: green at 0.06 and a 2 px green inset on the left edge.
+- Controls (checkboxes, key caps, secondary buttons, rule tags): 1 px `--ctl-border`.
+- Selected result row: accent at 0.22 and a 1 px accent inset ring. Focused table row: 1 px accent inset.
 - No shadow anywhere.
 
 Spacing (px, at base size 12):
@@ -157,17 +149,17 @@ Spacing (px, at base size 12):
 | Preview actions | Buttons 32 high, 8 gap, 16 side padding on the primary |
 | Footer | 40 high, 18 side padding, 16 gap, keys right-aligned |
 | Setup panel | 1120 wide (760 for step 1, 920 for step 3), 18 padding, 14 gap |
-| Setup panel sizes in M3 | 760 by 474, 1120 by 992, 1120 by 948, 920 by 574 |
+| Setup panel sizes in M3 | 760 by 474, 1120 by 992, 920 by 574 |
 | Folder table columns | 28, flexible, 64, 56, 64, 56, 56, 84, 72, 32 with a 10 gap and 10 side padding |
 | Table header | 30 high |
-| Table row | 44 high on Discover, 50 for a left-out row, 46 on Exclusions |
+| Table row | 44 high in the shared lazy folder tree |
 | Toast | 380 wide, 12 and 14 padding, at the top right, 36 below the top and 10 from the edge |
 | Kind progress row | Columns 80, flexible, 190 with a 14 gap, 6 px bar |
 | Progress bar | 120 by 4 in the footer, 6 high in setup |
 
 The 16 px values on the boards:
 
-- Rule tag (`.tg`): 16 high, 5 side padding, 4 gap, 9 px uppercase.
+- Rule tag (`.tg`): 16 high, 5 side padding, 4 gap, 11 px uppercase.
 - Checkbox (`.cb`): 16 square, 1.5 px border, check glyph 11 px.
 - Side padding of the footer row and the banner (`.of-f`, `.ban`): 16.
 - The gap between footer items in the search overlay: 16.
@@ -192,8 +184,6 @@ The easing is `cubic-bezier(0.33, 1, 0.68, 1)` unless a row says `ease` or `line
 | Setup panel resize | 240 ms on width and height | M3 |
 | Setup step swap | Out 120 ms, in 160 ms after a 120 ms delay | M3 |
 | Step and task state | 160 ms on color, border and fill | M3 |
-| Ledger expand | 240 ms on height, 160 ms on opacity | M3 |
-| Exclusions rows | 220 ms on height and transform, composition bar 220 ms | M3 |
 | New file in results | 240 ms fade, "new" tag stays 2.8 s | M4 |
 | Play position | 100 ms linear on width and playhead | M2 |
 | Waveform bars in window | 640 ms alternate pulse, scale 1 to 0.8 | M2 |
@@ -227,10 +217,7 @@ Each row names the class in `omafind.css` and the boards where it appears.
 | Banner | `.ban`, `.act` | Yellow wash at 0.08, glyph, bold lead, "Retry" button right. | Degraded |
 | Empty state | `.empty`, `.hints`, `.hint` | Headline, one sentence, prefix chips (`img:`, `pdf:`, `doc:`, `vid:`, `aud:`, `code:`) with the prefix in accent. | Empty, M1 |
 | Steps | `.steps`, `.step`, `.no`, `.dash` | 20 px number box, done in green wash, current in accent. | Setup to Indexing, M3 |
-| Setup table row | `.dt`, `.dt-h`, `.dt-r`, `.cb`, `.num`, `.xbtn` | Check, path with a fact line beneath, five kind counts, index size, time, exclude button. Zero counts dim. | Discover, Exclusions, NewDrive, M3, M4 |
-| Left-out ledger row | `.lo`, `.lo-h`, `.tr`, `.tg`, `.hx`, `.num.cut`, `.xbtn`, `.lock` | See below. | Discover, M3 |
-| Exclusions tree row | `.dt-r`, `.tw`, `.ind`, `.cb.mix`, `.cmp` | See below. | Exclusions, M3 |
-| Footer ledger | `.ledger`, `.lg`, `.op` | Found, left out (red), kept (green), each as a 18 bold number, joined by "−" and "=". | Exclusions |
+| Lazy folder tree | `FolderTree`, `FolderTable`, `FolderRow` | Check, disclosure, path, repo or dataset tag, five kind counts, index size, time, and code toggle. One ListView shared by setup and the drive dialog. | Folders step, NewDrive |
 | Task row | `.task`, `.mk`, `.t`, `.d`, `.v` | 22 px marker (ok in green wash, running in accent wash, waiting in a 1 px outline), title 13 bold, detail 11 dim, value right. | Setup, M3 |
 | Kind progress | `.kp`, `.bar2` | Name, 6 px bar (accent, green when done), count text right. | Indexing, M3 |
 | Toast | `.ntf`, `.tst`, `.h`, `.b`, `.a` | Surface with accent border, glyph and bold title, body, buttons right. | NewDrive, M1, M2, M4 |
@@ -247,27 +234,18 @@ Each row names the class in `omafind.css` and the boards where it appears.
 
 ### Why line
 
-- A row of fact tokens: dim key, value, 14 gap, 11 px in the preview, 10 px elsewhere. Values are `--fg2`, a hit is accent, a warning is yellow, an emphasized value is `--fg` bold.
+- A row of fact tokens: dim key, value, 14 gap, 11 px. Values are `--fg2`, a hit is accent, a warning is yellow, an emphasized value is `--fg` bold.
 - Keys in order: `leg`, `part`, `at`, `hits`, `z`. A PDF or text hit adds the quoted snippet under it, led by an `Aa` glyph.
 - Examples: `leg meaning · part image · z 3.4`, `leg meaning · part frame + speech · at 14:32 · z 3.1`, `leg words · part text · at p. 12 · hits they`, `leg meaning + words · part code · at L1–47 · hits retry, backoff · z 2.9`.
 
-### Left-out ledger row
+### Lazy folder tree
 
-- Sits nested under its root on a crust wash at 0.42. A tree connector (`.tr`, 1 px at 0.32) joins it to the root.
-- Header row: "Left out", "4 entries · 106 files", the summed counts as red-minus numbers, and a dashed hatched cell reading "not indexed".
-- Entry: path with the rule tag, the evidence as fact tokens beneath, counts removed as `−n` (minus in red), then a hatched cell in place of index size and time. Row 50 high.
-- Rule tags: `user` accent, `generated` yellow, `secrets` green with a lock glyph, `no-kind` dim. `no-kind` shows 0 in every column.
-- An X button includes the entry again. `secrets` has a green lock instead and cannot be removed.
-- A "Leave out a subfolder" row at the end opens the tree.
-
-### Exclusions tree row
-
-- Row 46 high: tri-state check (16 square), twisty, name, rule tag, then a fact line with the composition bar.
-- Check states: on is accent fill with a base-colored check, mixed is an accent wash with an accent dash, off is an empty outline. A mixed parent shows `kept 1/2 dirs`.
-- Composition bar (`.cmp`): 4 high, segments sized by file count in kind colors, 1 px gap. Width grows with file count on a log scale. `sm` is 40 wide. A folder with no kind is an 18 wide hatched outline (`.nil`).
-- A left-out row dims its bar to 0.45 and its name to `--fg2`, with the removed counts in red minus form.
-- Toolbar: breadcrumb, a 260 wide filter, "Select by rule" with chips `no-kind 1`, `generated 1`, `files > 1,000 0`, and the legend (kind colors, "not indexed" hatch).
-- Indent is 18 per level with a 1 px guide at 0.24.
+- One flat ListView model contains the visible rows. Expanding requests one level and caches it in Service; collapsing removes visible descendants while retaining their cache and expansion state. Adding a folder or rescanning preserves expanded paths that still exist.
+- Rows show a tri-state checkbox, disclosure chevron, name and tag, then Text, PDF, Images, Video, Audio, Index, and Time. A repo also has a code toggle. Top rows use `~/name`; deeper rows use the basename. Indent is 18 per level with a 1 px guide at 0.24.
+- On is accent fill with a base-colored check, mixed is an accent wash with an accent dash, and off is an empty outline. A checked row has an accent wash at 0.06. Checking a parent searches its descendants; unchecking a child creates an exclude for that path.
+- Unknown counts show dim placeholders and one row spinner. A finished or failed walk stops its spinners. Failures show a reason and a next step, without a scan-time fact.
+- XDG folders start checked. Other home folders and extra volume rows start unchecked. Dataset proposals under searched parents start unchecked unless the user already chose them. A yellow `dataset` tag has evidence such as `images 1,418 · named 96%`; checking it queues its files normally.
+- The header shows `folders <n> · scanning`, then `scanned in <s> s` on success. The footer shows `selected <files> files · index <size> · time <t> · device <gpu>` for the searched paths. Add folder sits below the tree.
 
 ## Keyboard model
 
@@ -287,7 +265,7 @@ In the overlay:
 | `Enter` | Result | Open at the match. |
 | `Enter` | Weaker-matches row | Expand the folded hits. |
 | `Ctrl Enter` | Result | Show in folder. |
-| `Ctrl Space` | Audio or video | Play or pause the preview from the matched second. Other kinds read "preview" in the footer. |
+| `Ctrl Space` | Audio or video | Play or pause the preview from the matched second. Other kinds show no hint. |
 | `Ctrl C` | Result | Copy the path. |
 | `Esc` | Any | Clear the query, then close. |
 | Click a row | Any | Select it. |
@@ -309,10 +287,11 @@ Setup:
 
 | Key | Applies | Action |
 |---|---|---|
-| `Ctrl Z` | Leave-out tree | Undo the last change. The restored row shows "restored just now" and "Undo". |
+| `Right` / `Left` | Folder tree | Expand / collapse the focused folder. |
+| `Space` | Folder checkbox | Toggle the folder. |
 | `Esc` | Empty state | Close. |
 
-Setup buttons, by step: "Pause" and "Next: pick folders"; "Back" and "Start indexing"; "Cancel" and "Done" in the tree; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The boards define no other setup key (see Open questions).
+Setup buttons, by step: "Pause" and "Next: pick folders"; "Back" and "Start indexing"; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The boards define no other setup key (see Open questions).
 
 ## Copy
 
@@ -332,8 +311,7 @@ Any line that explains a result, a scan or a skip is a row of fact tokens: a dim
 | Where | Keys, in order |
 |---|---|
 | Why line of a result | `leg` (`meaning`, `words`, `meaning + words`), `part` (`image`, `ocr`, `frame`, `speech`, `audio`, `text`, `code`; the boards also join them as `frame + speech`), `at`, `hits`, `z` |
-| Discovery and picker rows | `dirs`, `files`, extension counts (`.png 388`), `rule`, `git`, `kept` (`793/899`) |
-| Left-out entries | `added` and `files` for `user`. `pattern`, `match` (`58/58`) and `dataset limit` for `generated`. `files`, extension counts and `searchable 0` for `no-kind`. Matched extensions and `in` for `secrets`. |
+| Folder tree rows | Five kind counts; dataset evidence uses `images`, `videos`, or `audio`, then `named` (percent). Errors use `error`. |
 | Progress and totals | `selected`, `index`, `time`, `device`, `vram`, `skipped`, `failed`, `queued` |
 
 Keys the boards use that spec 7.4 does not list: `dataset`, `searchable`, `mount`, `fs`, `scan`, `watch`, `reconcile`, `source`, `deletes`, `opener`, `path`, `roots`, `volumes`, `read`, `tracked`, `dot`, `heavy`, `got`, `left`, `disk`, `verify`, `repo`, `quant`, `license`, `backend`, `gpu`, `unit`, `venv`, `vram idle`. Add them to the spec's table when the spec is next edited.
@@ -366,8 +344,8 @@ Name things as the spec does: result, section, weaker matches, volume, drive, ro
 - Weaker matches: Anatomy and spec fold them into one row. Main and M1 count them in the footer ("3 weaker", "2 weaker") but show no fold row, and M1 leaves them in the list at 0.6 opacity. Code uses a different fold row (`.wk`) from Anatomy (`.sp-weak`).
 - Open toast: M1 shows "Opened <name>", a sentence. M2 shows "Opening <name>" with `opener` and `at` tokens. Spec 7.4 favors the second.
 - New drive toast: spec 4.4 reads "New drive Photos2024 found. Scan it for content?". The boards read "New drive found" with a longer body. The canvas wins.
-- `Ctrl Space`: audio and video play from the matched second. The footer on Typing, Docs and Code reads "preview" for PDF, text and code, and neither the boards nor the spec define what it does there.
+- `Ctrl Space`: audio and video play from the matched second. The footer shows the hint only for audio and video.
 - Section icons: the brief expects kind colors on section icons. The boards color only the composition bar and its legend. The fallback color for cyan is also undefined.
-- Setup keys: only `Ctrl Z` and `Esc` appear. Space on a checkbox, Enter on a row and Tab order are not defined.
+- Folder tree keys: Tab moves between controls, Space toggles a checkbox or code action, and Right and Left expand and collapse the focused folder.
 - Type sizes 15, 18 and 22 have no exact `Style.font` token.
 - Why line `hits`: spec 7.1 omits `hits` on the text row while the Docs board shows `hits picked, vulkan, cuda`. Spec 7.4 appears before 7.3 in the file.

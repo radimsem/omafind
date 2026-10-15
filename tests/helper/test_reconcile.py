@@ -101,3 +101,20 @@ def test_partial_reconcile_does_not_delete_neighbor(tree):
     (root / 'one/note.txt').unlink()
     assert reconcile(store, roots, only=[root / 'one']).deleted == 1
     assert store.db.execute('SELECT path FROM files').fetchone()[0] == 'other/note.txt'
+
+
+
+def test_checked_dataset_is_queued_for_indexing(tree):
+    from omafindd.reconcile import reconcile
+    from omafindd.rules import datasets
+
+    root, store, _ = tree
+    folder = root / "frames"
+    folder.mkdir()
+    paths = [folder / f"frame_{n:06}.png" for n in range(300)]
+    for path in paths:
+        path.write_bytes(b"fixture")
+    assert datasets(paths, root=root)[folder]["files"] == 300
+    result = reconcile(store, [{"path": str(folder), "excludes": []}])
+    assert len(result.queued) == 300
+    assert store.db.execute("SELECT count(*) FROM files WHERE state='pending'").fetchone()[0] == 300

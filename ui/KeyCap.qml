@@ -14,13 +14,13 @@ Rectangle {
   border.width: 1
   border.color: Style.normalBorderColor
 
-  Text {
+  Label {
     id: capLabel
     anchors.centerIn: parent
     text: cap.text
     textFormat: Text.PlainText
     color: Plugin.Tokens.fg2
     font.family: Style.font.family
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Style.font.bodySmall
   }
 }

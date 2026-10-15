@@ -7,7 +7,7 @@ Rectangle {
   id: root
 
   property string text: ""
-  property int fontSize: Style.font.caption
+  property int fontSize: Style.font.bodySmall
   property real padding: Style.space(5)
 
   implicitWidth: Math.max(implicitHeight, label.implicitWidth + 2 * padding)
@@ -17,7 +17,7 @@ Rectangle {
   border.width: 1
   border.color: Style.normalBorderColor
 
-  Text {
+  Label {
     id: label
     anchors.centerIn: parent
     text: root.text

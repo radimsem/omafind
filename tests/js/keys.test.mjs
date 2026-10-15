@@ -26,7 +26,7 @@ test('Enter opens items, Ctrl Enter reveals, and weak or offline rows restrict a
   for (const key of [0x01000004, 0x01000005]) {
     assert.equal(action({ key, modifiers: 0 }, { row }), 'open');
     assert.equal(action({ key, modifiers: 0x04000000 }, { row }), 'reveal');
-    assert.equal(action({ key, modifiers: 0 }, { row: { type: 'weak' } }), 'expand');
+    assert.equal(action({ key, modifiers: 0 }, { row: { type: 'weak' } }), 'toggle-weak');
     assert.equal(action({ key, modifiers: 0 }, { row: null }), null);
     assert.equal(action({ key, modifiers: 0 }, { row: { type: 'header' } }), null);
   }
@@ -48,28 +48,29 @@ test('Ctrl Space plays only online audio and video selections', () => {
   }
 });
 
-test('hints follow jump targets with dim preview hints for non-playable kinds', () => {
+test('hints follow jump targets and offer Ctrl Space only for audio and video', () => {
   const { hints } = load('format.js', 'keys.js');
-  for (const [kind, open, play, dim] of [['image', 'open', 'preview', true],
-    ['video', 'open at 14:32', 'play at 14:32', false],
-    ['audio', 'open at 7:55', 'play at 7:55', false],
-    ['pdf', 'open at page 12', 'preview', true], ['text', 'open at line 41', 'preview', true],
-    ['code', 'open at line 8', 'preview', true]]) {
-    assert.deepEqual(plain(hints(freeze({ type: 'item', item: fixture(kind).items[0] }))), [
-      { keys: ['Enter'], label: open, dim: false },
-      { keys: ['Ctrl', 'Enter'], label: 'show in folder', dim: false },
-      { keys: ['Ctrl', 'Space'], label: play, dim },
-      { keys: ['Ctrl', 'C'], label: 'copy path', dim: false },
-      { keys: ['Esc'], label: 'close', dim: false }
-    ]);
+  for (const [kind, open, play] of [['image', 'open', null],
+    ['video', 'open at 14:32', 'play at 14:32'],
+    ['audio', 'open at 7:55', 'play at 7:55'],
+    ['pdf', 'open at page 12', null], ['text', 'open at line 41', null],
+    ['code', 'open at line 8', null]]) {
+    const want = [{ keys: ['Enter'], label: open },
+      { keys: ['Ctrl', 'Enter'], label: 'show in folder' }];
+    if (play) want.push({ keys: ['Ctrl', 'Space'], label: play });
+    want.push({ keys: ['Ctrl', 'C'], label: 'copy path' }, { keys: ['Esc'], label: 'close' });
+    assert.deepEqual(plain(hints(freeze({ type: 'item', item: fixture(kind).items[0] }))), want);
   }
   assert.deepEqual(plain(hints({ type: 'item', item: fixture('offline').items[0] })), [
-    { keys: ['Ctrl', 'C'], label: 'copy path', dim: false }, { keys: ['Esc'], label: 'close', dim: false }
+    { keys: ['Ctrl', 'C'], label: 'copy path' }, { keys: ['Esc'], label: 'close' }
   ]);
-  assert.deepEqual(plain(hints({ type: 'weak' })), [
-    { keys: ['Enter'], label: 'expand', dim: false }, { keys: ['Esc'], label: 'close', dim: false }
+  assert.deepEqual(plain(hints({ type: 'weak', expanded: false })), [
+    { keys: ['Enter'], label: 'expand' }, { keys: ['Esc'], label: 'close' }
   ]);
-  assert.deepEqual(plain(hints(null)), [{ keys: ['Esc'], label: 'close', dim: false }]);
+  assert.deepEqual(plain(hints({ type: 'weak', expanded: true })), [
+    { keys: ['Enter'], label: 'collapse' }, { keys: ['Esc'], label: 'close' }
+  ]);
+  assert.deepEqual(plain(hints(null)), [{ keys: ['Esc'], label: 'close' }]);
 });
 
 test('editor names use basenames and actions name the actual opening line', () => {
@@ -98,4 +99,32 @@ test('preview jumps override source lines without mutating items', () => {
     assert.equal(actionLabel(item, 'Neovim', 212), 'Open in Neovim at line 212');
     assert.equal(item.loc, item.kind === 'text' && item.loc == null ? null : 41);
   }
+});
+
+test('Ctrl N and P move, page keys page, and Ctrl Home and End jump to the ends', () => {
+  const { action } = load('format.js', 'keys.js');
+  const CTRL = 0x04000000;
+  for (const [key, modifiers, want] of [[0x4e, CTRL, 'down'], [0x50, CTRL, 'up'],
+    [0x4e, 0, null], [0x50, 0, null],
+    [0x01000017, 0, 'pagedown'], [0x01000016, 0, 'pageup'],
+    [0x01000010, CTRL, 'first'], [0x01000011, CTRL, 'last'],
+    [0x01000010, 0, null], [0x01000011, 0, null]]) {
+    assert.equal(action({ key, text: '', modifiers }, { query: 'q', row: null }), want);
+  }
+});
+
+test('Ctrl C with a query selection is left to the text field', () => {
+  const { action } = load('format.js', 'keys.js');
+  const row = freeze({ type: 'item', item: fixture('pdf').items[0] });
+  const ctrlC = { key: 0x43, modifiers: 0x04000000 };
+  assert.equal(action(ctrlC, { row, selection: true }), null);
+  assert.equal(action(ctrlC, { row, selection: false }), 'copy');
+});
+
+test('Ctrl I toggles the progress popover with or without a selection', () => {
+  const { action } = load('format.js', 'keys.js');
+  const ctrlI = { key: 0x49, modifiers: 0x04000000 };
+  assert.equal(action(ctrlI, { query: '', row: null }), 'progress');
+  assert.equal(action(ctrlI, { query: 'x', row: { type: 'item', item: fixture('pdf').items[0] } }), 'progress');
+  assert.equal(action({ key: 0x49, modifiers: 0 }, { query: '', row: null }), null);
 });

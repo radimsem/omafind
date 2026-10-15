@@ -60,7 +60,7 @@ Item {
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(2)
 
-    Text {
+    Label {
       text: root.title
       textFormat: Text.PlainText
       color: Color.foreground
@@ -85,7 +85,7 @@ Item {
     width: implicitWidth
     height: implicitHeight
 
-    Text {
+    Label {
       id: label
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter

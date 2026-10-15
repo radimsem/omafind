@@ -61,9 +61,29 @@ def check(chord, binds) -> str:
     return "ours" if holders else "free"
 
 
-def first_free(binds):
-    return next((chord for chord in ("SUPER + E", "SUPER + D", "SUPER + U")
-                 if check(chord, binds) == "free"), None)
+_LABELS = (("SUPER", "Super"), ("CTRL", "Ctrl"), ("SHIFT", "Shift"), ("ALT", "Alt"))
+_KEY_NAMES = {"SPACE": "Space", "COMMA": "Comma", "PERIOD": "Period", "RETURN": "Return",
+              "ESCAPE": "Escape", "TAB": "Tab"}
+
+
+def chord_label(mods, key):
+    """The overlay's name for a chord, as lib/keycombo.js label() writes it."""
+    upper = key.upper()
+    name = _KEY_NAMES.get(upper, upper if re.fullmatch(r"[A-Z0-9]|F\d{1,2}", upper) else key)
+    return " ".join([label for token, label in _LABELS if mods & MODIFIERS[token]] + [name])
+
+
+def binds_items(binds) -> list[dict]:
+    """Live binds as `{chord, description}`, without omafind's own bind or empty keys."""
+    items, seen = [], set()
+    for bind in binds:
+        if bind.ours or not bind.key:
+            continue
+        chord = chord_label(bind.mods, bind.key)
+        if chord not in seen:
+            seen.add(chord)
+            items.append({"chord": chord, "description": bind.description})
+    return items
 
 
 def render_block(chord):

@@ -126,10 +126,11 @@ Silent audio has detail `silent audio`. A failed soundtrack leaves frame vectors
 in state `partial`, with a failure detail; it is retried on an explicit reindex.
 `info.thumb` and `thumb` contain a cached JPEG path in `thumbs/<volume-uuid>/`.
 There is no editor setting; openers read the Omarchy default editor.
-`shortcut` is a string, default `"SUPER + E"`. It must have one or more uppercase
+`shortcut` is a string, default `"SUPER + E"`. It is one or more uppercase
 modifiers (`SUPER`, `SHIFT`, `CTRL`, `ALT`) followed by `+` and an uppercase key
-name (letters, digits or underscores). Duplicate modifiers and a modifier used
-as the key are invalid. Invalid values fall back to the default.
+name (letters, digits or underscores), or a lone function key `F1` to `F35`.
+Duplicate modifiers and a modifier used as the key are invalid. Invalid values
+fall back to the default.
 
 ## Overlay (issue #4)
 
@@ -138,19 +139,19 @@ After `hello`, the plugin may send:
 | t | Fields | Behavior |
 |---|---|---|
 | `preview` | `id`, `q` (string, default `""`) | Render the selected result on demand. Unknown IDs or missing online files reply with `error`, `code:"missing"`, `id` and `reason:"File is missing"`. |
-| `open` | `id`, `how:"open"\|"reveal"` (default `"open"`) | Open at the preview jump, or select the file with detached `nautilus --select`. Offline and missing files run nothing. |
+| `open` | `id`, `how:"open"\|"reveal"` (default `"open"`), optional `line` (int ≥ 1) | Open text and code at `line`, else at the preview jump, else at the chunk start; other kinds ignore `line`. `how:"reveal"` selects the file with detached `nautilus --select`. Offline and missing files run nothing. A bad `how` or `line` replies `error` with `for:"open"`, `code:"bad-request"`. |
 | `status` | none | Reply with current indexed-file and queue counts. |
 
 | t | Fields | Behavior |
 |---|---|---|
-| `preview` | `id`, `mode:"lines"\|"image"\|"bars"`, `lines:[{no,text,hit}]`, `jump`, `range:[first,last]\|null`, `image:path\|null`, `bars:[int]`, `opener`, `editor` (text/code only) | Text/code use a clamped ±8-line window. PDF/video render the selected page/second; images use their thumbnail or source. Audio has 64 RMS bars in 0..100. Unused arrays are empty. Offline items use mode `image` with their cached thumbnail or null. |
+| `preview` | `id`, `mode:"lines"\|"image"\|"bars"`, `lines:[{no,text,hit}]`, `jump`, `range:[first,last]\|null`, `image:path\|null`, `bars:[int]`, `opener`, `editor` (text/code only) | Text/code use a clamped ±8-line window. PDF/video render the selected page/second; online images use the source file, or a cached `magick` still at 1200 x 840 when Qt cannot decode the format (HEIC, AVIF, RAW); PDF pages render 1200 px on the long side. Audio has 64 RMS bars in 0..100. Unused arrays are empty. Offline items use mode `image` with their cached thumbnail or null. |
 | `opened` | `id`, `opener`, `at:string\|null` | Human command label and location: `mpv --start=872`/`14:32`, `omarchy-launch-browser`/`p. 37`, `nvim +212`/`L212`; images and reveals have null `at`. |
 | `open_failed` | `id`, `reason:"offline"\|"missing"` | The file cannot be opened; unknown IDs count as missing. |
 | `error` | `id`, `for:"open"`, `reason` | Opening raised an unexpected error. A failed preview replies `error` with `id` and no `for`. |
 | `status` | `files`, `roots`, `offline:[]`, `done`, `total` | Counts from all index stores, including code. Also pushed when changed, at most once every 0.5 seconds. |
 
-IDs resolve only against that connection's latest `results`; new results clear
-its remembered preview jumps. `editor` is the basename of the first command in
+IDs resolve only against that connection's latest `results`; a `results` reply with a new `seq` clears
+its remembered preview jumps; the meaning leg of the same `seq` keeps the jumps of ids it still lists. `editor` is the basename of the first command in
 `~/.local/state/omarchy/defaults/editor`, falling back to `nvim`. Opener labels
 come from the same command selection used to open the file. Extracted documents
 retain the existing opener behavior (no editor line argument).
@@ -165,7 +166,7 @@ files and `done` excludes pending files and partial files with no failure detail
 With no queued work, `done` equals `total`. `roots` counts configured `roots`;
 `offline` lists labels of unmounted content volumes. No text is retained by previews; extracted text
 temporaries are deleted after rendering. PDF/video images are cached under
-`$XDG_RUNTIME_DIR/omafind/preview/`, keyed by source path, mtime and page/second.
+`$XDG_RUNTIME_DIR/omafind/preview/`, keyed by source path, mtime, page/second and render size; image stills live there too.
 Images are rendered to temporary paths and atomically published. Audio bars
 decode at 400 Hz and use a 32-entry memory cache keyed by path and nanosecond
 mtime. Status counts run off the event loop and are reused while store and WAL
@@ -175,6 +176,7 @@ mtimes stay unchanged; the root count still follows current settings.
 {"t":"preview","id":"b81e:812","q":"where they tal"}
 {"t":"preview","id":"b81e:812","mode":"lines","lines":[{"no":212,"text":"where they talk","hit":true}],"jump":212,"range":[204,220],"image":null,"bars":[],"opener":"nvim +212","editor":"nvim"}
 {"t":"open","id":"b81e:812","how":"open"}
+{"t":"open","id":"b81e:812","how":"open","line":212}
 {"t":"opened","id":"b81e:812","opener":"mpv --start=872","at":"14:32"}
 {"t":"open_failed","id":"b81e:812","reason":"offline"}
 {"t":"status"}
@@ -187,11 +189,15 @@ mtimes stay unchanged; the root count still follows current settings.
 |---|---|---|
 | `runtime_status`, `runtime_install`, `runtime_pause` | `runtime_progress` | none |
 | `discover_start` | `discover_result` | optional `volume` UUID |
-| `discover_tree` | `discover_tree` | `root` absolute path or `~/...` |
+| `discover_children` | `discover_children` | `path` absolute folder |
+| (broadcast) | `discover_counts` | sent while a walk runs |
+| `discover_stop` | `discover_stop` | stops this connection's discovery |
+| `binds_get` | `binds` | none; reads `hyprctl binds -j` |
 | `fs_list` | `fs_list` | `path` absolute path or `~`/`~/...` |
 | `index_start` | `progress` | none; rereads current settings |
+| `index_progress` | `progress` | none; reads the stores and returns the latest snapshot without starting a run |
 
-All paths on the wire are absolute, except `excludes` and left-out entry paths, which are POSIX paths relative to their root. Requests may pass `"~"` or `"~/x"`; the daemon expands them and echoes the request string in `root`/`path` and the absolute path in `abs`. Every `counts` object always carries all five keys `text, pdf, image, video, audio` (zeros included). Every request below gets exactly one reply; failures reply `{"t":"error","for":"<request t>","code":"<code>","reason":"<sentence>"}` and never carry `seq` or `id` (Service.qml routes errors on `for` first).
+All paths on the wire are absolute, except `excludes`, which are POSIX paths relative to their root. Requests may pass `"~"` or `"~/x"`; the daemon expands them and echoes the request string in `root`/`path` and the absolute path in `abs`. Every discovery `counts` object carries `text, pdf, image, video, audio, dirs` (zeros included). Every request below gets exactly one reply; failures reply `{"t":"error","for":"<request t>","code":"<code>","reason":"<sentence>"}` and never carry `seq` or `id` (Service.qml routes errors on `for` first).
 
 New messages are accepted only after `hello`, like `search`.
 
@@ -214,51 +220,41 @@ daemon: {"t":"runtime_progress","state":"idle|running|paused|failed|done",
 ```
 plugin: {"t":"discover_start"}                      // $HOME plus every non-system volume
 plugin: {"t":"discover_start","volume":"<uuid>"}    // one volume only (#6 new-drive flow)
-daemon: {"t":"discover_result", ...body of bin/omafind discover --json}
+daemon: {"t":"discover_result","volume":null,"home":"/home/u","device":"gpu",
+         "rates":{"gpu":{"text":0.07,"pdf":0.37,"image":0.14,"video":3.2,"audio":1.5,"code":0.042},
+                  "cpu":{"text":0.13,"pdf":0.54,"image":1.36,"video":18.0,"audio":11.1,"code":0.084},
+                  "bytes":{"text":11000,"pdf":48000,"image":7000,"video":40000,"audio":12000,"code":10000}},
+         "roots":[{"path":"/home/u","volume":"<uuid>"},{"path":"/run/media/u/USB","volume":"<uuid>"}],
+         "folders":[{"path":"/home/u/Documents","name":"Documents","xdg":true,"repo":false,"hasChildren":true,"volume":"<uuid>"},
+                    {"path":"/home/u/omaone","name":"omaone","xdg":false,"repo":true,"hasChildren":true,"volume":"<uuid>"},
+                    {"path":"/run/media/u/USB","name":"/run/media/u/USB","xdg":false,"repo":false,"hasChildren":true,"volume":"<uuid>"}]}
 ```
-`discover --json` body (A1 produces it, the CLI prints it, the daemon caches and sends it):
-```json
-{"home":"/home/u","device":"gpu",
- "scan":{"seconds":0.8,"dirs":4812,"volumes":0,"roots":["$HOME"],"scanned_at":1760000000.0},
- "rates":{"gpu":{"text":0.07,"pdf":0.37,"image":0.14,"video":3.2,"audio":1.5,"code":0.042},
-          "cpu":{"text":0.13,"pdf":0.54,"image":1.36,"video":18.0,"audio":11.1,"code":0.084},
-          "bytes":{"text":11000,"pdf":48000,"image":7000,"video":40000,"audio":12000,"code":10000}},
- "candidates":[{"path":"/home/u/Documents","section":"home","checked":true,"volume":"<uuid>","git":false,
-   "dirs":1550,"found":899,"kept":838,
-   "found_counts":{"text":806,"pdf":67,"image":26,"video":0,"audio":0},
-   "counts":{"text":745,"pdf":67,"image":26,"video":0,"audio":0},
-   "exts":[[".md",412],[".pdf",67]],
-   "excludes":["vault/exports","archive/old-backups"],
-   "left_out":[{"path":"vault/exports","rule":"generated","files":58,"counts":{"text":58,"pdf":0,"image":0,"video":0,"audio":0},
-                "evidence":{"pattern":"inv-YYYYMMDD.txt","match":[58,58],"dataset_limit":300}},
-               "...no-kind archive/old-backups (0 files), then secrets ** (3 files)"],
-   "index_bytes":10000000,"seconds":120}],
- "repos":[{"path":"/home/u/personal/projects/omaone","tracked":1842,"code_files":1700,"rules":["secrets","generated"],
-           "index_bytes":17000000,"seconds":71}],
- "not_proposed":{"no_kind":["/home/u/Music"],"dot":212,"heavy":14,"dataset":2}}
-```
-- `section` is `home` (XDG dir with at least one content file) or `elsewhere`. `checked` is true for `home` and for every candidate of a volume scan.
-- Discovery never has user excludes, so the Documents sample is the board's state before `tax/2024` is left out: kept 838 (745, 67, 26), left out 61 (58 generated, 0 no-kind, 3 secrets). After the user exclude the client ledger gives 793 (731, 45, 17), and the step 2 total goes from 1,254 to 1,209 (MotionSetup `TOT`).
-- `excludes` is the pre-applied exclude list for that root (proposed `generated` and `no-kind` paths). `left_out` lists entries in order: excludes in list order, then the `secrets` entry (path `"**"`) last when it has any match. `found - sum(left_out[].files) == kept` always holds.
-- `index_bytes` and `seconds` estimate the kept files at `device` rates (section A1.4). `rates` lets the client recompute estimates for any counts.
-- `exts`: top extensions of kept content files, descending, at most 3.
+- The reply comes after one directory read per root (plus one peek per folder for `hasChildren`). `folders` lists the folders directly under `$HOME`, sorted by name, then one row per volume mounted outside `$HOME`; with `volume` it lists the folders under that volume's mount. At most 500 home folders, plus the volume rows. A volume-only request lists at most 500 folders.
+- Symlinks, hidden names, the heavy and vendor names in `rules.HEAVY_GLOBS` and secret names are never listed. `xdg` is true for the Documents, Pictures, Videos, Music, Download and Desktop folders of `user-dirs.dirs`. `repo` is true when the folder holds `.git`.
+- `rates` lets the client estimate index size and time for any counts on `device`.
+- After the reply the daemon walks each root once with `fd` (one pass over the indexable kinds, no hidden paths, heavy names or secrets) and broadcasts `discover_counts`. A walk of the same root that is running, or finished successfully less than 300 s ago, is reused: the daemon broadcasts its counts so far as one `discover_counts` instead of walking again. The overlay sends `discover_stop` when its picker closes. Walks stop when their last interested connection stops discovery or disconnects, or when the daemon stops.
 
 ```
-plugin: {"t":"discover_tree","root":"~/Documents"}
-daemon: {"t":"discover_tree","root":"~/Documents","abs":"/home/u/Documents","scanned_at":1760000000.0,
-         "candidate":{ ...same shape as a discover_result candidate... },
-         "secrets":{"files":3,"counts":{...},"evidence":{"exts":[[".env",3],[".kdbx",1]],"in":["tax/2024","work/clients"]}},
-         "dirs":[{"path":"","own":{...},"all_own":2,"sub":{...},"all_sub":905,"dirs":1550,"exts":[[".md",412]],"rule":null,"evidence":null},
-                 {"path":"tax/2024","own":{"text":14,"pdf":22,"image":9,"video":0,"audio":0},"all_own":46,
-                  "sub":{"text":14,"pdf":22,"image":9,"video":0,"audio":0},"all_sub":46,"dirs":1,
-                  "exts":[[".pdf",22],[".md",14],[".png",9]],"rule":null,"evidence":null},
-                 {"path":"vault/exports","own":{"text":58,...},"all_own":58,"sub":{...},"all_sub":58,"dirs":1,
-                  "exts":[[".txt",58]],"rule":"generated","evidence":{"pattern":"inv-YYYYMMDD.txt","match":[58,58],"dataset_limit":300}},
-                 {"path":"archive/old-backups","own":{all zero},"all_own":37,"sub":{all zero},"all_sub":37,"dirs":1,
-                  "exts":[],"rule":"no-kind","evidence":{"files":37,"exts":[[".zip",31],[".tar.gz",6]],"searchable":0}}]}
+daemon: {"t":"discover_counts","root":"/home/u","done":false,"seconds":null,
+         "counts":{"/home/u/Documents":{"text":745,"pdf":67,"image":26,"video":0,"audio":0,"dirs":4}}}
+daemon: {"t":"discover_counts","root":"/home/u","done":true,"seconds":1.4,"counts":{...},
+         "datasets":[{"path":"/home/u/Pictures/frames","kind":"image","files":1418,"named":96}]}
 ```
-- `dirs` holds every directory under the root that holds any non-secret, non-dot file in its subtree, root itself as `""`, sorted by path. `own`/`sub` count content files directly in / under the dir, secrets excluded (secrets live only in `secrets`). `all_own`/`all_sub` count every listed file of any extension (no secrets, no dot paths). `dirs` is the subtree directory count including itself. `exts` for a dir with content: top 3 content extensions in its subtree; for no-kind: `[]` (evidence holds the histogram). `rule` is `generated`, `no-kind` or null (the proposal; user excludes live in the client).
-- A root outside the cached scan (a picked folder) is scanned on demand and cached. No cached scan: the daemon runs `discover_start` first.
+- A fresh walk starts with `counts:{}`, `done:false`, `seconds:null`, and `reset:true`. Clients clear that root's previous counts, datasets, and child replies; a reused walk replays a snapshot without `reset`.
+- Sent about every 250 ms with the folders whose counts changed since the last batch. `counts` are rolled up: a folder counts every indexable file below it. `dirs` counts the rolled-up directories containing those files, including the folder itself; it never contributes to file totals. A folder the walk never reached has no entry; once `done` is true a missing folder has zero files.
+- The last batch has `done:true`, `seconds` rounded to 0.1, and `datasets`: media folders with 300 or more files of one kind (image, video or audio) of which at least 70% are machine-named; `named` is that share in percent. A failed walk still ends with `done:true` and adds `error` (the last error line from fd or the OS reason). Failed walks are never cached, so the next discovery request retries. Folder and file names that cannot be encoded as UTF-8 are skipped.
+
+```
+plugin: {"t":"discover_children","path":"/home/u/Pictures"}
+daemon: {"t":"discover_children","path":"/home/u/Pictures","volume":"<uuid>","error":null,
+         "dirs":[{"path":"/home/u/Pictures/frames","name":"frames","repo":false,"hasChildren":false,
+                  "counts":{"text":0,"pdf":0,"image":1418,"video":0,"audio":0,"dirs":1},
+                  "rule":"dataset","evidence":{"kind":"image","files":1418,"named":96}},
+                 {"path":"/home/u/Pictures/2024","name":"2024","repo":false,"hasChildren":true,
+                  "counts":null,"rule":null,"evidence":null}]}
+```
+- One level, same filters as `folders`, sorted by indexable files (descending), then by name. `counts` is null until the walk reaches the folder; the counts arrive later in `discover_counts`. Paths under a known root reuse its walk and volume UUID without probing the mount again, even after that walk is older than 300 s; only `discover_start` walks a root again. A path outside every known root starts a walk scoped to that path, even when its volume mount is higher up. `/`, `/proc`, `/sys`, `/dev`, `/run`, and paths below these pseudo-filesystem roots are refused with `bad-request`; a known mounted volume below `/run` can still be expanded. `volume` is the UUID of the volume holding `path`, or null. An unreadable folder replies `dirs:[]` with `error` set to the OS reason. A request still running when its connection sends `discover_stop` replies `{"t":"discover_stop"}` instead, and the plugin forgets every children request in flight when it stops discovery.
+
 
 ```
 plugin: {"t":"fs_list","path":"~"}
@@ -267,18 +263,25 @@ daemon: {"t":"fs_list","path":"~","abs":"/home/u","dirs":["Documents","Pictures"
 - Sorted case-insensitively, dot dirs and `rules.HEAVY_GLOBS` names left out, at most 500 names. `error` is `"missing"`, `"not-a-directory"` or `"denied"` (with `dirs:[]`) instead of an `error` reply.
 
 ```
+plugin: {"t":"binds_get"}
+daemon: {"t":"binds","binds":[{"chord":"Super Shift Space","description":"Launcher"},{"chord":"F9","description":""}]}
+```
+- Live global binds, with modifiers ordered Super, Ctrl, Shift, Alt, then the key (`Space`, `Comma`, `Period`, `Return`, `Escape`, `Tab`, `F1` to `F35`, letters and digits). Submap binds, empty keys and omafind's own bind are left out. The first description per chord wins. A failure replies `error` with `for:"binds_get"` and `code:"binds-failed"`.
+
+```
 plugin: {"t":"index_start"}
 daemon: {"t":"progress","running":true,"done":612,"queued":597,"volume":"<uuid>","device":"gpu","vram_gb":0.9,
          "kinds":{"text":{"done":734,"total":734},"pdf":{"done":31,"total":49,"pages":412},
                   "image":{"done":51,"total":420,"ocr":63},"video":{"done":0,"total":6},"audio":{"done":0,"total":0}},
-         "skipped":{"secrets":4,"size-cap":2},"failed":{"encrypted-pdf":1},
+         "skipped":{"size-cap":2},"failed":{"encrypted-pdf":1},
          "problems":[{"path":"/home/u/Documents/a.pdf","reason":"encrypted-pdf"}]}
 ```
+- `index_progress` replies the same `progress` body and starts nothing, so a view can fill before the next broadcast.
 - Reply to `index_start` is a `progress` snapshot. Then the daemon broadcasts `progress` at most twice per second while the index job runs, and once more when it exits (`running:false`). `status` keeps working unchanged for the #4 footer.
 - When the child exits non-zero, the final `progress` includes `exit:<code>` (negative for termination by a signal). The daemon then broadcasts exactly one `error` with `for:"index_start"`, `code:"runtime-failed"`, and a `reason` naming the exit code and the absolute `<data>/index/reindex.log` path. These broadcasts report failure after the initial reply; they carry no `seq` or `id`. Successful completion omits `exit` and sends no error.
-- `device` is `gpu`, `cpu` or null; `vram_gb` is a float or null (unknown is null, the client hides the token). `skipped` and `failed` omit zero keys. `problems` lists at most 50 failed files.
+- `device` is `gpu`, `cpu` or null; `vram_gb` is a float or null (unknown is null, the client hides the token). `skipped` and `failed` omit zero keys. Secrets are never listed, so they are not counted in `skipped`. `problems` lists at most 50 failed files.
 - `kinds.image.ocr` counts ready images with a non-empty OCR text segment (`kind:"ocr"`); filename and parent-folder text in `name` segments does not count.
-- Error codes: `no-roots` (settings have no roots and no codeRoots), `bad-request`, `scan-failed`, `runtime-failed`.
+- Error codes: `no-roots` (settings have no roots and no codeRoots), `bad-request`, `scan-failed`, `runtime-failed`, `binds-failed`.
 
 The daemon owns the runtime job: closing a view or disconnecting a client does
 not pause it. Build pause terminates the build process group; resume reruns the
@@ -330,18 +333,13 @@ while a child runs are deferred and processed after it exits.
 
 ```json
 {"t":"discover_start","volume":"6BFF-B220"}
-{"t":"discover_result","volume":"6BFF-B220","scan":{"roots":["/run/media/u/Photos2024"],"seconds":0.8,"dirs":100,"volumes":1,"scanned_at":1760000000},"candidates":[],"not_proposed":{"no_kind":[],"dot":0,"heavy":0,"dataset":1,"datasets":[{"path":"/run/media/u/Photos2024/dataset","files":41880,"match":[41880,41880]}]}}
+{"t":"discover_result","volume":"6BFF-B220","roots":[{"path":"/run/media/u/Photos2024","volume":"6BFF-B220"}],"folders":[]}
 {"t":"index_start","volume":"6BFF-B220"}
 {"t":"progress","running":true,"done":612,"queued":597,"volume":"6BFF-B220","volumes":{"6BFF-B220":{"label":"Photos2024","done":612,"total":1209}},"device":null,"vram_gb":null,"kinds":{"text":{"done":612,"total":1209},"pdf":{"done":0,"total":0,"pages":0},"image":{"done":0,"total":0,"ocr":0},"video":{"done":0,"total":0},"audio":{"done":0,"total":0}},"skipped":{},"failed":{},"problems":[]}
 {"t":"status","files":3880,"roots":4,"offline":["Photos2024"],"done":1204,"total":1209}
 ```
 
-`discover_result` retains all issue #5 fields and echoes `volume`, null for an
-unscoped request. Every candidate from a volume scan has `checked:true`.
-`scan.roots[0]` is the drive mount. `not_proposed.datasets` lists absolute paths,
-file counts and `[machine_named,total]` evidence; `dataset` remains the count of
-excluded folders. The abbreviated discovery example above omits home, device,
-rates and repos, whose shapes remain as in issue #5.
+`discover_result` echoes `volume`, null for an unscoped request. `roots[0].path` is the drive mount. The drive picker checks every top folder and uses the same lazy children and counts messages described above. Dataset evidence arrives in the final counts batch.
 
 `index_start.volume` is optional and selects `reindex --incremental --volume
 <uuid>`; omission runs all configured volumes. `progress.volumes` holds one

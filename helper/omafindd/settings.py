@@ -27,10 +27,13 @@ class Settings:
     ignored_volumes: tuple[str, ...] = ()
 
 
+_MODS = r"(?:SUPER|SHIFT|CTRL|ALT)"
+
+
 def valid_shortcut(value) -> bool:
+    """`MODS + KEY` in uppercase, or a lone function key F1 to F35."""
     if not isinstance(value, str) or not re.fullmatch(
-        r"(?:SUPER|SHIFT|CTRL|ALT)(?:\s*\+\s*(?:SUPER|SHIFT|CTRL|ALT))*"
-        r"\s*\+\s*[A-Z0-9_]+", value
+        rf"{_MODS}(?:\s*\+\s*{_MODS})*\s*\+\s*[A-Z0-9_]+|F(?:[1-9]|[12][0-9]|3[0-5])", value
     ):
         return False
     parts = [part.strip() for part in value.split("+")]
