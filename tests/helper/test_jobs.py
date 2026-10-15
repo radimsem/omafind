@@ -107,7 +107,7 @@ async def test_nan_vector_fails_file(store, tmp_path):
     await Jobs(store, Invalid(), journal=tmp_path / "journal").drain()
     assert tuple(store.db.execute("SELECT state,detail FROM files").fetchone()) == (
         "failed",
-        "embedding precision fault",
+        "embedding-precision-fault",
     )
     assert store.db.execute("SELECT count(*) FROM segments WHERE kind!='name'").fetchone()[0] == 0
 
@@ -198,7 +198,7 @@ async def test_runtime_precision_fault_fails_file(store, tmp_path):
     await Jobs(store, Invalid(), journal=tmp_path / "journal").drain()
     assert tuple(store.db.execute("SELECT state,detail FROM files").fetchone()) == (
         "failed",
-        "embedding precision fault",
+        "embedding-precision-fault",
     )
 
 
@@ -229,14 +229,18 @@ async def test_invalid_office_member_fails_only_its_file(store, tmp_path):
 @pytest.mark.parametrize(
     "error,detail",
     [
-        (zlib.error("fixture"), "extract-failed"),
-        (NotImplementedError("fixture"), "extract-failed"),
-        (RuntimeError("fixture"), "extract-failed"),
-        (ValueError("bad image dimensions"), "extract-failed"),
-        (subprocess.TimeoutExpired("pdfinfo", 60), "timeout"),
-        (ExtractionError("timeout"), "timeout"),
+        (zlib.error("fixture"), "extract-failed: fixture"),
+        (NotImplementedError("fixture"), "extract-failed: fixture"),
+        (RuntimeError(), "extract-failed: RuntimeError"),
+        (ValueError("bad image dimensions"), "extract-failed: bad image dimensions"),
+        (subprocess.TimeoutExpired("pdfinfo", 60),
+         "timeout: Command 'pdfinfo' timed out after 60 seconds"),
+        (ExtractionError("timeout", "pdfinfo"), "timeout: pdfinfo"),
         (ExtractionError("encrypted-pdf"), "encrypted-pdf"),
-        (ExtractionError("pdftoppm failed"), "extract-failed"),
+        (ExtractionError("pdftoppm failed"), "extract-failed: pdftoppm failed"),
+        (ExtractionError("extract-failed", "pdfinfo failed: Syntax Error: bad xref"),
+         "extract-failed: pdfinfo failed: Syntax Error: bad xref"),
+        (ExtractionError("tool-missing", "pdftoppm"), "tool-missing: pdftoppm"),
     ],
 )
 async def test_poison_file_does_not_abort_or_remain_pending(
@@ -294,7 +298,7 @@ async def test_broken_pool_is_rebuilt_for_remaining_files(
         "done": 2, "failed": 1
     }
     detail = store.db.execute("SELECT detail FROM files WHERE state='failed'").fetchone()[0]
-    assert detail == "extract-failed"
+    assert detail == "extract-failed: the extraction worker stopped"
 
 
 async def test_nonprecision_embedding_error_still_propagates(store, tmp_path, inline_pool):
@@ -479,7 +483,10 @@ async def test_rejected_file_fails_and_the_run_continues(store, tmp_path, inline
     await Jobs(store, Picky(), journal=tmp_path / "journal").drain()
     states = dict(store.db.execute(
         "SELECT path, state || ':' || coalesce(detail, '') FROM files"))
-    assert states == {"bad.txt": "failed:embedding-failed", "good.txt": "done:"}
+    assert states == {
+        "bad.txt": "failed:embedding-failed: HTTP 500: input (3359 tokens) is too large",
+        "good.txt": "done:",
+    }
     assert "HTTP 500" in caplog.text and "reject me" not in caplog.text
 
 
@@ -507,7 +514,7 @@ async def test_rejected_pdf_window_keeps_earlier_pages(store, tmp_path, monkeypa
     monkeypatch.setattr(jobs, "extract", window)
     await jobs.Jobs(store, Second(), journal=tmp_path / "journal").drain()
     row = store.db.execute("SELECT state, detail FROM files").fetchone()
-    assert tuple(row) == ("partial", "embedding-failed")
+    assert tuple(row) == ("partial", "embedding-failed: HTTP 500: too large")
     assert store.db.execute("SELECT count(*) FROM segments WHERE kind='page'").fetchone()[0] == 30
 
 
@@ -661,7 +668,7 @@ async def test_text_batch_precision_fault_fails_only_the_bad_file(store, tmp_pat
     await runner.drain()
     assert [tuple(row) for row in store.db.execute(
         "SELECT path,state,detail FROM files ORDER BY path"
-    )] == [("bad.txt", "failed", "embedding precision fault"), ("good.txt", "done", None)]
+    )] == [("bad.txt", "failed", "embedding-precision-fault"), ("good.txt", "done", None)]
     assert calls == [2, 1, 1]
     assert runner.journal.read_text() == ""
 
@@ -766,6 +773,7 @@ async def test_rejected_text_batch_retries_each_file(store, tmp_path, inline_poo
     assert calls == [3, 1, 1, 1]
     assert [tuple(row) for row in store.db.execute(
         "SELECT path,state,detail FROM files ORDER BY path"
-    )] == [("bad.txt", "failed", "embedding-failed"), ("one.txt", "done", None),
+    )] == [("bad.txt", "failed", "embedding-failed: HTTP 500: fixture rejected"),
+          ("one.txt", "done", None),
           ("two.txt", "done", None)]
     assert runner.journal.read_text() == ""

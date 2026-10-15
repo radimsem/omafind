@@ -11,6 +11,7 @@ from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
+from . import failures
 from .embedder import (
     EmbeddingError,
     EmbeddingRejected,
@@ -168,16 +169,19 @@ class Jobs:
                             for queued in ordered[index + 1:]:
                                 if queued["id"] in pending:
                                     submit(queued, pool)
-                            raise ExtractionError("extract-failed") from error
+                            raise ExtractionError(
+                                "extract-failed", "the extraction worker stopped"
+                            ) from error
+                        except ExtractionError as error:
+                            if error.code in failures.CODES:
+                                raise
+                            raise ExtractionError("extract-failed", str(error)) from error
+                        except subprocess.TimeoutExpired as error:
+                            raise ExtractionError("timeout", str(error)) from error
                         except Exception as error:
-                            detail = "extract-failed"
-                            if isinstance(error, subprocess.TimeoutExpired):
-                                detail = "timeout"
-                            elif isinstance(error, ExtractionError) and str(error) in (
-                                "encrypted-pdf", "timeout"
-                            ):
-                                detail = str(error)
-                            raise ExtractionError(detail) from error
+                            raise ExtractionError(
+                                "extract-failed", str(error) or type(error).__name__
+                            ) from error
                         if result.segments and not started:
                             await self.embedder.start("full")
                             started = True
@@ -267,9 +271,10 @@ class Jobs:
                                     raise
                                 result.state = "partial"
                                 result.detail = (
-                                    "embedding precision fault" if isinstance(error, ValueError)
+                                    failures.encode("embedding-precision-fault")
+                                    if isinstance(error, ValueError)
                                     or str(error) == "embedding precision fault"
-                                    else "soundtrack embedding failed"
+                                    else failures.encode("soundtrack-failed", str(error))
                                 )
                                 break
                             vectors.extend(group_vectors)
@@ -293,25 +298,24 @@ class Jobs:
                             detail=result.detail,
                         )
                     except ExtractionError as error:
-                        self.store.fail(file, str(error))
+                        self.store.fail(file, error.code, error.detail)
                     except EmbeddingRejected as error:
                         logger.warning("Embedding rejected file %s (%s)", file, error)
                         if append:
-                            self.store.halt(file, "embedding-failed")
+                            self.store.halt(file, "embedding-failed", str(error))
                         else:
-                            self.store.fail(file, "embedding-failed")
+                            self.store.fail(file, "embedding-failed", str(error))
                     except EmbeddingError as error:
                         if str(error) != "embedding precision fault":
                             raise
-                        self.store.fail(file, "embedding precision fault")
+                        self.store.fail(file, "embedding-precision-fault")
+                    except ValueError as error:
+                        if str(error) == "embedding precision fault":
+                            self.store.fail(file, "embedding-precision-fault")
+                        else:
+                            self.store.fail(file, "extract-failed", str(error))
                     except Exception as error:
-                        self.store.fail(
-                            file,
-                            "embedding precision fault"
-                            if isinstance(error, ValueError)
-                            and str(error) == "embedding precision fault"
-                            else "extract-failed",
-                        )
+                        self.store.fail(file, "extract-failed", str(error) or type(error).__name__)
                     finally:
                         result = batch = vectors = future = segments = groups = group = None
                         group_vectors = values = None

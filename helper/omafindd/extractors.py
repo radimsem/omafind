@@ -16,11 +16,19 @@ from xml.etree import ElementTree
 
 import numpy as np
 
+from . import failures
 from .rules import screenshot_like
 
 
 class ExtractionError(Exception):
-    pass
+    """A file that cannot be indexed: `code` is in failures.CODES, `detail` the tool's message."""
+
+    def __init__(self, code: str, detail: str = ""):
+        super().__init__(code, detail)
+        self.code, self.detail = code, detail
+
+    def __str__(self):
+        return failures.encode(self.code, self.detail)
 
 
 @dataclass(frozen=True)
@@ -118,7 +126,7 @@ def extract_text(path: Path) -> Extracted:
             with zipfile.ZipFile(path) as archive:
                 tree = ElementTree.fromstring(archive.read(member))
         except (zipfile.BadZipFile, KeyError, ElementTree.ParseError) as error:
-            raise ExtractionError("unreadable Office file") from error
+            raise ExtractionError("extract-failed", "unreadable Office file") from error
         paragraphs = [
             "".join(node.itertext())
             for node in tree.iter()
@@ -143,16 +151,32 @@ def target_size(width: int, height: int, budget: int) -> tuple[int, int]:
     return w, h
 
 
-def _pdf_command(argv, *, text=True):
+def _run(argv, **kwargs) -> subprocess.CompletedProcess:
     try:
-        result = subprocess.run(argv, capture_output=True, text=text, timeout=60)
+        return subprocess.run(argv, capture_output=True, timeout=60, **kwargs)
     except subprocess.TimeoutExpired as error:
-        raise ExtractionError("timeout") from error
+        raise ExtractionError("timeout", argv[0]) from error
+    except FileNotFoundError as error:
+        raise ExtractionError("tool-missing", argv[0]) from error
+
+
+def _failed(argv, stderr) -> ExtractionError:
+    """`extract-failed` with the tool's first error line, else its last line."""
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode(errors="replace")
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    line = next((line for line in lines if "error" in line.lower()), lines[-1] if lines else "")
+    return ExtractionError("extract-failed", f"{argv[0]} failed: {line}" if line
+                           else f"{argv[0]} failed")
+
+
+def _pdf_command(argv, *, text=True):
+    result = _run(argv, text=text)
     if result.returncode:
         detail = result.stderr if text else result.stderr.decode(errors="replace")
-        raise ExtractionError(
-            "encrypted-pdf" if "Incorrect password" in detail else f"{argv[0]} failed"
-        )
+        if "Incorrect password" in detail:
+            raise ExtractionError("encrypted-pdf")
+        raise _failed(argv, detail)
     return result.stdout
 
 
@@ -160,7 +184,7 @@ def extract_pdf(path: Path, start: int = 1) -> Extracted:
     info = _pdf_command(["pdfinfo", str(path)])
     match = re.search(r"(?m)^Pages:\s+(\d+)", info)
     if match is None:
-        raise ExtractionError("pdfinfo returned no page count")
+        raise ExtractionError("extract-failed", "pdfinfo returned no page count")
     pages = int(match[1])
     end = min(pages, 5000, (30 if start == 1 else start + 31) if pages > 50 else pages)
     if start > end:
@@ -172,7 +196,7 @@ def extract_pdf(path: Path, start: int = 1) -> Extracted:
     if texts and not texts[-1].strip():
         texts.pop()
     if len(texts) != end - start + 1:
-        raise ExtractionError("pdftotext returned an unexpected page count")
+        raise ExtractionError("extract-failed", "pdftotext returned an unexpected page count")
     segments = []
     with tempfile.TemporaryDirectory(prefix="omafind-pdf-") as directory:
         for page, body in enumerate(texts, start):
@@ -242,12 +266,9 @@ def _thumbnail(source: str, *, data=None) -> bytes:
 
 
 def _media_command(argv, *, data=None) -> bytes:
-    try:
-        result = subprocess.run(argv, input=data, capture_output=True, timeout=60)
-    except subprocess.TimeoutExpired as error:
-        raise ExtractionError("timeout") from error
+    result = _run(argv, input=data)
     if result.returncode:
-        raise ExtractionError(f"{argv[0]} failed")
+        raise _failed(argv, result.stderr)
     return result.stdout
 
 
@@ -282,12 +303,17 @@ def media_info(path: Path) -> dict:
 def _stream(argv, size: int) -> Iterator[bytes]:
     # A file for stderr prevents pipe deadlock while stdout is consumed incrementally.
     with tempfile.TemporaryFile() as errors:
-        with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=errors) as process:
+        try:
+            process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=errors)
+        except FileNotFoundError as error:
+            raise ExtractionError("tool-missing", argv[0]) from error
+        with process:
             try:
                 while block := process.stdout.read(size):
                     yield block
                 if process.wait():
-                    raise ExtractionError(f"{argv[0]} failed")
+                    errors.seek(0)
+                    raise _failed(argv, errors.read())
             finally:
                 if process.poll() is None:
                     process.kill()
@@ -391,7 +417,7 @@ def keyframes(
     try:
         for index, sample in enumerate(stream):
             if len(sample) != 64:
-                raise ExtractionError("incomplete frame sample")
+                raise ExtractionError("extract-failed", "incomplete frame sample")
             second = first + index * step
             if second >= duration:
                 break
@@ -419,7 +445,7 @@ def keyframes(
 
 def extract_audio(path: Path, *, audio=True, start=0.0) -> Extracted:
     if not audio:
-        return Extracted([], state="skipped", detail="audio search is off")
+        return Extracted([], state="skipped", detail="audio-off")
     duration = media_info(path)["duration"]
     windows = audio_windows(path, start=start)
     try:
@@ -433,7 +459,7 @@ def extract_audio(path: Path, *, audio=True, start=0.0) -> Extracted:
         info["audio_next"] = segments[-1].loc + 25
         state = "partial"
     return Extracted(segments, info, state,
-                     detail="silent audio" if state == "skipped" else None)
+                     detail="silent-audio" if state == "skipped" else None)
 
 
 def extract_video(path: Path, *, audio=True, start=0.0, frame_start=0.0) -> Extracted:

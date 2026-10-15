@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import failures
 from .rules import reason
 
 SOURCE_EXTENSIONS = set(
@@ -293,8 +294,10 @@ async def index_code(roots: Sequence[Path], directory: Path, embedder):
                         )
                 except (EmbeddingError, OSError, ValueError) as error:
                     with store.db:
-                        store.db.execute("UPDATE files SET state='failed',detail=? WHERE id=?",
-                                         (str(error), file))
+                        store.db.execute(
+                            "UPDATE files SET state='failed',detail=? WHERE id=?",
+                            (failures.encode("code-index-failed", str(error)), file),
+                        )
         with store.db:
             for row in store.db.execute("SELECT id,path FROM files").fetchall():
                 if row["path"] not in seen:

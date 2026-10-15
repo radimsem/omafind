@@ -112,8 +112,9 @@ def test_pdf_tools_have_timeout_and_report_timeout(monkeypatch, tool):
         raise subprocess.TimeoutExpired(argv, 60)
 
     monkeypatch.setattr(subprocess, "run", run)
-    with pytest.raises(ExtractionError, match="^timeout$"):
+    with pytest.raises(ExtractionError, match=f"^timeout: {tool}$") as caught:
         _pdf_command([tool, "fixture"])
+    assert (caught.value.code, caught.value.detail) == ("timeout", tool)
 
 
 def test_long_pdf_page_becomes_several_segments_on_one_page(tmp_path):
@@ -127,3 +128,24 @@ def test_long_pdf_page_becomes_several_segments_on_one_page(tmp_path):
     assert len(pages) >= 3
     assert {(segment.loc, segment.loc_end) for segment in pages} == {(1, 1)}
     assert all(estimated_tokens(segment.text) <= TOKEN_CAP for segment in pages)
+
+
+def test_missing_pdf_tool_is_named(tmp_path, monkeypatch):
+    from omafindd.extractors import ExtractionError, extract_pdf
+
+    root = copy_corpus(tmp_path / "corpus")
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    with pytest.raises(ExtractionError) as caught:
+        extract_pdf(root / "invoice.pdf")
+    assert (caught.value.code, caught.value.detail) == ("tool-missing", "pdfinfo")
+
+
+def test_failed_pdf_tool_keeps_its_error_line(tmp_path):
+    from omafindd.extractors import ExtractionError, extract_pdf
+
+    path = tmp_path / "broken.pdf"
+    path.write_text("not a pdf")
+    with pytest.raises(ExtractionError) as caught:
+        extract_pdf(path)
+    assert caught.value.code == "extract-failed"
+    assert caught.value.detail.startswith("pdfinfo failed: Syntax Error")

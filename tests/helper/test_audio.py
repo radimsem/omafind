@@ -34,7 +34,7 @@ async def test_silence_and_disabled_audio_are_skipped(tmp_path, monkeypatch, off
         await jobs.Jobs(with_store, embedder, journal=tmp_path / "journal",
                         settings=Settings(audio=not off)).drain()
         row = with_store.db.execute("SELECT state,detail FROM files").fetchone()
-        assert tuple(row) == ("skipped", "audio search is off" if off else "silent audio")
+        assert tuple(row) == ("skipped", "audio-off" if off else "silent-audio")
         assert embedder.mode is None
     finally:
         with_store.close()

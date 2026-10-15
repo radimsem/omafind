@@ -171,3 +171,12 @@ def test_build_runtime_stops_on_missing_build_packages(cli, env, venv, monkeypat
     monkeypatch.setattr(tools, "missing_build", lambda **kwargs: ["vulkan-headers", "shaderc"])
     assert cli.main(["build-runtime"], env, run=run) == 1
     assert capsys.readouterr().err == "sudo pacman -S --needed vulkan-headers shaderc\n"
+
+
+def test_every_extraction_tool_says_what_it_gives_and_has_a_package():
+    from omafindd.tools import TOOL_FEATURES, TOOLS
+
+    assert set(TOOL_FEATURES) == {
+        "magick", "pdfinfo", "pdftotext", "pdftoppm", "ffprobe", "ffmpeg", "tesseract"
+    }
+    assert set(TOOL_FEATURES) <= set(TOOLS)

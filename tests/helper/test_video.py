@@ -182,7 +182,7 @@ async def test_media_precision_failure_preserves_only_valid_frames(
         runner = jobs.Jobs(store, InvalidAudio(), journal=tmp_path / "journal")
         await runner.drain()
         assert tuple(store.db.execute("SELECT state,detail FROM files").fetchone()) == (
-            "failed" if frames_fail else "partial", "embedding precision fault",
+            "failed" if frames_fail else "partial", "embedding-precision-fault",
         )
         for kind, count in (("frame", 0 if frames_fail else 1), ("audio", 0)):
             assert store.db.execute(
@@ -219,3 +219,18 @@ def test_short_video_keeps_one_frame(tmp_path):
             "color=black:s=160x90:r=2:d=1", "-threads", "1", "-c:v", "mpeg4", str(path))
     pieces = list(keyframes(path))
     assert [piece.start for piece in pieces] == [0.5]
+
+
+def test_media_commands_name_a_missing_tool_and_keep_the_error_line():
+    from omafindd.extractors import ExtractionError, _media_command, _stream
+
+    script = "echo 'Warning: ignored' >&2; echo 'Error: bad header' >&2; exit 3"
+    for call in (lambda argv: _media_command(argv), lambda argv: list(_stream(argv, 64))):
+        with pytest.raises(ExtractionError) as missing:
+            call(["omafind-no-such-tool"])
+        assert (missing.value.code, missing.value.detail) == (
+            "tool-missing", "omafind-no-such-tool")
+        with pytest.raises(ExtractionError) as failed:
+            call(["sh", "-c", script])
+        assert (failed.value.code, failed.value.detail) == (
+            "extract-failed", "sh failed: Error: bad header")

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -411,9 +412,109 @@ async def test_progress_body_from_stores(service):
     assert result["done"] == 6 and result["queued"] == 2
     assert result["skipped"] == {"size-cap": 2}
     assert result["failed"] == {"encrypted-pdf": 1}
-    assert result["problems"] == [{"path": "/h/e.pdf", "reason": "encrypted-pdf"}]
+    assert result["problems"] == [{"path": "/h/e.pdf", "code": "encrypted-pdf", "detail": ""}]
+    assert result["tool_errors"] == []
     assert result["volume"] == "u"
     assert result["volumes"] == {"u": {"label": "root", "done": 6, "total": 8}}
+
+
+def _failed_rows(service, rows):
+    store = Store(service.data_dir / "index/u.sqlite", volume="u", mount=Path("/h"))
+    for index, (path, state, detail) in enumerate(rows, 1):
+        store.db.execute(
+            "INSERT INTO files(id,path,kind,size,mtime,inode,device,state,detail) "
+            "VALUES(?,?,'text',0,0,0,0,?,?)",
+            (index, path, state, detail),
+        )
+    store.db.commit()
+    store.close()
+
+
+async def test_progress_names_failures_missing_tools_and_code_index(service):
+    from omafindd import errors
+    from omafindd.code import CodeStore
+
+    _failed_rows(service, [
+        ("a.png", "failed", "tool-missing: tesseract"),
+        ("b.png", "failed", "tool-missing: tesseract"),
+        ("c.pdf", "failed", "extract-failed: pdfinfo failed: Syntax Error"),
+        ("d.txt", "failed", "embedding precision fault"),
+        ("e.mp4", "failed", "tool-missing: ffprobe"),
+    ])
+    code = CodeStore(service.data_dir / "index/code.sqlite")
+    code.db.execute(
+        "INSERT INTO files(path,kind,size,mtime,inode,device,state,detail) "
+        "VALUES('src/repo/bad.py','code',0,0,0,0,'failed','HTTP 500: too large')"
+    )
+    code.db.commit()
+    code.close()
+    result = await service.handle({"t": "index_progress"})
+    assert result["failed"] == {"tool-missing": 3, "extract-failed": 1,
+                                "embedding-precision-fault": 1, "code-index-failed": 1}
+    assert result["problems"] == [
+        {"path": "/src/repo/bad.py", "code": "code-index-failed", "detail": "HTTP 500: too large"},
+        {"path": "/h/a.png", "code": "tool-missing", "detail": "tesseract"},
+        {"path": "/h/b.png", "code": "tool-missing", "detail": "tesseract"},
+        {"path": "/h/c.pdf", "code": "extract-failed",
+         "detail": "pdfinfo failed: Syntax Error"},
+        {"path": "/h/d.txt", "code": "embedding-precision-fault", "detail": ""},
+        {"path": "/h/e.mp4", "code": "tool-missing", "detail": "ffprobe"},
+    ]
+    assert result["tool_errors"] == [
+        errors.tool_missing(1, "ffprobe", "video and audio", "ffmpeg").to_dict(),
+        errors.tool_missing(2, "tesseract", "text recognition", "tesseract").to_dict(),
+    ]
+    assert list(result["volumes"]) == ["u"]
+    assert result["kinds"]["text"] == {"done": 5, "total": 5}
+
+
+async def test_retry_failed_queues_only_that_code_and_starts_indexing(service):
+    _failed_rows(service, [
+        ("a.png", "failed", "tool-missing: tesseract"),
+        ("b.pdf", "failed", "encrypted-pdf"),
+        ("c.mp4", "failed", "tool-missing: ffprobe"),
+        ("d.txt", "done", None),
+    ])
+    assert await service.handle({"t": "retry_failed", "code": "tool-missing"}) == {
+        "t": "retry_failed", "code": "tool-missing", "count": 2,
+    }
+    db = sqlite3.connect(service.data_dir / "index/u.sqlite")
+    try:
+        assert db.execute("SELECT path,state,detail FROM files ORDER BY path").fetchall() == [
+            ("a.png", "pending", None), ("b.pdf", "failed", "encrypted-pdf"),
+            ("c.mp4", "pending", None), ("d.txt", "done", None),
+        ]
+    finally:
+        db.close()
+    assert len(service.test_calls) == 1
+
+
+async def test_retry_failed_during_a_run_indexes_after_it(service):
+    _failed_rows(service, [("a.png", "failed", "tool-missing: tesseract")])
+    await service.handle({"t": "index_start"})
+    reply = await service.handle({"t": "retry_failed", "code": "tool-missing"})
+    assert reply["count"] == 1 and len(service.test_calls) == 1
+    service.test_process.returncode = 0
+    await service.poll(now=0)
+    assert len(service.test_calls) == 2
+
+
+async def test_retry_failed_without_matches_starts_nothing(service):
+    _failed_rows(service, [("b.pdf", "failed", "encrypted-pdf")])
+    assert await service.handle({"t": "retry_failed", "code": "tool-missing"}) == {
+        "t": "retry_failed", "code": "tool-missing", "count": 0,
+    }
+    assert not service.test_calls
+
+
+@pytest.mark.parametrize("code", [None, "", "missing", ["tool-missing"]])
+async def test_retry_failed_rejects_unknown_codes(service, code):
+    from omafindd import errors
+
+    assert await service.handle({"t": "retry_failed", "code": code}) == errors.reply(
+        "retry_failed", errors.bad_request("Unknown failure code")
+    )
+    assert not service.test_calls
 
 
 @pytest.mark.parametrize(

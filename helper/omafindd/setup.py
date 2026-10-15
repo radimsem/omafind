@@ -10,7 +10,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from . import bindings, discovery, errors
+from . import bindings, discovery, errors, failures, tools
 from .install import RuntimeJob
 
 
@@ -35,6 +35,7 @@ class SetupService:
         "index_start",
         "index_progress",
         "drive_decision",
+        "retry_failed",
     }
     # A finished walk answers repeat visits for this long; after it the next visit walks again.
     WALK_TTL = 300.0
@@ -181,6 +182,14 @@ class SetupService:
                 if self._starting is None or self._starting.done():
                     self._starting = asyncio.create_task(self._start_index(volume))
                 return await asyncio.shield(self._starting)
+            if kind == "retry_failed":
+                code = message.get("code")
+                if code not in failures.CODES:
+                    return errors.reply(kind, errors.bad_request("Unknown failure code"))
+                count = await asyncio.to_thread(self._retry_failed, code)
+                if count:
+                    await self.kick()
+                return {"t": kind, "code": code, "count": count}
             return errors.reply(kind, errors.bad_request("Unknown setup request"))
         except errors.UserFailure as failure:
             return errors.reply(kind, failure.error)
@@ -402,10 +411,32 @@ class SetupService:
             pass
         return None, None
 
+    def _retry_failed(self, code):
+        """Queues the failed files whose failure is `code` again and returns how many.
+
+        The code index is left alone: every pass retries its failed files.
+        """
+        count = 0
+        for path in sorted((self.data_dir / "index").glob("*.sqlite")):
+            if path.name == "code.sqlite":
+                continue
+            with closing(
+                sqlite3.connect(path.absolute().as_uri() + "?mode=rw", uri=True, timeout=5)
+            ) as db, db:
+                ids = [(file,) for file, detail in db.execute(
+                    "SELECT id,detail FROM files WHERE state='failed'"
+                ) if failures.decode(detail)[0] == code]
+                db.executemany(
+                    "UPDATE files SET state='pending',detail=NULL,info=NULL,indexed_at=NULL "
+                    "WHERE id=? AND state='failed'", ids,
+                )
+                count += len(ids)
+        return count
+
     def _progress(self):
         kinds = {kind: {"done": 0, "total": 0} for kind in KINDS}
         kinds["pdf"]["pages"] = kinds["image"]["ocr"] = 0
-        failed, problems, volumes = {}, [], {}
+        failed, problems, volumes, missing = {}, [], {}, {}
         volume = pending_volume = None
         try:
             self._mounts = mounted_volumes()
@@ -413,53 +444,58 @@ class SetupService:
             pass
         ready = "NOT (state='pending' OR (state='partial' AND detail IS NULL))"
         for path in sorted((self.data_dir / "index").glob("*.sqlite")):
-            if path.name == "code.sqlite":
-                continue
+            code_index = path.name == "code.sqlite"
             try:
                 with closing(
                     sqlite3.connect(path.absolute().as_uri() + "?mode=rw", uri=True, timeout=0.05)
                 ) as db:
                     meta = dict(db.execute("SELECT key,value FROM meta"))
                     current = meta.get("volume_uuid", path.stem)
-                    volume = current
-                    total, done = db.execute(
-                        f"SELECT count(*),coalesce(sum({ready}),0) FROM files"
-                    ).fetchone()
-                    volumes[current] = {"label": meta.get("volume_label", "root"),
-                                        "done": done, "total": total}
-                    for kind, total, done in db.execute(
-                        f"SELECT kind,count(*),sum({ready}) FROM files GROUP BY kind"
-                    ):
-                        if kind not in kinds:
-                            continue
-                        kinds[kind]["total"] += total
-                        kinds[kind]["done"] += done or 0
-                        if total != done:
-                            pending_volume = current
-                    kinds["pdf"]["pages"] += db.execute(
-                        "SELECT coalesce(sum(json_extract(info,'$.pages')),0) FROM files "
-                        f"WHERE kind='pdf' AND {ready}"
-                    ).fetchone()[0]
-                    kinds["image"]["ocr"] += db.execute(
-                        "SELECT count(*) FROM files f WHERE kind='image' AND "
-                        + ready
-                        + " AND EXISTS (SELECT 1 FROM segments s JOIN fts ON fts.rowid=s.id "
-                        "WHERE s.file=f.id AND s.kind='ocr' AND length(fts.body)>0)"
-                    ).fetchone()[0]
-                    for detail, count in db.execute(
+                    if not code_index:
+                        volume = current
+                        total, done = db.execute(
+                            f"SELECT count(*),coalesce(sum({ready}),0) FROM files"
+                        ).fetchone()
+                        volumes[current] = {"label": meta.get("volume_label", "root"),
+                                            "done": done, "total": total}
+                        for kind, total, done in db.execute(
+                            f"SELECT kind,count(*),sum({ready}) FROM files GROUP BY kind"
+                        ):
+                            if kind not in kinds:
+                                continue
+                            kinds[kind]["total"] += total
+                            kinds[kind]["done"] += done or 0
+                            if total != done:
+                                pending_volume = current
+                        kinds["pdf"]["pages"] += db.execute(
+                            "SELECT coalesce(sum(json_extract(info,'$.pages')),0) FROM files "
+                            f"WHERE kind='pdf' AND {ready}"
+                        ).fetchone()[0]
+                        kinds["image"]["ocr"] += db.execute(
+                            "SELECT count(*) FROM files f WHERE kind='image' AND "
+                            + ready
+                            + " AND EXISTS (SELECT 1 FROM segments s JOIN fts ON fts.rowid=s.id "
+                            "WHERE s.file=f.id AND s.kind='ocr' AND length(fts.body)>0)"
+                        ).fetchone()[0]
+                    fallback = "code-index-failed" if code_index else "extract-failed"
+                    for value, count in db.execute(
                         "SELECT detail,count(*) FROM files WHERE state='failed' GROUP BY detail"
                     ):
-                        reason = detail or "unknown"
-                        failed[reason] = failed.get(reason, 0) + count
-                    mount = self._mounts.get(current)
+                        code, detail = failures.decode(value, fallback)
+                        failed[code] = failed.get(code, 0) + count
+                        if code == "tool-missing" and detail in tools.TOOL_FEATURES:
+                            missing[detail] = missing.get(detail, 0) + count
+                    # Code index paths are relative to /.
+                    mount = Path("/") if code_index else self._mounts.get(current)
                     if mount is not None:
-                        for rel, detail in db.execute(
+                        for rel, value in db.execute(
                             "SELECT path,detail FROM files WHERE state='failed' "
                             "ORDER BY path LIMIT ?",
                             (50 - len(problems),),
                         ):
+                            code, detail = failures.decode(value, fallback)
                             problems.append(
-                                {"path": str(mount / rel), "reason": detail or "unknown"}
+                                {"path": str(mount / rel), "code": code, "detail": detail}
                             )
             except sqlite3.Error:
                 continue
@@ -490,6 +526,11 @@ class SetupService:
             "skipped": skipped,
             "failed": failed,
             "problems": problems,
+            "tool_errors": [
+                errors.tool_missing(count, tool, tools.TOOL_FEATURES[tool], tools.TOOLS[tool])
+                .to_dict()
+                for tool, count in sorted(missing.items())
+            ],
         }
 
     async def poll(self, *, now=None) -> None:

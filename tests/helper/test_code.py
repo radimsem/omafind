@@ -280,7 +280,7 @@ async def test_batches_precision_and_notebook_sources(repo, tmp_path):
         assert db.execute(
             "SELECT state,detail FROM files WHERE path LIKE '%/bad.py'"
         ).fetchone() == (
-            "failed", "embedding precision fault"
+            "failed", "code-index-failed: embedding precision fault"
         )
         assert db.execute("SELECT count(*) FROM segments JOIN files ON files.id=segments.file "
                           "WHERE path LIKE '%/bad.py'").fetchone()[0] == 0

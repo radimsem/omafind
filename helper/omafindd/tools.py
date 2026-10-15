@@ -17,6 +17,17 @@ TOOLS = {
     "tesseract": "tesseract",
 }
 
+# What a file is indexed without when the tool is missing (errors.tool_missing `what`).
+TOOL_FEATURES = {
+    "magick": "image support",
+    "pdfinfo": "PDF text",
+    "pdftotext": "PDF text",
+    "pdftoppm": "PDF page images",
+    "ffprobe": "video and audio",
+    "ffmpeg": "video and audio",
+    "tesseract": "text recognition",
+}
+
 # cmake, ninja and spirv-headers stay out: scripts/build-runtime.sh falls back to private copies.
 BUILD_NEEDS = [
     ("header", "/usr/include/vulkan/vulkan_core.h", "vulkan-headers"),

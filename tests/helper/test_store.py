@@ -480,3 +480,19 @@ def test_opening_writer_keeps_cached_reader_locks_across_other_process_writes(tm
         pytest.fail(f"cached reader saw a broken index: {error}")
     finally:
         reader.close()
+
+
+def test_fail_and_halt_store_the_code_with_its_detail(store, tmp_path):
+    from omafindd.crawler import crawl
+
+    for name in ("a.txt", "b.txt"):
+        (tmp_path / name).write_text("fixture")
+    first, second = crawl(store, [{"path": str(tmp_path)}])
+    store.fail(first, "tool-missing", "tesseract")
+    with store.db:
+        store.db.execute("UPDATE files SET state='partial' WHERE id=?", (second,))
+    store.halt(second, "embedding-failed", "HTTP 500: too large\nmore")
+    assert [tuple(row) for row in store.db.execute(
+        "SELECT state,detail FROM files ORDER BY path"
+    )] == [("failed", "tool-missing: tesseract"),
+           ("partial", "embedding-failed: HTTP 500: too large")]
