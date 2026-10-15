@@ -1,5 +1,6 @@
 import asyncio
 import subprocess
+import sys
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ import pytest
 from fakes.embedder import FakeEmbedder
 from fakes.llama_server import FakeSpawner, MemoryLlamaServer
 from omafindd import embedder as embedder_module
+from omafindd import errors, paths
 from omafindd.embedder import (
     Embedder,
     EmbeddingError,
@@ -32,6 +34,41 @@ def inline_runner(monkeypatch):
         return function(*args, **kwargs)
 
     monkeypatch.setattr(embedder_module.asyncio, 'to_thread', to_thread)
+
+
+@pytest.fixture(autouse=True)
+def data_home(tmp_path, monkeypatch):
+    # The server log goes under the data directory.
+    monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path / 'data'))
+
+
+# Stands in for llama-server as a real child: prints its argv and whether it got the key,
+# then exits with an error line or hangs, chosen per device by FAKE_LLAMA_GPU / FAKE_LLAMA_CPU.
+FAKE_SERVER = """\
+import os
+import sys
+import time
+
+argv = sys.argv[1:]
+print("argv:", *argv, flush=True)
+print("LLAMA_API_KEY set:", "LLAMA_API_KEY" in os.environ, flush=True)
+device = "CPU" if argv[argv.index("-ngl") + 1] == "0" else "GPU"
+if os.environ.get("FAKE_LLAMA_" + device) == "exit":
+    print("ggml_vulkan: No devices found.", file=sys.stderr, flush=True)
+    print("main: cleaning up", file=sys.stderr, flush=True)
+    sys.exit(1)
+time.sleep(30)
+"""
+KEY = 'fixture-secret-key-0123456789'
+
+
+@pytest.fixture
+def fake_binary(tmp_path, monkeypatch):
+    monkeypatch.setattr(embedder_module.secrets, 'token_urlsafe', lambda size: KEY)
+    path = tmp_path / 'fake-llama-server'
+    path.write_text(f'#!{sys.executable} -S\n{FAKE_SERVER}')
+    path.chmod(0o755)
+    return path
 
 
 @pytest.mark.parametrize(('mode', 'free_mib', 'expected'), [
@@ -393,8 +430,10 @@ async def test_unknown_vram_retries_failed_gpu_once_on_cpu(tmp_path):
 async def test_known_vram_start_failure_does_not_retry(runtime):
     embedder, spawner = runtime
     spawner.server_options['health_status'] = 503
-    with pytest.raises(EmbeddingError, match='start'):
+    with pytest.raises(EmbeddingError, match='start') as caught:
         await embedder.start('text')
+    assert caught.value.user_error == errors.server_start_failed(
+        'It did not answer within 0.2 s', paths.logs_dir() / 'llama-server.log')
     assert len(spawner.commands) == 1
     assert spawner.servers[0].terminated
 
@@ -628,3 +667,85 @@ def test_embedding_error_carries_an_optional_error_object():
     assert error.user_error is failure
     assert str(error) == "the embedding server is starting"
     assert EmbeddingError("Embedding server is not running").user_error is None
+
+
+async def test_start_sends_server_output_to_a_fresh_log(memory_runtime):
+    embedder, spawner = memory_runtime
+    log = paths.logs_dir() / 'llama-server.log'
+    log.write_text('previous run\n')
+    options = []
+
+    async def spawn(*argv, **kwargs):
+        options.append(kwargs)
+        return await spawner(*argv, **kwargs)
+
+    embedder.spawner = spawn
+    try:
+        await embedder.start('text')
+        assert options[0]['stdout'].name == str(log)
+        assert options[0]['stdout'].closed
+        assert options[0]['stderr'] == asyncio.subprocess.STDOUT
+        assert log.read_bytes() == b''
+    finally:
+        await embedder.stop()
+
+
+async def test_start_runs_without_a_log_it_cannot_open(memory_runtime, monkeypatch, tmp_path):
+    embedder, spawner = memory_runtime
+    monkeypatch.setattr(paths, 'logs_dir', lambda: tmp_path / 'missing')
+    options = []
+
+    async def spawn(*argv, **kwargs):
+        options.append(kwargs)
+        return await spawner(*argv, **kwargs)
+
+    embedder.spawner = spawn
+    try:
+        await embedder.start('text')
+        assert options[0]['stdout'] == asyncio.subprocess.DEVNULL
+    finally:
+        await embedder.stop()
+
+
+async def test_server_exit_keeps_its_cause_and_a_log_without_the_key(
+        fake_binary, monkeypatch, tmp_path):
+    monkeypatch.setenv('FAKE_LLAMA_GPU', 'exit')
+    embedder = Embedder(binary=fake_binary, model_dir=tmp_path, startup_timeout=5,
+                        runner=lambda *a, **kw: subprocess.CompletedProcess(a, 0, '4096'))
+    with pytest.raises(EmbeddingError, match='^Embedding server failed to start$') as caught:
+        await embedder.start('text')
+    log = paths.logs_dir() / 'llama-server.log'
+    assert caught.value.user_error == errors.server_start_failed(
+        'It exited with code 1 (ggml_vulkan: No devices found)', log)
+    text = log.read_text()
+    assert '--port' in text and '-ngl 99' in text
+    assert 'LLAMA_API_KEY set: True' in text
+    assert KEY not in text
+
+
+async def test_gpu_and_cpu_failures_are_both_named(fake_binary, monkeypatch, tmp_path):
+    monkeypatch.setenv('FAKE_LLAMA_GPU', 'exit')
+
+    def runner(*args, **kwargs):
+        raise FileNotFoundError('nvidia-smi')
+
+    embedder = Embedder(binary=fake_binary, model_dir=tmp_path, runner=runner,
+                        startup_timeout=1, stop_timeout=1)
+    with pytest.raises(EmbeddingError) as caught:
+        await embedder.start('text')
+    assert caught.value.user_error.detail.startswith(
+        'GPU: it exited with code 1 (ggml_vulkan: No devices found); '
+        'CPU: it did not answer within 1 s. ')
+    text = (paths.logs_dir() / 'llama-server.log').read_text()
+    assert '-ngl 0' in text
+    assert '-ngl 99' not in text and 'No devices' not in text
+    assert KEY not in text
+
+
+async def test_missing_binary_names_the_os_error(tmp_path):
+    embedder = Embedder(binary=tmp_path / 'absent', model_dir=tmp_path,
+                        runner=lambda *a, **kw: subprocess.CompletedProcess(a, 0, '4096'))
+    with pytest.raises(EmbeddingError) as caught:
+        await embedder.start('text')
+    assert caught.value.user_error.detail.startswith(
+        'It could not be started (No such file or directory). ')
