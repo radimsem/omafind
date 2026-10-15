@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import ctypes
 import os
 import secrets
@@ -138,6 +139,9 @@ def _parent_death_signal(parent, sig=signal.SIGTERM):
         os.kill(os.getpid(), sig)
 
 
+REQUEST_SLOTS = 2
+
+
 class Embedder:
     def __init__(self, *, binary=None, model_dir=None, runner=subprocess.run,
                  spawner=asyncio.create_subprocess_exec, startup_timeout=60.0,
@@ -154,6 +158,12 @@ class Embedder:
         self._process = None
         self._client = None
         self._lock = asyncio.Lock()
+        self._requests = asyncio.Semaphore(REQUEST_SLOTS)
+
+    def ready(self, mode: Mode) -> bool:
+        if self._client is None or not (self.mode == mode or self.mode == "full"):
+            return False
+        return self.shared or self._process is not None and self._process.returncode is None
 
     @property
     def connection_env(self):
@@ -168,7 +178,8 @@ class Embedder:
                     self.shared or self._process is not None
                     and self._process.returncode is None):
                 return
-            await self._stop()
+            async with self._drained():
+                await self._stop()
             if self.shared:
                 self._client = httpx.AsyncClient(
                     base_url=self._base_url,
@@ -242,8 +253,22 @@ class Embedder:
         raise EmbeddingError("Embedding server exited during start")
 
     async def stop(self) -> None:
-        async with self._lock:
+        async with self._lock, self._drained():
             await self._stop()
+
+    @contextlib.asynccontextmanager
+    async def _drained(self):
+        # embed holds a request slot rather than the lock, so take every slot before a stop
+        # kills the server or closes the client under an in-flight request.
+        taken = 0
+        try:
+            while taken < REQUEST_SLOTS:
+                await self._requests.acquire()
+                taken += 1
+            yield
+        finally:
+            for _ in range(taken):
+                self._requests.release()
 
     async def _stop(self) -> None:
         process, client = self._process, self._client
@@ -267,7 +292,7 @@ class Embedder:
                 await client.aclose()
 
     async def embed(self, parts: Sequence[Part]) -> list[np.ndarray]:
-        async with self._lock:
+        async with self._requests:
             process, client = self._process, self._client
             if (self.mode is None or client is None or not self.shared
                     and (process is None or process.returncode is not None)):

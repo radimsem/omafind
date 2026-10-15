@@ -11,6 +11,9 @@ class FakeEmbedder:
     def __init__(self):
         self.mode: Mode | None = None
 
+    def ready(self, mode) -> bool:
+        return self.mode in (mode, "full")
+
     async def start(self, mode: Mode) -> None:
         self.mode = mode
 

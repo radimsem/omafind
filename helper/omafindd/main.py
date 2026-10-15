@@ -55,6 +55,9 @@ class _LazyEmbedder:
     def connection_env(self):
         return self.instance.connection_env if self.instance is not None else {}
 
+    def ready(self, mode) -> bool:
+        return self.instance is not None and self.instance.ready(mode)
+
     async def start(self, mode):
         if self.instance is None:
             self.instance = Adapter(Embedder(

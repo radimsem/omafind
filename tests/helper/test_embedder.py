@@ -560,6 +560,41 @@ async def test_http_error_raises_rejected_with_server_message(monkeypatch):
         await embedder.stop()
 
 
+async def test_ready_reads_mode_without_the_lock():
+    from omafindd.embedder import Embedder
+
+    embedder = Embedder(base_url="http://test", api_key="k")
+    assert not embedder.ready("text")
+    embedder.mode, embedder._client = "full", object()
+    async with embedder._lock:
+        assert embedder.ready("text") and embedder.ready("full")
+
+
+async def test_mode_switch_waits_for_inflight_embedding(memory_runtime):
+    embedder, spawner = memory_runtime
+    await embedder.start('text')
+    server = spawner.servers[0]
+    server.embedding_release.clear()
+    embedding = asyncio.create_task(embedder.embed([Text('hello')]))
+    switching = None
+    try:
+        await asyncio.wait_for(server.embedding_requested.get(), 1)
+        switching = asyncio.create_task(embedder.start('full'))
+        await asyncio.sleep(0)
+        assert not server.terminated
+        server.embedding_release.set()
+        assert len(await asyncio.wait_for(embedding, 1)) == 1
+        await asyncio.wait_for(switching, 1)
+        assert server.terminated and embedder.mode == 'full'
+    finally:
+        server.embedding_release.set()
+        tasks = [task for task in (embedding, switching) if task is not None]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await embedder.stop()
+
+
 @pytest.mark.parametrize(('status', 'rejected'), [
     (400, True), (413, True), (500, True),
     (401, False), (403, False), (429, False), (503, False),

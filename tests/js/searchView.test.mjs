@@ -71,3 +71,19 @@ test('Enter toggles weak matches both ways and keeps selection on the fold row',
     assert.equal(context.userMoved, true);
   }
 });
+
+
+test('an early timer tick re-arms the timer for the remaining time', () => {
+  const armed = [];
+  const timer = { interval: 200, restart() { armed.push(this.interval); } };
+  const context = view({
+    SearchState: load('format.js', 'results.js', 'searchState.js'),
+    service: { send() { return true; } },
+    meaningTimer: timer, wordsTimer: { interval: 50, restart() {} },
+    Date: { now: () => 1150 },
+    search: { query: 'router', seq: 1, phase: 'words', sentWords: 1, sentMeaning: 0,
+      reply: null, started: 1000 },
+  });
+  context.due('meaning-due');
+  assert.deepEqual(armed, [50]);
+});

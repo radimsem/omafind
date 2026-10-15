@@ -1095,3 +1095,27 @@ async def test_service_passes_kinds_and_configured_limit(store, tmp_path):
         assert reply["total"] == 12
     finally:
         await service.stop()
+
+
+async def test_warm_server_answers_while_start_lock_is_held(store, tmp_path):
+    from omafindd.service import SearchService
+
+    await seeded_search(store, tmp_path)
+    gate = asyncio.Event()
+
+    class Busy(FakeEmbedder):
+        async def start(self, mode):
+            await gate.wait()
+
+    embedder = Busy()
+    embedder.mode = 'full'
+    service = SearchService(
+        store.path.parent, lambda: Settings(), embedder, State(model='ready'),
+        volume_resolver=lambda path, **kwargs: ('v', tmp_path), mounts_resolver=lambda: {}
+    )
+    try:
+        reply = await service.handle({'t': 'search', 'seq': 1, 'q': 'lunar'})
+        assert reply['degraded'] is None and 'meaning' in reply['legs']
+    finally:
+        gate.set()
+        await service.stop()

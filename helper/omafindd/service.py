@@ -219,6 +219,8 @@ class SearchService:
             if reason := self._warm_task.result():
                 self._warm_task = None
                 raise EmbeddingError(reason)
+        if self.embedder.ready(mode):
+            return
         task = self._warming(mode)
         # An already warm server can finish in one turn; a cold load stays in the background.
         await asyncio.sleep(0)

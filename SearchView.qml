@@ -106,17 +106,25 @@ Item {
       list.reset()
       return
     }
-    wordsTimer.restart()
-    meaningTimer.restart()
+    arm(wordsTimer, SearchState.wordsDelay)
+    arm(meaningTimer, SearchState.meaningDelay)
+  }
+
+  function arm(timer, delay) {
+    timer.interval = delay
+    timer.restart()
   }
 
   function due(type) {
-    var next = SearchState.reduce(search, {type: type, now: Date.now()})
+    var now = Date.now()
+    var next = SearchState.reduce(search, {type: type, now: now})
     if (next.send && (!service || !service.send(next.send))) {
       next.state.sentWords = search.sentWords
       next.state.sentMeaning = search.sentMeaning
     }
+    var left = next.send ? 0 : SearchState.remaining(search, type, now)
     search = next.state
+    if (left > 0) arm(type === "meaning-due" ? meaningTimer : wordsTimer, left)
   }
 
   function received(message) {
@@ -446,7 +454,7 @@ Item {
         root.service.warm()
       } else {
         root.search = SearchState.reduce(root.search, {type: "typed", query: root.search.query, now: Date.now()}).state
-        meaningTimer.restart()
+        arm(meaningTimer, SearchState.meaningDelay)
       }
     }
   }
