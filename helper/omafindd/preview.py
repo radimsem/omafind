@@ -172,8 +172,9 @@ def render(item, query="") -> dict:
         path = Path(item["path"])
         jump = max(1, int(item.get("loc") or 1)) if kind == "pdf" else item.get("loc") or 0
         side = RENDER_SIDE if kind == "pdf" else 1024
+        key = side if kind == "pdf" else f"{side}q2"
         image = paths.preview_dir() / (
-            _cache_key(path, jump, side) + (".png" if kind == "pdf" else ".jpg"))
+            _cache_key(path, jump, key) + (".png" if kind == "pdf" else ".jpg"))
 
         def draw(temporary):
             if kind == "pdf":
@@ -181,7 +182,8 @@ def render(item, query="") -> dict:
                       "-singlefile", "-png", str(path), str(temporary.with_suffix(""))])
             else:
                 _run(["ffmpeg", "-v", "error", "-ss", str(jump), "-i", str(path),
-                      "-frames:v", "1", "-vf", f"scale={side}:-2", "-y", str(temporary)])
+                      "-frames:v", "1", "-vf", f"scale='min({side},iw)':-2", "-q:v", "2",
+                      "-y", str(temporary)])
             return temporary
 
         _publish(image, draw)

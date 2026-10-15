@@ -236,7 +236,8 @@ def _image(source: str, budget: int, *, data=None) -> ImagePart:
 
 def _thumbnail(source: str, *, data=None) -> bytes:
     return _media_command(
-        ["magick", source, "-auto-orient", "-thumbnail", "128x128", "jpg:-"], data=data
+        ["magick", source, "-auto-orient", "-thumbnail", "600x600>", "-quality", "90", "jpg:-"],
+        data=data,
     )
 
 
