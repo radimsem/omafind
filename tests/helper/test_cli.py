@@ -103,6 +103,7 @@ def test_setup_twice_installs_unit_and_restarts_active_service(cli, env, capsys)
             ["uv", "sync", "--project", str(ROOT / "helper"), "--frozen", "--no-dev"],
             ["systemctl", "--user", "daemon-reload"],
             ["systemctl", "--user", "is-active", "omafind.service"],
+            ["systemctl", "--user", "reset-failed", "omafind.service"],
             ["systemctl", "--user", "enable", "--now", "omafind.service"],
         ]
         if active == "active":
@@ -117,6 +118,22 @@ def test_setup_twice_installs_unit_and_restarts_active_service(cli, env, capsys)
         assert "runtime missing\n" in output
         assert "model missing\n" in output
         assert "bin/omafind build-runtime" in output
+
+
+@pytest.mark.parametrize("reset_code", [0, 1])
+def test_setup_resets_failed_unit_before_starting_and_ignores_reset_failure(cli, env, reset_code):
+    fake = FakeRun(active="failed")
+
+    def run(command, **kwargs):
+        result = fake(command, **kwargs)
+        if command == ["systemctl", "--user", "reset-failed", "omafind.service"]:
+            return subprocess.CompletedProcess(command, reset_code, "", "Unit was not failed.")
+        return result
+
+    assert cli.main(["setup"], env, run=run, probe=lambda path, timeout: True) == 0
+    commands = [command for command, _ in fake.calls]
+    reset = commands.index(["systemctl", "--user", "reset-failed", "omafind.service"])
+    assert commands[reset + 1] == ["systemctl", "--user", "enable", "--now", "omafind.service"]
 
 
 @pytest.fixture

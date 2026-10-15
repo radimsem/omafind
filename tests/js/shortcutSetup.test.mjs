@@ -175,3 +175,20 @@ for (const action of ['close', 'dismiss', 'toggle', 'showSearch']) {
     if (action !== 'showSearch') assert.equal(ctx.opened, false);
   });
 }
+
+
+test('binds Retry starts an offline service and otherwise requests binds', () => {
+  const calls = [];
+  const { ctx, source } = functions('ui/SetupIndex.qml', {
+    service: { bindsError: { code: 'daemon-offline' },
+      installHelper() { calls.push('install'); }, getBinds() { calls.push('binds'); } },
+  });
+  const handler = source.match(/id: bindsCard[^]*?onRetry: \{([^]*?)^      \}/m)[1];
+  vm.runInContext('(function() {' + handler + '})()', ctx);
+  assert.deepEqual(calls, ['install']);
+  ctx.service.bindsError = { code: 'binds-failed' };
+  vm.runInContext('(function() {' + handler + '})()', ctx);
+  ctx.service.bindsError = null;
+  vm.runInContext('(function() {' + handler + '})()', ctx);
+  assert.deepEqual(calls, ['install', 'binds', 'binds']);
+});

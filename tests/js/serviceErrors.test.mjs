@@ -144,3 +144,24 @@ test('starting an action clears the error on its own surface', () => {
   ctx.scanDrive('usb');
   assert.equal(ctx.driveError, null);
 });
+
+
+test('a ready connection retries only an offline binds request', () => {
+  const ctx = service({ Connection: load('Connection.js'),
+    connection: { unit: 'enabled', socket: 'connecting', failures: 1 },
+    runtimeAsked: true, reduceUpdate() {} });
+  Object.defineProperty(ctx, 'ready', { get() { return ctx.connection.socket === 'ready'; } });
+  ctx.send = () => false;
+  ctx.getBinds();
+  ctx.send = message => { assert.equal(ctx.ready, true); ctx.sent.push(message); return true; };
+  const state = { runtime: 'ready', model: 'ready', embedder: 'stopped', build: 'b' };
+  ctx.receiveState(state);
+  assert.deepEqual(plain(ctx.sent), [{ t: 'binds_get' }]);
+  assert.equal(ctx.bindsError, null);
+  assert.equal(ctx.bindsReady, false);
+  ctx.receiveState(state);
+  ctx.bindsError = scanFailed;
+  ctx.receiveState(state);
+  assert.equal(ctx.sent.length, 1);
+  assert.equal(ctx.bindsError, scanFailed);
+});

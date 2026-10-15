@@ -266,7 +266,11 @@ FocusScope {
       error: root.service ? root.service.bindsError : null
       visible: !!error
       retryHere: true
-      onRetry: if (root.service) root.service.getBinds()
+      onRetry: {
+        if (!root.service) return
+        if (root.service.bindsError && root.service.bindsError.code === "daemon-offline") root.service.installHelper()
+        else root.service.getBinds()
+      }
     }
 
     ShortcutRecorder {

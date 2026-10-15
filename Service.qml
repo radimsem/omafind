@@ -568,6 +568,7 @@ Item {
     reduceUpdate({type: "daemon", build: typeof message.build === "string" ? message.build : ""})
     if (message.embedder !== "stopped") searchError = null
     connection = Connection.reduce(connection, {type: "state"})
+    if (ready && bindsError && bindsError.code === "daemon-offline") getBinds()
     if (ready && !runtimeProgress && !runtimeAsked) runtimeAsked = requestRuntimeStatus()
   }
 

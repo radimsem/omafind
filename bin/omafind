@@ -208,6 +208,8 @@ def _setup(env, run, probe, clock, sleep, which):
         return errors.helper_install_failed(failed), build_missing
     active = run(["systemctl", "--user", "is-active", "omafind.service"],
                  env=env, capture_output=True, text=True)
+    run(["systemctl", "--user", "reset-failed", "omafind.service"],
+        env=env, capture_output=True, text=True)
     if failed := _command(["systemctl", "--user", "enable", "--now", "omafind.service"], env, run):
         return errors.helper_install_failed(failed), build_missing
     if (active.returncode == 0 and active.stdout.strip() == "active"

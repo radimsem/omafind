@@ -48,7 +48,8 @@ Item {
   // Set while Service.qml brings the daemon to the plugin's build (issue #16).
   readonly property var updateError: service && service.update ? Update.banner(service.update) : null
   readonly property var bannerView: Results.bannerFor({update: updateError,
-    offline: daemonDown ? Errors.offline(startLog.loaded ? startLog.path : "") : null,
+    offline: daemonDown ? (Errors.setupFailure(service ? service.engineError : null)
+      || Errors.offline(startLog.loaded ? startLog.path : "")) : null,
     reply: reply, warm: service ? service.searchError : null})
 
   function retryBanner() {
@@ -58,8 +59,8 @@ Item {
       service.retryUpdate()
       break
     case "connect":
-      service.checkUnit()
-      service.connectSocket()
+      startLog.reload()
+      service.installHelper()
       break
     case "warm":
       service.warm()

@@ -17,7 +17,7 @@ function run(events, state = initial()) {
 
 test('initial update state waits for both builds', () => {
   assert.deepEqual(plain(initial()),
-    { local: null, daemon: null, phase: 'idle', tried: null, error: '' });
+    { local: null, daemon: null, phase: 'idle', tried: null, error: '', failure: null });
   assert.deepEqual(run([{ type: 'local', build: '0.1.0+aaa' }]).effects, []);
   assert.deepEqual(run([{ type: 'daemon', build: '0.1.0+aaa' }]).effects, []);
 });
@@ -133,4 +133,48 @@ test('a running update is a yellow card and a failed one is red', () => {
   const { tone } = load('errors.js');
   assert.equal(tone('update-running'), 'warn');
   assert.equal(tone('update-failed'), 'urgent');
+});
+
+
+const failure = freeze({ code: 'tools-missing', title: 'Some tools omafind needs are missing.',
+  detail: 'Missing: fd. Install them, then press Retry.', fix: { kind: 'install', packages: ['fd'] },
+  log: '/d/setup.log' });
+
+function failedUpdate() {
+  return run([{ type: 'local', build: 'b' }, { type: 'daemon', build: 'a' },
+    { type: 'setup-exited', ok: false, line: 'sudo pacman -S --needed fd', error: failure }]).state;
+}
+
+test('a failed update keeps the error object across daemon events without retrying', () => {
+  const result = run([{ type: 'daemon', build: 'a' }, { type: 'venv', state: 'stale' }], failedUpdate());
+  assert.deepEqual(result.state.failure, plain(failure));
+  assert.deepEqual(result.effects, []);
+  assert.deepEqual(plain(load('Update.js').banner(result.state)), { code: 'update-failed',
+    title: 'omafindd did not update.', detail: failure.title + ' ' + failure.detail,
+    fix: plain(failure.fix), log: failure.log });
+});
+
+test('the update banner keeps only an install fix and trims the failure copy', () => {
+  const { banner } = load('Update.js');
+  for (const fix of [undefined, { kind: 'retry' }]) {
+    assert.deepEqual(plain(banner({ ...failedUpdate(), failure: { title: 'Setup failed.', detail: '', fix } })),
+      { code: 'update-failed', title: 'omafindd did not update.', detail: 'Setup failed.', fix: { kind: 'retry' } });
+  }
+});
+
+for (const [name, event] of [
+  ['Retry', { type: 'retry' }], ['a new build', { type: 'local', build: 'c' }],
+  ['a matching daemon', { type: 'daemon', build: 'b' }],
+]) {
+  test(name + ' clears both update errors', () => {
+    const { state } = run([event], failedUpdate());
+    assert.equal(state.error, '');
+    assert.equal(state.failure, null);
+  });
+}
+
+test('a successful setup exit clears both update errors', () => {
+  const { state } = run([{ type: 'setup-exited', ok: true }], { ...failedUpdate(), phase: 'updating' });
+  assert.equal(state.failure, null);
+  assert.equal(state.error, '');
 });
