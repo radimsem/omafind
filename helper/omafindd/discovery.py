@@ -61,6 +61,23 @@ XDG_PICKS = ("DOCUMENTS", "PICTURES", "VIDEOS", "MUSIC", "DOWNLOAD", "DESKTOP")
 LIMIT = 500
 
 
+def git_kind(path: str) -> str | None:
+    """`repo` for a `.git` directory or a submodule, `worktree` for a linked worktree."""
+    marker = os.path.join(path, ".git")
+    if os.path.isdir(marker):
+        return "repo"
+    try:
+        with open(marker, encoding="utf-8") as stream:
+            line = stream.readline(4096)
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not line.startswith("gitdir:"):
+        return None
+    gitdir = os.path.join(path, line[len("gitdir:"):].strip())
+    # Only a linked worktree's gitdir has `commondir`; a submodule's does not.
+    return "worktree" if os.path.isfile(os.path.join(gitdir, "commondir")) else "repo"
+
+
 def _visible(entry) -> bool:
     try:
         entry.path.encode()
@@ -85,9 +102,12 @@ def folders(path) -> list[dict]:
     with os.scandir(path) as entries:
         names = sorted((entry.path for entry in entries if _visible(entry)),
                        key=lambda name: (os.path.basename(name).casefold(), name))[:LIMIT]
-    return [{"path": name, "name": os.path.basename(name),
-             "repo": os.path.exists(os.path.join(name, ".git")), "hasChildren": _has_children(name)}
-            for name in names]
+    rows = []
+    for name in names:
+        kind = git_kind(name)
+        rows.append({"path": name, "name": os.path.basename(name), "repo": kind == "repo",
+                     "worktree": kind == "worktree", "hasChildren": _has_children(name)})
+    return rows
 
 
 def top(*, home: Path, volume: str | None = None, run=subprocess.run, lsblk=None, xdg=None,
@@ -118,7 +138,8 @@ def top(*, home: Path, volume: str | None = None, run=subprocess.run, lsblk=None
         roots.append({"path": str(mount), "volume": uuid})
         if not mount.is_relative_to(home):
             rows.append({"path": str(mount), "name": str(mount),
-                         "repo": os.path.exists(os.path.join(mount, ".git")), "hasChildren": True,
+                         "repo": git_kind(str(mount)) == "repo",
+                         "worktree": git_kind(str(mount)) == "worktree", "hasChildren": True,
                          "xdg": False, "volume": uuid})
     for row in rows:
         row.setdefault("volume", lookup(Path(row["path"]))[0])
@@ -137,6 +158,7 @@ class Walk:
         self.popen, self.clock = popen, clock
         self.counts = {}
         self.datasets = []
+        self.repos, self.worktrees, self._checked = [], [], set()
         self.done = False
         self.seconds = None
         self.error = None
@@ -182,6 +204,8 @@ class Walk:
                     "done": self.done, "seconds": self.seconds}
             if self.done:
                 body["datasets"] = list(self.datasets)
+                body["repos"] = list(self.repos)
+                body["worktrees"] = list(self.worktrees)
             if self.error:
                 body["error"] = self.error
         return body
@@ -192,13 +216,23 @@ class Walk:
                     "counts": {path: dict(self.counts[path]) for path in changed},
                     "done": self.done, "seconds": self.seconds}
 
+    def _note_git(self, folder, root):
+        while folder not in self._checked and len(folder) >= len(root):
+            self._checked.add(folder)
+            kind = git_kind(folder)
+            if kind == "repo":
+                self.repos.append(folder)
+            elif kind == "worktree":
+                self.worktrees.append(folder)
+            folder = os.path.dirname(folder)
+
     def run(self, emit, *, every=.25):
         started = last = self.clock()
         root = str(self.root)
         changed, media = set(), {}
         listing = None
         try:
-            listing = rules.walk(self.root, excludes=[], run=self._popen)
+            listing = rules.walk(self.root, excludes=[], run=self._popen, kinds=())
             for path in listing:
                 if self._stop:
                     break
@@ -207,6 +241,7 @@ class Walk:
                     name.encode()
                 except UnicodeEncodeError:
                     continue
+                self._note_git(os.path.dirname(name), root)
                 kind = rules.classify_name(os.path.basename(name))
                 if kind is None:
                     continue
@@ -244,10 +279,14 @@ class Walk:
         with self._lock:
             self.datasets = [{"path": str(path), **evidence}
                              for path, evidence in sorted(found.items())]
+            self.repos.sort()
+            self.worktrees.sort()
             self.done = True
             self.seconds = round(float(self.clock() - started), 1)
         batch = self._batch(changed)
         batch["datasets"] = list(self.datasets)
+        batch["repos"] = list(self.repos)
+        batch["worktrees"] = list(self.worktrees)
         if self.error:
             batch["error"] = self.error
         emit(batch)

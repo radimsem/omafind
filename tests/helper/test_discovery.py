@@ -99,8 +99,9 @@ def test_folders_hide_symlinks_hidden_heavy_and_secrets(tmp_path):
     (tmp_path / "file.txt").write_text("x")
     rows = discovery.folders(tmp_path)
     assert rows == [
-        {"path": str(tmp_path / "code"), "name": "code", "repo": True, "hasChildren": False},
-        {"path": str(tmp_path / "Documents"), "name": "Documents", "repo": False,
+        {"path": str(tmp_path / "code"), "name": "code", "repo": True, "worktree": False,
+         "hasChildren": False},
+        {"path": str(tmp_path / "Documents"), "name": "Documents", "repo": False, "worktree": False,
          "hasChildren": True},
     ]
 
@@ -160,6 +161,7 @@ def test_walk_rolls_counts_up_in_batches(tmp_path):
     assert len(batches) >= 2
     final = batches[-1]
     assert final["root"] == str(tmp_path) and final["datasets"] == []
+    assert final["repos"] == [] and final["worktrees"] == []
     assert isinstance(final["seconds"], float)
     both = ZERO | {"text": 1, "pdf": 1, "image": 1}
     assert walk.count(str(tmp_path)) == both | {"dirs": 3}
@@ -274,7 +276,8 @@ def test_folders_tolerate_an_untraversable_child(tmp_path):
     child.chmod(0)
     try:
         assert discovery.folders(tmp_path) == [
-            {"path": str(child), "name": "denied", "repo": False, "hasChildren": False}]
+            {"path": str(child), "name": "denied", "repo": False, "worktree": False,
+             "hasChildren": False}]
     finally:
         child.chmod(0o700)
 
@@ -329,3 +332,55 @@ def test_walk_uses_media_tallies_instead_of_retaining_paths(tmp_path, monkeypatc
     walk.run(lambda batch: None)
     assert seen == [{(str(folder), "image"): [300, 300]}]
     assert walk.dataset(str(folder)) == {"kind": "image", "files": 300, "named": 100}
+
+
+def _repo(path):
+    (path / ".git").mkdir(parents=True)
+
+
+def _linked(path, gitdir, *, worktree):
+    path.mkdir(parents=True)
+    gitdir.mkdir(parents=True)
+    if worktree:
+        (gitdir / "commondir").write_text("../..\n")
+    (path / ".git").write_text(f"gitdir: {gitdir}\n")
+
+
+def test_git_kind_tells_repo_worktree_submodule_and_plain(tmp_path):
+    _repo(tmp_path / "main")
+    _linked(tmp_path / "wt", tmp_path / "main/.git/worktrees/wt", worktree=True)
+    _linked(tmp_path / "main/sub", tmp_path / "main/.git/modules/sub", worktree=False)
+    (tmp_path / "plain").mkdir()
+    (tmp_path / "odd").mkdir()
+    (tmp_path / "odd/.git").write_text("not a gitdir line")
+    assert [discovery.git_kind(str(tmp_path / name)) for name in
+            ("main", "wt", "main/sub", "plain", "odd")] == [
+        "repo", "worktree", "repo", None, None]
+
+
+def test_relative_gitdir_resolves_against_the_folder(tmp_path):
+    _repo(tmp_path / "main")
+    (tmp_path / "main/.git/worktrees/wt").mkdir(parents=True)
+    (tmp_path / "main/.git/worktrees/wt/commondir").write_text("../..\n")
+    (tmp_path / "wt").mkdir()
+    (tmp_path / "wt/.git").write_text("gitdir: ../main/.git/worktrees/wt\n")
+    assert discovery.git_kind(str(tmp_path / "wt")) == "worktree"
+
+
+def test_rows_and_walk_report_repos_and_worktrees(tmp_path):
+    _repo(tmp_path / "proj/main")
+    (tmp_path / "proj/main/a.md").write_text("a")
+    _linked(tmp_path / "proj/wt", tmp_path / "proj/main/.git/worktrees/wt", worktree=True)
+    (tmp_path / "proj/wt/b.md").write_text("b")
+    (tmp_path / "proj/code-only").mkdir()
+    (tmp_path / "proj/code-only/.git").mkdir()
+    (tmp_path / "proj/code-only/x.py").write_text("x")
+    rows = {row["name"]: row for row in discovery.folders(tmp_path / "proj")}
+    assert (rows["main"]["repo"], rows["main"]["worktree"]) == (True, False)
+    assert (rows["wt"]["repo"], rows["wt"]["worktree"]) == (False, True)
+    walk = discovery.Walk(tmp_path)
+    batches = []
+    walk.run(batches.append)
+    assert batches[-1]["repos"] == [str(tmp_path / "proj/code-only"), str(tmp_path / "proj/main")]
+    assert batches[-1]["worktrees"] == [str(tmp_path / "proj/wt")]
+    assert walk.snapshot()["worktrees"] == [str(tmp_path / "proj/wt")]
