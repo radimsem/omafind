@@ -17,7 +17,7 @@ bin/omafind setup
 bin/omafind build-runtime
 ```
 
-Setup creates `~/.local/share/omafind/venv`, copies the user unit into `~/.config/systemd/user/omafind.service`, enables it and waits for `hello`. Repeat setup to apply unit changes. Runtime building and model downloads start through `build-runtime` or the setup view’s Download button. The daemon owns setup jobs, so closing the overlay leaves them running; Pause stops a job and Resume continues it.
+Setup creates `~/.local/share/omafind/venv`, copies the user unit into `~/.config/systemd/user/omafind.service`, enables it and waits for `hello`. Repeat setup to apply unit changes. Runtime building and model downloads start through `build-runtime` or the setup view's Install button. The daemon owns setup jobs, so closing the overlay leaves them running; Pause stops a job and Resume continues it.
 
 The Vulkan build needs `vulkan-headers` and `shaderc`. Prefer installing the remaining build tools with `sudo pacman -S cmake ninja spirv-headers`. The script can bootstrap private copies when those are missing. It runs in a memory-capped systemd user scope (12 GiB, no swap) when the user manager is available. It builds the pinned llama.cpp runtime, then downloads and verifies both pinned model files.
 
@@ -26,7 +26,7 @@ Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON.
 | Exit | Meaning |
 |---|---|
 | 0 | Unit enabled and active, socket answers `hello` |
-| 1 | Unit not installed or not enabled |
+| 1 | A tool is missing (while the runtime is missing, build packages count too; stderr prints the `pacman` line), or the unit is not installed or not enabled |
 | 2 | Unit enabled but not active |
 | 3 | Unit active but socket silent |
 | 4 | Daemon answers, but the venv is `missing`, `stale` or `unknown` |
@@ -37,7 +37,7 @@ Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON.
 |---|---|
 | `unit` | `{enabled, active}` |
 | `socket` | `{path, answers}` |
-| `tools` | `{missing: [tool]}` |
+| `tools` | `{missing: [package]}`: missing runtime tools, plus the build packages while the runtime binary is missing |
 | `venv` | `{path, state}`; `state` is `ready`, `stale` (does not match `helper/uv.lock`, from `uv sync --check`), `missing` or `unknown` (uv not found or the venv unreadable) |
 | `runtime` | `{path, present}` |
 | `model` | `{path, files, verified}`; `files` maps pinned filenames to presence booleans; `verified` is the last daemon verdict, false before a report exists |
@@ -53,7 +53,7 @@ and `problem <uuid> integrity rebuilt` when applicable.
 Unreadable or corrupt indexes retain a volume entry with zero counts until recovery rebuilds them.
 See [docs/ipc.md](docs/ipc.md) for the handshake.
 
-When the plugin code changes (a `git pull` in a dev checkout or a marketplace update), the plugin compares `bin/omafind fingerprint` with the `build` the daemon reports and reruns `bin/omafind setup` once, which syncs the venv and restarts the unit. A daemon that starts on a venv missing a dependency logs `omafindd cannot import <module>. Run bin/omafind setup.` to the unit journal and exits 1.
+When the plugin code changes (a `git pull` in a dev checkout or a marketplace update), the plugin compares `bin/omafind fingerprint` with the `build` the daemon reports and reruns `bin/omafind setup` once, which syncs the venv and restarts the unit. A daemon that starts on a venv missing a dependency logs `omafindd cannot import <module>. Run bin/omafind setup.` to the unit journal and to `~/.local/share/omafind/cache/logs/omafindd-start.log`, and exits 1. A socket bind failure is logged the same way.
 
 Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell.json`. The plugin writes them through `updateEntryInline`; the daemon only reads them. Later issues add keys.
 
@@ -69,6 +69,25 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
 | `maxResults` | int, clamped to 10..200 | `40` |
 | `warmMinutes` | int, clamped to 0..60 | `5` |
 | `shortcut` | uppercase `MODS + KEY` (mods: SUPER, SHIFT, CTRL, ALT) or a lone `F1` to `F35` | `"SUPER + E"` |
+
+## Troubleshooting
+
+Setup and search show every failure as a card: what happened, why, and what to do next. A card with a log offers Open log. [docs/ipc.md](docs/ipc.md#errors) lists every code. The logs live under `~/.local/share/omafind`:
+
+| Log | Holds |
+|---|---|
+| `cache/logs/build-runtime.log` | Full output of the last runtime build (CMake, ninja and the compiler), replaced at each build |
+| `cache/logs/llama-server.log` | Output of the embedding server since its last start, replaced at each start. The API key reaches the server only through its environment, so it never appears here. |
+| `cache/logs/omafindd-start.log` | A fatal daemon startup error, such as a failed import or socket bind |
+| `index/reindex.log` | Output of the last indexing run the daemon started, replaced at each run |
+
+`build-missing-packages` means the runtime build needs an Arch package that is not installed. `build-runtime` and the Install button check for `vulkan-headers` (`/usr/include/vulkan/vulkan_core.h`), `shaderc` (`glslc`), `gcc` (`c++`), `git` and `uv` before the build starts. `setup` only names the missing ones, because it also runs when the daemon updates; `status` lists them under `tools` and exits 1. A build that still stops on a missing `vulkan/`, `spirv/` or `shaderc/` header reports the same code with that header's package. The card names the packages. Install packages runs `omarchy-pkg-add` in a floating terminal and retries the build once they are present. To install every package the check looks for from a terminal:
+
+```bash
+sudo pacman -S --needed vulkan-headers shaderc gcc git uv
+```
+
+Then press Retry or run `bin/omafind build-runtime`. Any other build error is `build-failed`, with the first error line as the cause; `build-runtime.log` has the full output.
 
 ## Threat model
 
@@ -117,7 +136,10 @@ The reference inputs `photo.jpg`, `screen.png` and `speech.wav` in `tests/fixtur
 Required tools: fd 10+, rg, magick, pdfinfo, pdftotext, pdftoppm, git, findmnt,
 ffmpeg, ffprobe and tesseract.
 `omafind setup` checks them before installing the daemon. Missing tools produce
-one `sudo pacman -S --needed ...` command.
+one `sudo pacman -S --needed ...` command. Missing build packages do not stop
+setup: while the runtime is missing, setup names them on stderr. With `--json`,
+setup prints `{"ok":true,"build_missing":[...]}` or `{"ok":false,"error":{...}}`
+as its last stdout line instead (see [Errors](docs/ipc.md#errors)).
 
 ```bash
 systemd-run --user --scope --quiet --collect -p MemoryMax=8G -p MemorySwapMax=0 -- bin/omafind reindex --root "$HOME/Documents"
@@ -172,8 +194,8 @@ OCR text is searchable without a vector. JPEG thumbnails live in `thumbs/<uuid>/
 Video and audio results open through `mpv --start=<seconds>`.
 
 Audio uses 30 s windows with a 25 s hop, skips RMS at or below 0.003, and keeps
-tails with at least 2 s of new audio. `audio:false` skips audio files with detail
-`audio search is off` and indexes videos as frames only. Silent files are skipped.
+tails with at least 2 s of new audio. `audio:false` skips audio files with code
+`audio-off` and indexes videos as frames only. Silent files are skipped.
 Video frames are extracted and committed in passes of at most 16 frames before
 the soundtrack starts. Long audio is extracted and committed in batches of at most
 16 windows, keeping decoded payload memory bounded as well as streaming PCM one
@@ -186,8 +208,8 @@ Indexes live in `$XDG_DATA_HOME/omafind/index/<uuid>.sqlite` (default
 mount point (the home mount for its UUID, otherwise the shortest target).
 A CLI reindex holds `index.lock`; completed PDF windows commit atomically,
 and the journal retries interrupted batches. The daemon reloads changed indexes
-before searching. During reindex it serves words-only results with
-`degraded:"indexing in progress"` and rejects `warm` with the same reason.
+before searching. During reindex it serves words-only results with a
+`degraded` error of code `index-running` and rejects `warm` with the same error.
 A reindex that finds the daemon's server warm prints `waiting index.lock`; the daemon
 stops that server within half a second.
 Incremental reindexes the daemon starts itself, after a file change or a drive

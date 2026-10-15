@@ -35,7 +35,7 @@ The Folders step follows `docs/superpowers/specs/2026-10-14-setup-and-search-ref
 
 - omafind looks like the Omarchy shell. It reads the current theme, follows the user's font and corner rounding, and adds no palette of its own. The canvas is rendered in Catppuccin, which is one Omarchy theme.
 - Flat surfaces. A 2 px border, no shadow, no blur. Tone and borders separate parts.
-- The accent means "this is the selection or the match". Yellow means a hit word, an offline drive or a dataset proposal. Red means a failure. Green means done, kept or protected.
+- The accent means "this is the selection or the match". Yellow means a hit word, an offline drive, a dataset proposal or a degraded state. Red means a failure. Green means done, kept or protected.
 - Square corners by default, as Omarchy is. Corners follow Hyprland `decoration:rounding` (0 by default, 8 on the author's machine).
 - The overlay is summoned, never parked. It opens on an empty query and closes after Enter or Esc.
 - Facts, not prose. omafind computes every status, so it shows the computed values as key/value tokens and keeps sentences for instructions, errors with a fix, and titles.
@@ -93,6 +93,7 @@ Other values with no theme token, derived in QML from the roles above:
 - Caption chips on images and frames `rgba(17,17,27,.85)`: `Util.alpha(Color.background, 0.85)`. The player play button uses 0.78.
 - Hit wash behind a word `rgba(249,226,175,.18)`: `Util.alpha(Palette.yellow, 0.18)`, text in `Palette.yellow`.
 - Offline badge fill: `Palette.yellow` at 0.12. Done step fill: `Palette.green` at 0.16. Running step fill: accent at 0.12.
+- Error card wash: `Color.urgent` at 0.08 for a failure, `Palette.yellow` at 0.08 for a degraded or paused state (`server-starting`, `index-running`, `embedding-unavailable`, `disk-low`, `update-running`). The glyph takes the same color. `tone()` in `lib/errors.js` maps the code to the tone; views never pick it.
 - Rule tag borders: accent for repos, cyan for worktrees and yellow for datasets.
 - Rendered PDF page `#e6e9ef` with text `#4c4f69`, and its hit highlight `rgba(223,142,29,.35)`: these draw page content, not shell chrome. They stay fixed in every theme.
 - Placeholder image tints `#2c3a52`, `#3a3346`, `#2f3f3d`, `#403a33`, `#33364a`: mock photo content. The real thumbnail replaces them.
@@ -179,7 +180,7 @@ The easing is `cubic-bezier(0.33, 1, 0.68, 1)` unless a row says `ease` or `line
 | Preview cross-fade | 120 ms opacity. The media area rises 6 px over 120 ms (160 ms in). | M1, M2 |
 | Empty to results | 140 ms opacity, results delayed 30 ms | M1 |
 | Open | Overlay closes, then the opener window fades in over 250 ms | M2 |
-| Toast | 180 ms in from 12 px right and 12 px up, stays 2.8 s | M1, M2, M4 |
+| Toast | 180 ms in from 12 px right and 12 px up, stays 2.8 s. An error toast with a fix stays until Retry or Dismiss. | M1, M2, M4 |
 | Progress | 300 ms linear on width, 200 ms on color | M3, M4 |
 | Setup panel resize | 240 ms on width and height | M3 |
 | Setup step swap | Out 120 ms, in 160 ms after a 120 ms delay | M3 |
@@ -214,7 +215,8 @@ Each row names the class in `omafind.css` and the boards where it appears.
 | Why line | `.pv-why`, `.fx`, `.f`, `.k`, `.v` | See Why line below. | every search board |
 | Preview actions | `.pv-act`, `.btn-acc`, `.btn-sec` | Primary in accent fill with base text, "Show in folder" secondary. Offline: "Open" disabled and "Copy path". | every search board |
 | Footer | `.sp-f` | Result count left ("17 results · 3 weaker"), key hints right. With no query: indexing progress, watched folders, offline drives. | every search board |
-| Banner | `.ban`, `.act` | Yellow wash at 0.08, glyph, bold lead, "Retry" button right. | Degraded |
+| Banner | `.ban`, `.act` | A thin wrapper around `ErrorCard` for the fact-token form (the disk banner). Yellow wash at 0.08, glyph, bold lead, fact tokens. | Degraded |
+| Error card | `ErrorCard` (`.ban` anatomy) | Glyph, bold title, detail wrapped and capped at three lines, buttons right: "Install packages" (install fix), "Open log" (log), "Retry" (a retry or install fix, only where the view has no retry control of its own; step 1 uses its footer). An install fix adds `sudo pacman -S --needed <packages>` in mono with "Copy", and shows "Installing in the terminal" next to the still pressable "Install packages" while it waits for the packages. The open toast adds "Dismiss" under the card. Red wash for a failure, yellow for a degraded or paused state. The compact form (preview pane, open toast) drops the pacman line and caps the detail at two lines. Shows nothing when its error is null. | Degraded. Not drawn on the setup, preview and toast boards. |
 | Empty state | `.empty`, `.hints`, `.hint` | Headline, one sentence, prefix chips (`img:`, `pdf:`, `doc:`, `vid:`, `aud:`, `code:`) with the prefix in accent. | Empty, M1 |
 | Steps | `.steps`, `.step`, `.no`, `.dash` | 20 px number box, done in green wash, current in accent. | Setup to Indexing, M3 |
 | Lazy folder tree | `FolderTree`, `FolderTable`, `FolderRow` | Check, disclosure, path, repo or dataset tag, five kind counts, index size, time, and code toggle. One ListView shared by setup and the drive dialog. | Folders step, NewDrive |
@@ -291,7 +293,7 @@ Setup:
 | `Space` | Folder checkbox | Toggle the folder. |
 | `Esc` | Empty state | Close. |
 
-Setup buttons, by step: "Pause" and "Next: pick folders"; "Back" and "Start indexing"; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The boards define no other setup key (see Open questions).
+Setup buttons, by step: "Install", "Pause" while it runs, "Retry" after a failure or "Resume" when paused, then "Next: pick folders"; "Back" and "Start indexing"; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The Setup board shows only "Pause"; the other step 1 labels come from the error handling spec. The boards define no other setup key (see Open questions).
 
 ## Copy
 
@@ -301,7 +303,7 @@ Every string comes verbatim from the boards. A string the canvas lacks follows t
 - No em or en dashes in prose. Use a comma, a colon, a period or parentheses. A dash used as a placeholder glyph, a range inside a fact token (`L1–47`, `7:55–8:25`) or the separator inside a composed label is typography and stays. The middle dot in `Photos2024 · /2019/lisbon` and in meta lines is the separator.
 - Terse and technical. A label or subtitle can be a fragment. A banner, toast or error is a full sentence.
 - A control says what it does ("Open", "Show in folder", "Copy path", "Retry", "Scan", "Index this drive"). A state is one word or a fact ("ready", "offline", "new").
-- An error says what happened, why, and what to do next, in that order. Example: "Semantic search unavailable: the embedding server did not start (Vulkan device lost). Showing keyword matches." with a "Retry" button.
+- An error says what happened, why, and what to do next, in that order. The title says what happened. The detail says why, then what to do next, and names a control ("press Retry"), never a CLI command. Example: title "The embedding server did not start.", detail "It did not answer within 60 s. Showing keyword matches until it starts.", with a "Retry" button. The daemon writes error copy in `helper/omafindd/errors.py`; the plugin writes only `daemon-offline` and `unknown` in `lib/errors.js`, and `update-running` and `update-failed` in `lib/Update.js` (see `docs/ipc.md`, Errors).
 - Avoid seamless, leverage, robust, comprehensive, delve, showcase, vibrant, crucial, pivotal, streamline, empower, foster, testament, landscape, tapestry, journey, unlock and elevate.
 
 ### Facts, not prose
@@ -319,8 +321,8 @@ Keys the boards use that spec 7.4 does not list: `dataset`, `searchable`, `mount
 What stays a sentence:
 
 - Titles: "Set up omafind", "Pick the folders to search", "Indexing your files", "New drive found".
-- Instructions: "Type a description in any language. Start with a prefix to search one kind only." and "You can close this. The download keeps going."
-- Errors with a fix: "Photos2024 is not connected. Connect it to open this file."
+- Instructions: "Type a description in any language. Start with a prefix to search one kind only.", "Install builds the server (about 3 min) and downloads the model (865 MB)." and "You can close this. Installing keeps going."
+- Errors with a fix: "Photos2024 is not connected." with "Connect it, then press Retry."
 - Prompts: "Photos2024 (exFAT, 1.8 TB) is connected. Scan it for photos, videos and documents to search?"
 - Setup explanation: "omafind writes its own block in your Hyprland bindings and reloads Hyprland. Nothing else in your config changes."
 - Toasts: a short sentence, or a title plus fact tokens (`Opening <name>` with `opener` and `at`).
