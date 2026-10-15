@@ -7,7 +7,7 @@ import os
 import signal
 import subprocess
 import sys
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
@@ -51,7 +51,6 @@ class Jobs:
         self.store, self.embedder, self.journal = store, embedder, journal
         self.settings = settings or Settings()
         self.pause = pause
-        self.queue = asyncio.Queue(maxsize=64)
         self.batch = 0
 
     def _records(self):
@@ -109,7 +108,8 @@ class Jobs:
             os.fsync(stream.fileno())
         temporary.replace(self.journal)
 
-    async def drain(self, *, only: list[int] | None = None, progress=lambda event: None):
+    async def drain(self, *, only: list[int] | None = None, progress=lambda event: None,
+                    prefetch: int = 4):
         self.recover()
         selected = set(only) if only is not None else None
         started = False
@@ -132,27 +132,39 @@ class Jobs:
                 )
                 if not rows:
                     break
-                for row in rows:
-                    await self.queue.put(dict(row))
-                for _ in range(min(64, len(rows))):
-                    row = await self.queue.get()
-                    file = row["id"]
+                pending = {}
+
+                def submit(row, pool, pending=pending):
                     info = json.loads(row["info"] or "{}")
                     append = row["state"] == "partial" and row["detail"] is None
                     start = (info.get("read_to", 0) if row["kind"] == "pdf"
                              else info.get("audio_next", 0)) + 1 if append else 1
+                    args = [self.store.mount / row["path"], row["kind"], start]
+                    if row["kind"] in ("image", "video", "audio"):
+                        args.extend([self.settings.audio, self.settings.image_budget])
+                    if row["kind"] == "video":
+                        args.append(info.get("frame_next") if append else 0.0)
+                    try:
+                        future = pool.submit(extract, *args)
+                    except Exception as error:
+                        future = Future()
+                        future.set_exception(error)
+                    pending[row["id"]] = (future, info, append)
+
+                ordered = [dict(row) for row in rows]
+                for row in ordered[:prefetch]:
+                    submit(row, pool)
+                for index, row in enumerate(ordered):
+                    file = row["id"]
+                    future, info, append = pending.pop(file)
                     try:
                         try:
-                            args = [self.store.mount / row["path"], row["kind"], start]
-                            if row["kind"] in ("image", "video", "audio"):
-                                args.extend([self.settings.audio, self.settings.image_budget])
-                            if row["kind"] == "video":
-                                args.append(info.get("frame_next") if append else 0.0)
-                            future = pool.submit(extract, *args)
                             result = await asyncio.wrap_future(future)
                         except BrokenProcessPool as error:
                             pool.shutdown(wait=True, cancel_futures=True)
                             pool = _pool()
+                            for queued in ordered[index + 1:index + prefetch]:
+                                submit(queued, pool)
                             raise ExtractionError("extract-failed") from error
                         except Exception as error:
                             detail = "extract-failed"
@@ -249,7 +261,6 @@ class Jobs:
                         # Release the completed asyncio future before the next PNG window.
                         await asyncio.sleep(0)
                     self._committed(file)
-                    self.queue.task_done()
                     done += 1
                     state = self.store.db.execute(
                         "SELECT state FROM files WHERE id=?", (file,)
@@ -266,5 +277,7 @@ class Jobs:
                             "state": state,
                         }
                     )
+                    if index + prefetch < len(ordered):
+                        submit(ordered[index + prefetch], pool)
         finally:
             pool.shutdown(wait=True, cancel_futures=True)
