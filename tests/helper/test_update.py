@@ -57,14 +57,14 @@ def test_state_message_carries_build():
 
 
 def test_missing_dependency_start_names_module_and_setup(tmp_path):
-    code = ("import sys, runpy; sys.modules['watchdog'] = None; "
+    code = ("import sys, runpy; sys.modules['inotify_simple'] = None; "
             "runpy.run_module('omafindd', run_name='__main__')")
     result = subprocess.run([sys.executable, "-c", code], cwd=ROOT / "helper",
                             env={"HOME": str(tmp_path), "PATH": "/usr/bin"},
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 1
     assert result.stderr.strip().splitlines() == [
-        "omafindd cannot import watchdog. Run bin/omafind setup."]
+        "omafindd cannot import inotify_simple. Run bin/omafind setup."]
 
 
 def test_fingerprint_rejects_manifest_without_version(plugin):

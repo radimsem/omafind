@@ -6,15 +6,13 @@ import threading
 import time
 from pathlib import Path
 
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
-
 from . import rules
+from .inotify import InotifyObserver
 
 logger = logging.getLogger(__name__)
 
 
-class _Handler(FileSystemEventHandler):
+class _Handler:
     def __init__(self, watcher):
         self.watcher = watcher
 
@@ -32,7 +30,7 @@ class _Handler(FileSystemEventHandler):
 
 class Watcher:
     def __init__(self, *, on_dirty, clock=time.monotonic, sleep=asyncio.sleep,
-                 observer_factory=Observer, window=2.0):
+                 observer_factory=InotifyObserver, window=2.0):
         self.on_dirty, self.clock, self.sleep = on_dirty, clock, sleep
         self.observer = observer_factory()
         self.window = window
@@ -44,6 +42,9 @@ class Watcher:
         self._lock = threading.RLock()
         self._watch_lock = threading.RLock()
         self._directory_events = []
+        self._overflow = False
+        if hasattr(self.observer, 'on_overflow'):
+            self.observer.on_overflow = self.overflow
 
     def watch(self, roots: list[dict]) -> None:
         if self.loop is None:
@@ -79,9 +80,11 @@ class Watcher:
         if path.is_symlink() or not roots or not any(self._allowed(path, root) for root in roots):
             return
 
+        failures = []
+
         def failed(error):
             self.unwatched += 1
-            logger.warning('Watcher directory errno=%s', error.errno)
+            failures.append(error.errno)
 
         for folder, dirs, _ in os.walk(path, onerror=failed):
             directory = Path(folder)
@@ -93,6 +96,14 @@ class Watcher:
                         _Handler(self), str(directory), recursive=False)
                 except OSError as error:
                     failed(error)
+
+        if failures:
+            logger.warning('Watcher could not watch %d directories (errno=%s)',
+                           len(failures), failures[0])
+
+    def overflow(self) -> None:
+        if self.loop is not None and not self.stopped:
+            self.loop.call_soon_threadsafe(setattr, self, '_overflow', True)
 
     def directory_event(self, path, removed):
         if self.loop is not None and not self.stopped:
@@ -126,6 +137,14 @@ class Watcher:
                     self.dirty.setdefault(root, {}).setdefault(directory, seen)
 
     async def flush(self) -> None:
+        if self._overflow:
+            self._overflow = False
+            self._directory_events = []
+            with self._lock:
+                settings = list(self.roots.values())
+            await asyncio.to_thread(self.watch, settings)
+            for setting in settings:
+                await self.on_dirty(setting, None)
         events, self._directory_events = self._directory_events, []
         if events:
             work = asyncio.create_task(asyncio.to_thread(self._update_directories, events))
