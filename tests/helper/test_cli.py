@@ -25,6 +25,10 @@ def cli():
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
+    from omafindd import tools
+
+    # Build packages differ per host; tests that check them patch missing_build again.
+    monkeypatch.setattr(tools, "missing_build", lambda **kwargs: [])
     values = {"HOME": str(tmp_path / "home"), "XDG_CONFIG_HOME": str(tmp_path / "config"),
               "XDG_DATA_HOME": str(tmp_path / "data"), "XDG_RUNTIME_DIR": str(tmp_path / "run")}
     for key, value in values.items():
@@ -294,6 +298,51 @@ def test_setup_socket_timeout_reports_journal(cli, env, capsys):
         "journalctl", "--user", "-u", "omafind.service", "-n", "20", "--no-pager",
     ]
     assert "socket silent" in capsys.readouterr().err
+
+
+def test_setup_json_ends_with_ok(cli, env, capsys):
+    assert cli.main(["setup", "--json"], env, run=FakeRun(active="inactive"),
+                    probe=lambda path, timeout: True) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[:2] == ["unit active", "socket answering"]
+    assert json.loads(lines[-1]) == {"ok": True, "build_missing": []}
+
+
+def test_setup_json_carries_the_failed_step_output(cli, env, capsys):
+    def run(command, **kwargs):
+        if command == ["fd", "--version"]:
+            return subprocess.CompletedProcess(command, 0, "fd 10.5.0\n", "")
+        return subprocess.CompletedProcess(command, int(command[0] == "uv"), "",
+                                           "error: no network\n")
+
+    assert cli.main(["setup", "--json"], env, run=run) == 1
+    error = json.loads(capsys.readouterr().out.splitlines()[-1])["error"]
+    assert error["code"] == "helper-install-failed"
+    assert error["detail"].startswith("error: no network. ")
+    assert error["fix"] == {"kind": "retry"}
+
+
+def test_setup_json_reports_a_silent_socket(cli, env, capsys):
+    now = [0.0]
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    assert cli.setup(env, run=FakeRun(active="inactive"), probe=lambda path, timeout: False,
+                     clock=lambda: now[0], sleep=sleep, as_json=True) == 1
+    error = json.loads(capsys.readouterr().out.splitlines()[-1])["error"]
+    assert error["code"] == "helper-install-failed"
+    assert error["detail"].startswith("The omafind service did not answer on its socket. ")
+
+
+def test_setup_json_reports_an_os_error_as_the_last_line(cli, env, capsys):
+    del env["XDG_RUNTIME_DIR"]
+    assert cli.main(["setup", "--json"], env, run=FakeRun()) == 1
+    output = capsys.readouterr()
+    assert "XDG_RUNTIME_DIR is unset" in output.err
+    error = json.loads(output.out.splitlines()[-1])["error"]
+    assert error["code"] == "helper-install-failed"
+    assert error["detail"].startswith("XDG_RUNTIME_DIR is unset")
 
 
 def test_failed_runtime_build_does_not_download(cli, env):

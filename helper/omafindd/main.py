@@ -9,7 +9,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from . import build, health, paths, permissions, recovery
+from . import build, health, paths, permissions, recovery, startlog
 from .diskguard import DiskGuard
 from .install import RuntimeJob
 from .ipc import AlreadyRunning, IpcServer
@@ -451,6 +451,7 @@ async def _serve(manifest: Path | None = None, *, interval: float = 0.5) -> int:
     clean = False
     try:
         await server.start()
+        startlog.clear()
         try:
             await asyncio.to_thread(freshness.volumes.snapshot)
         except (OSError, ValueError, subprocess.SubprocessError):
@@ -509,6 +510,7 @@ def run() -> int:
         return asyncio.run(_serve())
     except (OSError, ValueError) as error:
         logger.error('%s', error)
+        startlog.write(str(error))
         return 1
     except KeyboardInterrupt:
         return 0

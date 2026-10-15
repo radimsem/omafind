@@ -8,7 +8,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from . import errors, models
+from . import errors, models, paths, tools
 
 
 class Paused(Exception):
@@ -44,8 +44,10 @@ class RuntimeJob:
         valid=models.verify,
         gpu=gpu_name,
         clock=time.monotonic,
+        missing_build=tools.missing_build,
     ):
         self.data_dir, self.plugin_root = data_dir, plugin_root
+        self.missing_build = missing_build
         self.broadcast, self.spawn = broadcast, spawn
         self.download, self.valid, self.gpu, self.clock = download, valid, gpu, clock
         self._message = {
@@ -175,6 +177,9 @@ class RuntimeJob:
         if self._runtime_exists() or self._message["build"]["state"] == "ok":
             self._message["build"]["state"] = "ok"
             return
+        if missing := self.missing_build():
+            self._message["build"]["state"] = "failed"
+            raise errors.UserFailure(errors.build_missing_packages(missing))
         if not await self._scope_available():
             raise errors.UserFailure(errors.build_no_scope())
         if self._paused:
@@ -185,23 +190,24 @@ class RuntimeJob:
         started = self.clock()
         env = {**os.environ, "OMAFIND_DATA_DIR": str(self.data_dir)}
         env.pop("OMAFIND_BUILD_SCOPED", None)
-        self._process = await self.spawn(
-            str(self.plugin_root / "scripts/build-runtime.sh"),
-            env=env,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
-        )
+        try:
+            log = paths.logs_dir(self.data_dir) / "build-runtime.log"
+            descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            os.fchmod(descriptor, 0o600)
+        except OSError:
+            # Without a log the build still runs, and a failure names only its exit code.
+            log, descriptor = None, os.open(os.devnull, os.O_WRONLY)
+        with os.fdopen(descriptor, "wb") as stream:
+            self._process = await self.spawn(
+                str(self.plugin_root / "scripts/build-runtime.sh"),
+                env=env,
+                stdout=stream,
+                stderr=asyncio.subprocess.STDOUT,
+                start_new_session=True,
+            )
         if self._paused:
             self._terminate()
-        lines = deque(maxlen=20)
-
-        async def finish():
-            while line := await self._process.stderr.readline():
-                lines.append(line.decode(errors="replace").strip())
-            return await self._process.wait()
-
-        finishing = asyncio.create_task(finish())
+        finishing = asyncio.create_task(self._process.wait())
         while not finishing.done():
             await asyncio.wait({finishing}, timeout=0.5)
             if not finishing.done():
@@ -213,9 +219,9 @@ class RuntimeJob:
             raise Paused
         if code:
             self._message["build"]["state"] = "failed"
-            last = next((line for line in reversed(lines) if line),
-                        f"The build exited with code {code}")
-            raise errors.UserFailure(errors.build_failed(last))
+            if log is None:
+                raise errors.UserFailure(errors.build_failed(f"The build exited with code {code}"))
+            raise errors.UserFailure(await asyncio.to_thread(errors.build_failure, log, code))
         self._message["build"].update(state="ok", seconds=round(self.clock() - started))
         await self._push(changed=True)
 

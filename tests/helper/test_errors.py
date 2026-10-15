@@ -183,3 +183,11 @@ def test_empty_or_missing_log_reports_the_exit_code(tmp_path):
     empty.write_text("")
     assert errors.build_failure(empty, 2).detail.startswith("The build exited with code 2.")
     assert errors.build_failure(tmp_path / "absent.log", 2).code == "build-failed"
+
+
+def test_build_failure_keeps_an_unknown_missing_header_as_build_failed(tmp_path):
+    log = tmp_path / "build-runtime.log"
+    log.write_text("x.cpp:1:10: fatal error: foo/bar.h: No such file or directory\n")
+    error = errors.build_failure(log, 1)
+    assert error.code == "build-failed"
+    assert error.detail.startswith("x.cpp:1:10: fatal error: foo/bar.h: No such file or directory.")

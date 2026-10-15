@@ -34,6 +34,14 @@ def data_dir() -> Path:
     return path
 
 
+def logs_dir(data: Path | None = None) -> Path:
+    """`<data>/cache/logs`, created 0700 on demand. `data` defaults to the user's data directory."""
+    cache = (data_dir() if data is None else data) / "cache"
+    cache.mkdir(parents=True, mode=0o700, exist_ok=True)
+    (cache / "logs").mkdir(mode=0o700, exist_ok=True)
+    return cache / "logs"
+
+
 def runtime_bin() -> Path:
     return data_dir_path() / "runtime/bin/llama-server"
 
