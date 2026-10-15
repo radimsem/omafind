@@ -16,23 +16,28 @@ function functions(path, values) {
 test('Service requests live binds and routes replies and errors', () => {
   const sent = [];
   const { ctx } = functions('Service.qml', {
-    binds: [], bindsReady: true, bindsError: 'old', Protocol: { decode: JSON.parse },
+    binds: [], bindsReady: true, bindsError: { code: 'unknown', title: 'old', detail: '' }, driveScanning: false,
+    Protocol: { decode: JSON.parse }, Errors: load('errors.js'),
     send(message) { sent.push(message); return true; }, setupFailed() {},
   });
   ctx.getBinds();
   assert.equal(sent[0].t, 'binds_get');
   assert.equal(ctx.bindsReady, false);
-  assert.equal(ctx.bindsError, '');
+  assert.equal(ctx.bindsError, null);
   ctx.receive(JSON.stringify({ t: 'binds', binds: [{ chord: 'F9', description: 'Menu' }] }));
   assert.equal(ctx.bindsReady, true);
   assert.equal(ctx.binds[0].chord, 'F9');
   ctx.getBinds();
-  ctx.receive(JSON.stringify({ t: 'error', for: 'binds_get', reason: 'Cannot read binds.' }));
+  ctx.receive(JSON.stringify({ t: 'error', for: 'binds_get', code: 'binds-failed',
+    title: 'Your Hyprland bindings could not be read.', detail: 'Hyprland is not running. The shortcut was not saved.',
+    fix: { kind: 'retry' } }));
   assert.equal(ctx.bindsReady, false);
-  assert.equal(ctx.bindsError, 'Cannot read binds.');
+  assert.equal(ctx.bindsError.code, 'binds-failed');
+  ctx.receive(JSON.stringify({ t: 'error', for: 'binds_get', reason: 'Cannot read binds.' }));
+  assert.equal(ctx.bindsError.title, 'Cannot read binds.');
   ctx.send = () => false;
   ctx.getBinds();
-  assert.match(ctx.bindsError, /not running/);
+  assert.match(ctx.bindsError.title, /not running/);
 });
 
 test('Index step checks any saved chord and preserves the save workflow', () => {
@@ -81,7 +86,7 @@ test('the shortcut row captures Space and Return, cancels on focus loss and leav
 function index(values = {}) {
   const { ctx, source } = functions('ui/SetupIndex.qml', {
     chosen: 'F9', saving: false, Keycombo: load('keycombo.js'),
-    service: { binds: [], bindsReady: true, bindsError: '' },
+    service: { binds: [], bindsReady: true, bindsError: null },
     recorder: { active: false, operation: '', pendingLeave: false, conflict: '', lost: false, exposed: false },
     ...values,
   });
@@ -99,7 +104,7 @@ test('saving allows unknown binds after an error but waits for cleanup', () => {
   const { ctx, rowValue, saveEnabled } = index();
   ctx.service.bindsReady = false;
   assert.equal(saveEnabled(), false);
-  ctx.service.bindsError = 'Could not read bindings.';
+  ctx.service.bindsError = { code: 'binds-failed', title: 'Your Hyprland bindings could not be read.', detail: '' };
   assert.equal(saveEnabled(), true);
   assert.match(rowValue('note'), /not been checked for conflicts/);
   ctx.recorder.operation = 'leave';

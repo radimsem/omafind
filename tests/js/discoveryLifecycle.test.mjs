@@ -23,7 +23,7 @@ test('closing a picker stops its discovery without touching playback in another 
 test('reopening setup reuses or restarts discovery despite a cached first level', () => {
   let scans = 0;
   const ctx = functions('SetupView.qml', { back: false, step: 2, walkError: '',
-    service: { discover: { folders: [] }, discoverError: '', scanning: false,
+    service: { discover: { folders: [] }, folderError: null, scanning: false,
       scan() { scans++; } } });
   ctx.reset();
   assert.equal(scans, 1);
@@ -33,7 +33,7 @@ test('reopening setup reuses or restarts discovery despite a cached first level'
 test('a reconnected Folders step requests a fresh discovery snapshot', () => {
   let scans = 0;
   const ctx = functions('SetupView.qml', { visible: true, step: 2, walkError: '',
-    service: { ready: true, discover: { folders: [] }, discoverError: '', scanning: false,
+    service: { ready: true, discover: { folders: [] }, folderError: null, scanning: false,
       scan() { scans++; } } });
   const source = readFileSync(new URL('../../SetupView.qml', import.meta.url), 'utf8');
   const handler = source.match(/function onReadyChanged\(\) \{([^]*?)^    \}/m);
@@ -50,7 +50,7 @@ test('a reconnected Folders step requests a fresh discovery snapshot', () => {
 test('Back then Next retries a failed background walk', () => {
   let scans = 0;
   const ctx = functions('SetupView.qml', { back: true, walkError: 'fd failed: Permission denied',
-    service: { discover: { folders: [] }, discoverError: '', scanning: false,
+    service: { discover: { folders: [] }, folderError: null, scanning: false,
       scan() { scans++; } } });
   ctx.showFolders();
   assert.equal(ctx.back, false);

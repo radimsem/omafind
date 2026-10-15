@@ -197,10 +197,11 @@ FocusScope {
     Rectangle { width: parent.width; height: 1; color: Plugin.Tokens.sep }
 
     Label {
-      visible: !!root.service && root.service.setupError !== ""
+      visible: !!root.service && !!root.service.indexError
       width: parent.width
       wrapMode: Text.Wrap
-      text: root.service ? root.service.setupError : ""
+      text: root.service && root.service.indexError
+        ? (root.service.indexError.title + " " + root.service.indexError.detail).trim() : ""
       color: Color.urgent
     }
 

@@ -25,7 +25,7 @@ FocusScope {
   // The problem list grows the panel instead of scrolling inside it, up to eight rows.
   readonly property real extraHeight: showList && problems.length ? list.height + Style.space(8) : 0
   readonly property var bindMap: service ? Keycombo.bindMap(service.binds) : ({})
-  readonly property bool bindsKnown: !!service && (service.bindsReady || service.bindsError !== "")
+  readonly property bool bindsKnown: !!service && (service.bindsReady || !!service.bindsError)
   readonly property var chosenParts: Keycombo.fromHyprland(chosen)
   // The saved chord may be taken by a bind added since; the user must pick another first. A
   // saved chord the recorder cannot spell is shown raw and not checked.
@@ -212,7 +212,7 @@ FocusScope {
         || (recorder.lost ? "Hyprland left recording mode, so omafind stopped recording. Press Change to try again." : "")
         || (recorder.exposed ? "Hyprland could not enter recording mode. Press Change to try again." : "")
         || root.chosenConflict
-        || (root.service && root.service.bindsError !== "" ? root.service.bindsError + " The shortcut has not been checked for conflicts. Close setup and open it again to retry." : "")
+        || (root.service && root.service.bindsError ? root.service.bindsError.title + " The shortcut has not been checked for conflicts. Close setup and open it again to retry." : "")
       noteTone: note !== "" ? "warn" : ""
       onChange: {
         recorder.start()

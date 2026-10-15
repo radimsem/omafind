@@ -38,7 +38,8 @@ FocusScope {
   readonly property bool anyChecked: choices.chosen.length > 0
   readonly property var progress: service ? service.progress : null
   readonly property var footer: Volumes.dialogFooter(progress, uuid, label)
-  readonly property string errorText: service ? service.setupError || service.driveError || (walk ? walk.error : "") : ""
+  readonly property var failure: service ? service.driveError || service.indexError : null
+  readonly property string errorText: failure ? (failure.title + " " + failure.detail).trim() : walk ? walk.error : ""
 
   readonly property real panelWidth: Style.space(1120)
   // The 4 covers the card border on both edges.

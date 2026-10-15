@@ -7,7 +7,7 @@ import { load } from './load.mjs';
 function service(values = {}) {
   const ctx = vm.createContext({
     discoverCounts: {}, walks: {}, datasets: {}, repos: {}, worktrees: {}, childFolders: {}, childrenAsked: {},
-    Protocol: { decode: JSON.parse }, childrenReceived() {}, setupFailed() {},
+    Protocol: { decode: JSON.parse }, Errors: load('errors.js'), childrenReceived() {}, setupFailed() {},
     send() { return true; }, ...values,
   });
   const source = readFileSync(new URL('../../Service.qml', import.meta.url), 'utf8');

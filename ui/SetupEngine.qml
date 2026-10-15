@@ -21,12 +21,26 @@ FocusScope {
   readonly property var model: Setup.modelTask(rp)
   readonly property var engine: Setup.engineButton(rp, helperReady)
   readonly property bool ready: Setup.engineReady(rp)
+  readonly property var error: service ? service.engineError : null
+  readonly property string hint: Setup.engineHint(rp)
+  // SetupView grows the panel by this much while the error card shows.
+  readonly property real extraHeight: errorCard.visible ? errorCard.height + column.spacing : 0
 
   function focusFirst() {
     // With no ready control the scope takes focus, so no ring shows until Tab.
     if (helperTask.buttonText !== "" && helperTask.buttonEnabled) helperTask.forceActiveFocus()
     else if (next.enabled) next.forceActiveFocus()
     else root.forceActiveFocus()
+  }
+
+  // The footer button and the card's Retry run the same step. Before the helper runs, the card
+  // retries the helper install.
+  function runEngine() {
+    if (!service) return
+    errorCard.stopInstalling()
+    if (!helperReady) service.installHelper()
+    else if (engine.action === "pause") service.runtimePause()
+    else service.runtimeInstall()
   }
 
   Column {
@@ -42,7 +56,7 @@ FocusScope {
       tokens: root.helper.tokens
       value: root.helper.value || ""
       valueTone: root.helper.mark === "ok" ? "ok" : "plain"
-      buttonText: root.helper.install ? "Install" : ""
+      buttonText: root.helper.install ? (root.error ? "Retry" : "Install") : ""
       buttonEnabled: !!root.service && !root.service.helperRunning
       onButtonClicked: root.service.installHelper()
     }
@@ -134,6 +148,15 @@ FocusScope {
       }
     }
 
+    ErrorCard {
+      id: errorCard
+      objectName: "omafindEngineError"
+      width: parent.width
+      error: root.error
+      focusable: true
+      onRetry: root.runEngine()
+    }
+
     Rectangle { width: parent.width; height: 1; color: Plugin.Tokens.sep }
 
     SetupFacts {
@@ -157,10 +180,13 @@ FocusScope {
       anchors.right: buttons.left
       anchors.rightMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
+      visible: root.hint !== ""
+      wrapMode: Text.Wrap
+      maximumLineCount: 2
       elide: Text.ElideRight
-      text: Setup.engineHint(root.rp)
+      text: root.hint
       textFormat: Text.PlainText
-      color: root.rp && root.rp.state === "failed" ? Color.urgent : Plugin.Tokens.dim
+      color: Plugin.Tokens.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall
     }
@@ -178,11 +204,7 @@ FocusScope {
         enabled: root.engine.enabled
         text: root.engine.text
         focusable: true
-        onClicked: {
-          if (!root.service) return
-          if (root.engine.action === "pause") root.service.runtimePause()
-          else root.service.runtimeInstall()
-        }
+        onClicked: root.runEngine()
       }
 
       ActionButton {

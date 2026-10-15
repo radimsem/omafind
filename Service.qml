@@ -4,6 +4,7 @@ import Quickshell.Io
 import "lib/Backoff.js" as Backoff
 import "lib/Protocol.js" as Protocol
 import "lib/Connection.js" as Connection
+import "lib/errors.js" as Errors
 import "lib/Settings.js" as Settings
 import "lib/Update.js" as Update
 import "lib/volumes.js" as Volumes
@@ -26,14 +27,15 @@ Item {
   property var results: null
   property var preview: null
   property var status: null
-  property string warmFailure: ""
+  // Each surface's latest failure: an error object (docs/ipc.md "Errors") or null.
+  property var searchError: null
 
   // Setup (issue #5). The shell entry, parsed from shell.json, and the latest daemon facts.
   property var settingsEntry: ({})
   readonly property var settings: Settings.normalize(settingsEntry)
   property var runtimeProgress: null
   property var discover: null
-  property string discoverError: ""
+  property var folderError: null
   property bool scanning: false
   // Absolute folder -> rolled-up counts, merged from every discover_counts batch.
   property var discoverCounts: ({})
@@ -51,15 +53,15 @@ Item {
   property bool indexPending: false
   property var binds: []
   property bool bindsReady: false
-  property string bindsError: ""
-  property string setupError: ""
+  property var bindsError: null
+  property var engineError: null
+  property var indexError: null
   property bool helperRunning: false
   // Issue #16: the lib/Update.js state. `updateRun` marks a helperSetup run started by an update;
   // `updateQueued` holds one back while a setup the user started is still running.
   property var update: Update.initial()
   property bool updateRun: false
   property bool updateQueued: false
-  property string updateLine: ""
   property bool runtimeAsked: false
   property string indexVolume: ""
 
@@ -69,7 +71,7 @@ Item {
   property real clock: Date.now()
   property var driveDiscover: null
   property bool driveScanning: false
-  property string driveError: ""
+  property var driveError: null
   readonly property var ignoredVolumes: Array.isArray(settings.ignoredVolumes) ? settings.ignoredVolumes
     : Array.isArray(settingsEntry.ignoredVolumes) ? settingsEntry.ignoredVolumes.filter(uuid => typeof uuid === "string" && uuid !== "")
     : []
@@ -82,16 +84,16 @@ Item {
   signal itemFailed(var reply)
   signal itemOpened(var reply)
   signal openFailed(var reply)
-  signal warmFailed(string reason)
+  signal warmFailed(var error)
   signal statusReceived(var reply)
   signal childrenReceived(string path)
   signal fsListReceived(var reply)
-  signal setupFailed(string forType, string reason)
+  signal setupFailed(string forType, var error)
   // A reconciled drive changed what a search can find.
   signal volumesRefreshed()
 
   function warm() {
-    warmFailure = ""
+    searchError = null
     return send({t: "warm"})
   }
 
@@ -116,13 +118,16 @@ Item {
   // off-thread write to land in shell.json (or 2 s, whichever comes first). A drive passes its
   // volume UUID and saves only the roots, so setup state stays as it was.
   function startIndexing(roots, codeRoots, volume) {
-    setupError = ""
+    indexError = null
+    if (volume) driveError = null
     var changes = volume ? {roots: roots} : {roots: roots, codeRoots: codeRoots, setupDone: true}
     if (volume && Array.isArray(codeRoots)) changes.codeRoots = codeRoots
     if (!persist(changes)) {
-      setupError = volume
+      var failure = Errors.wrap(volume
         ? "Could not save the folders to shell.json. Check that the omafind plugin is enabled, then press Index this drive again."
-        : "Could not save the folders to shell.json. Check that the omafind plugin is enabled, then press Start indexing again."
+        : "Could not save the folders to shell.json. Check that the omafind plugin is enabled, then press Start indexing again.")
+      if (volume) driveError = failure
+      else folderError = failure
       return false
     }
     indexVolume = volume || ""
@@ -140,7 +145,7 @@ Item {
   }
 
   function scanDrive(uuid) {
-    driveError = ""
+    driveError = null
     driveDiscover = null
     driveScanning = send({t: "discover_start", volume: uuid})
     return driveScanning
@@ -196,18 +201,21 @@ Item {
       return
     }
     updateRun = true
-    updateLine = ""
     helperRunning = true
     helperSetup.running = true
   }
 
-  function runtimeInstall() { return send({t: "runtime_install"}) }
+  function runtimeInstall() {
+    engineError = null
+    return send({t: "runtime_install"})
+  }
   function runtimePause() { return send({t: "runtime_pause"}) }
   function requestRuntimeStatus() { return send({t: "runtime_status"}) }
   function requestProgress() { return send({t: "index_progress"}) }
+  function retryFailed(code) { return send({t: "retry_failed", code: code}) }
 
   function scan() {
-    discoverError = ""
+    folderError = null
     scanning = send({t: "discover_start"})
     return scanning
   }
@@ -236,15 +244,15 @@ Item {
   // Port of omaone's runSetup: bin/omafind setup installs the venv and enables the unit.
   function installHelper() {
     if (helperRunning) return
-    setupError = ""
+    engineError = null
     helperRunning = true
     helperSetup.running = true
   }
 
   function getBinds() {
     bindsReady = false
-    bindsError = ""
-    if (!send({t: "binds_get"})) bindsError = "omafindd is not running."
+    bindsError = null
+    if (!send({t: "binds_get"})) bindsError = Errors.offline()
   }
 
   function saveShortcut(chord, menuRow, done) {
@@ -329,6 +337,7 @@ Item {
       receiveState(message)
       break
     case "results":
+      message.degraded = Errors.wrap(message.degraded)
       results = message
       resultsReceived(message)
       break
@@ -356,8 +365,8 @@ Item {
       openFailed(message)
       break
     case "warm_failed":
-      warmFailure = typeof message.reason === "string" ? message.reason : ""
-      warmFailed(warmFailure)
+      searchError = Errors.from(message)
+      warmFailed(searchError)
       break
     case "status":
       status = message
@@ -366,21 +375,22 @@ Item {
     case "binds":
       binds = Array.isArray(message.binds) ? message.binds : []
       bindsReady = true
-      bindsError = ""
+      bindsError = null
       break
     case "runtime_progress":
       runtimeProgress = message
+      engineError = message.state === "failed" ? Errors.from(message) : null
       break
     case "discover_result":
       if (Array.isArray(message.roots)) message.roots.forEach(entry => clearDiscovery(entry.path))
       if (message.volume) {
         driveScanning = false
-        driveError = ""
+        driveError = null
         driveDiscover = message
         break
       }
       scanning = false
-      discoverError = ""
+      folderError = null
       discover = message
       break
     case "discover_counts":
@@ -390,7 +400,7 @@ Item {
       var nextChildren = Object.assign({}, childFolders)
       nextChildren[message.path] = {dirs: Array.isArray(message.dirs) ? message.dirs : [],
         volume: typeof message.volume === "string" ? message.volume : "",
-        error: typeof message.error === "string" ? message.error : ""}
+        error: errorText(message.error)}
       childFolders = nextChildren
       var childCounts = Object.assign({}, discoverCounts)
       nextChildren[message.path].dirs.forEach(dir => { if (dir.counts && !childCounts[dir.path]) childCounts[dir.path] = dir.counts })
@@ -438,22 +448,62 @@ Item {
   }
 
   function receiveSetupError(message) {
-    var reason = typeof message.reason === "string" ? message.reason : ""
-    // Errors carry no volume, so a failed discover_start is the drive scan's while one runs.
-    if (message.for === "discover_start" && driveScanning) {
-      driveScanning = false
-      driveError = reason
-    } else if (message.for === "discover_start") {
-      scanning = false
-      discoverError = reason
-    } else if (message.for === "binds_get") {
-      bindsReady = false
-      bindsError = reason
-    } else {
-      setupError = reason
+    var error = Errors.from(message)
+    var surface = errorSurface(message.for, driveScanning)
+    if (message.for === "discover_start") {
+      if (driveScanning) driveScanning = false
+      else scanning = false
     }
+    if (message.for === "binds_get") bindsReady = false
     if (message.for === "discover_children") childrenAsked = {}
-    setupFailed(message.for, reason)
+    root[surface] = error
+    setupFailed(message.for, error)
+  }
+
+  // Each request reports on one surface. Requests with no surface of their own report on step 1.
+  // Errors carry no volume, so a failed discover_start is the drive scan's while one runs.
+  function errorSurface(kind, driveScan) {
+    switch (kind) {
+    case "discover_start":
+      return driveScan ? "driveError" : "folderError"
+    case "discover_stop":
+    case "discover_children":
+    case "fs_list":
+      return "folderError"
+    case "drive_decision":
+      return "driveError"
+    case "binds_get":
+      return "bindsError"
+    case "index_start":
+    case "index_progress":
+    case "retry_failed":
+      return "indexError"
+    default:
+      return "engineError"
+    }
+  }
+
+  // Walks and folder rows show a failure as one fact: the error's title.
+  function errorText(value) {
+    var error = Errors.wrap(value)
+    return error ? error.title : ""
+  }
+
+  // `bin/omafind setup --json` ends stdout with {"ok": false, "error": {...}}; stderr is the fallback.
+  function helperFailure(stdout, stderr) {
+    var reply = null
+    try {
+      reply = JSON.parse(lastLine(stdout))
+    } catch (error) {
+      reply = null
+    }
+    if (reply && reply.ok === false && reply.error) return Errors.wrap(reply.error)
+    return Errors.wrap(lastLine(stderr) || "The omafind helper could not be installed.")
+  }
+
+  function lastLine(text) {
+    var lines = String(text || "").split("\n").map(line => line.trim()).filter(line => line !== "")
+    return lines.length ? lines[lines.length - 1] : ""
   }
 
   // Clears counts, datasets and walks under `walkRoot`. Cached children stay: they hold the folder
@@ -489,7 +539,8 @@ Item {
     discoverCounts = counts
     var nextWalks = Object.assign({}, walks)
     nextWalks[message.root] = {done: !!message.done, seconds: typeof message.seconds === "number" ? message.seconds : null,
-      error: typeof message.error === "string" ? message.error : ""}
+      error: errorText(message.error)}
+    if (message.error) folderError = Errors.wrap(message.error)
     if (Array.isArray(message.datasets)) {
       var nextSets = Object.assign({}, datasets)
       message.datasets.forEach(entry => nextSets[entry.path] = entry)
@@ -514,7 +565,7 @@ Item {
         || ["stopped", "text", "full"].indexOf(message.embedder) === -1) return
     daemonState = message
     reduceUpdate({type: "daemon", build: typeof message.build === "string" ? message.build : ""})
-    if (message.embedder !== "stopped") warmFailure = ""
+    if (message.embedder !== "stopped") searchError = null
     connection = Connection.reduce(connection, {type: "state"})
     if (ready && !runtimeProgress && !runtimeAsked) runtimeAsked = requestRuntimeStatus()
   }
@@ -561,23 +612,18 @@ Item {
 
   Process {
     id: helperSetup
-    command: [root.pluginDir + "/bin/omafind", "setup"]
-    stderr: SplitParser {
-      splitMarker: "\n"
-      onRead: data => {
-        if (!data.trim()) return
-        if (root.updateRun) root.updateLine = data.trim()
-        else root.setupError = data.trim()
-      }
-    }
+    command: [root.pluginDir + "/bin/omafind", "setup", "--json"]
+    stdout: StdioCollector { id: helperOut; waitForEnd: true }
+    stderr: StdioCollector { id: helperErr; waitForEnd: true }
     onExited: (exitCode, exitStatus) => {
       var ok = exitCode === 0 && exitStatus === 0
+      var failure = ok ? null : root.helperFailure(helperOut.text, helperErr.text)
       root.helperRunning = false
       if (root.updateRun) {
         root.updateRun = false
-        root.reduceUpdate({type: "setup-exited", ok: ok, line: root.updateLine})
-      } else if (ok) {
-        root.setupError = ""
+        root.reduceUpdate({type: "setup-exited", ok: ok, line: root.lastLine(helperErr.text), error: failure})
+      } else {
+        root.engineError = failure
       }
       if (root.updateQueued) {
         root.updateQueued = false

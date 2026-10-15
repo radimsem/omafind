@@ -22,9 +22,11 @@ FocusScope {
   readonly property var size: Setup.panelSize(step)
   readonly property real panelWidth: Style.space(size.width)
   readonly property real panelHeight: Style.space(size.height) + (step === 3 ? indexPage.extraHeight : 0)
+    + (step === 1 ? enginePage.extraHeight : 0)
   readonly property string walkError: service ? Setup.walkError(service.walks) : ""
   readonly property var discover: service ? service.discover : null
-  readonly property string indexFailure: step === 3 && service ? Setup.indexFailure(service.progress, service.setupError) : ""
+  readonly property string indexFailure: step === 3 && service ? Setup.indexFailure(service.progress,
+    service.indexError ? (service.indexError.title + " " + service.indexError.detail).trim() : "") : ""
   readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
 
 
@@ -64,7 +66,7 @@ FocusScope {
 
   function ensureScan(force) {
     if (!service || service.scanning) return
-    if (force || !service.discover || service.discoverError !== "" || walkError !== "") service.scan()
+    if (force || !service.discover || !!service.folderError || walkError !== "") service.scan()
   }
 
   function showFolders() {
@@ -118,7 +120,8 @@ FocusScope {
           stepText: Setup.stepLabel(root.step)
           subtitle: root.step === 1 ? "Everything runs on this machine. Nothing downloads until you press a button."
             : root.step === 3 ? root.indexFailure || "You can search already. Results fill in as files finish."
-            : root.service && !root.service.scanning && root.service.discoverError !== "" ? Setup.folderError(root.service.discoverError)
+            : root.service && !root.service.scanning && root.service.folderError
+              ? (root.service.folderError.title + " " + root.service.folderError.detail).trim()
             : root.walkError !== "" ? Setup.folderError(root.walkError)
             : ""
           subtitleColor: root.step === 2 || root.indexFailure !== "" ? Color.urgent : Plugin.Tokens.dim

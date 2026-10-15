@@ -46,15 +46,9 @@ Item {
     && (connection.unit === "missing" || connection.failures > 0))
   // Set while Service.qml brings the daemon to the plugin's build (issue #16).
   readonly property var updateBanner: service && service.update ? Update.banner(service.update) : null
-  readonly property string degradedReason: reply && reply.degraded ? String(reply.degraded)
-    : service && service.warmFailure ? service.warmFailure : ""
-
-  // The daemon sends either a phrase ("indexing in progress", "embedding model unavailable",
-  // "the embedding server did not start") or the bare cause of a server failure.
-  function degradedClause(reason) {
-    if (/^(the embedding server|embedding model|indexing)/.test(reason)) return reason
-    return "the embedding server did not start (" + reason + ")"
-  }
+  // Service.qml turns `degraded` and a failed warm-up into error objects.
+  readonly property var degradedError: reply && reply.degraded ? reply.degraded
+    : service && service.searchError ? service.searchError : null
 
   signal closeRequested()
   signal toastRequested(string title, var tokens, bool error)
@@ -432,16 +426,17 @@ Item {
     anchors.top: query.bottom
     anchors.left: parent.left
     anchors.right: parent.right
-    visible: !!root.updateBanner || root.daemonDown || root.degradedReason !== ""
+    visible: !!root.updateBanner || root.daemonDown || !!root.degradedError
       || (!!root.reply && root.reply.t === "error")
     height: visible ? implicitHeight : 0
     action: root.updateBanner ? root.updateBanner.action : "Retry"
     lead: root.updateBanner ? root.updateBanner.lead
-      : root.daemonDown ? "" : root.degradedReason !== "" ? "Semantic search unavailable:" : ""
+      : root.daemonDown ? "" : root.degradedError ? root.degradedError.title
+      : root.reply && root.reply.t === "error" ? root.reply.title || "" : ""
     text: root.updateBanner ? root.updateBanner.text
       : root.daemonDown ? "omafindd is not running. Run systemctl --user start omafind, then retry."
-      : root.degradedReason !== "" ? root.degradedClause(root.degradedReason) + ". Showing keyword matches."
-      : root.reply && root.reply.reason ? String(root.reply.reason) : ""
+      : root.degradedError ? root.degradedError.detail || ""
+      : root.reply && root.reply.t === "error" ? root.reply.detail || String(root.reply.reason || "") : ""
     onTriggered: {
       if (root.updateBanner) {
         root.service.retryUpdate()
@@ -450,7 +445,7 @@ Item {
           root.service.checkUnit()
           root.service.connectSocket()
         }
-      } else if (root.degradedReason !== "") {
+      } else if (root.degradedError) {
         root.service.warm()
       } else {
         root.search = SearchState.reduce(root.search, {type: "typed", query: root.search.query, now: Date.now()}).state
