@@ -59,8 +59,8 @@ These findings are from 2026-10-15, measured on the live host.
 
 - In `Jobs.drain`, any `EmbeddingError` from a request that reached the server (an HTTP 4xx or 5xx reply) fails that file with `detail="embedding-failed"`, and the run continues.
 - A transport error or a dead server (connection refused, process exited, timeout) still ends the run, as today, so a crashed server does not fail every remaining file.
-- A `partial` file whose next window fails keeps the pages it already has and moves to `failed` with `detail="embedding-failed"`, so it no longer counts as queued.
-- Failed files already count as finished in the progress popover ("92 of 92") and are listed in setup's problem list as fact tokens (`embedding-failed <path>`), as `encrypted-pdf` is today.
+- A `partial` file whose next window fails stays `partial` with `detail="embedding-failed"`. It keeps the pages it already has, which stay searchable, and no longer counts as queued, the same way a video with a failed soundtrack does today.
+- A file that failed outright is listed in setup's problem list as a fact token (`embedding-failed <path>`), as `encrypted-pdf` is today. Failed and halted files both count as finished in the progress popover ("92 of 92").
 
 ### B3. Throughput
 
@@ -73,9 +73,10 @@ These findings are from 2026-10-15, measured on the live host.
 
 ### C1. Code by default
 
+- The counting walk reports every repository and worktree it passes (`discover_counts` gains `repos` and `worktrees` in its final batch), including ones the user never expands.
 - In the Folders step, a detected repository (not a worktree) under a checked folder has Code checked by default. The user can switch it off per repository, and that choice is kept as it is today.
 - The first index after setup builds `code.sqlite` for those roots.
-- When there are no code roots or no `code.sqlite`, `search_code` replies with `degraded: "no-code-index"`. The overlay shows "No code is indexed yet. Turn on Code for a repository in setup." in place of the empty state, without the "Semantic search unavailable" banner.
+- When there are no code roots or no `code.sqlite`, `search_code` adds `notice: "no-code-index"` to its reply. `degraded` stays null, because the semantic leg did not fail. The footer shows "No code is indexed yet. Turn on Code for a repository in setup." in place of "0 results in your code", without the "Semantic search unavailable" banner.
 
 ### C2. Meaning leg
 
@@ -103,20 +104,20 @@ These findings are from 2026-10-15, measured on the live host.
 
 - New thumbnails are stored at 600 px on the long side, JPEG quality 90. Existing thumbs are replaced when a file is next indexed; no migration.
 - Video preview frames use `scale='min(1024,iw)':-2` and `-q:v 2`.
-- Preview images use `mipmap: false`, and the image is centred on whole pixels (`Math.round` on x and y).
+- Preview images use `mipmap: false`. They are never shown smaller than their decode size, so mipmaps only soften them.
 
 ## F. Folders step
 
 ### F1. Order
 
 - A pure comparator in `lib/tree.js`: known total descending, then unknown counts, then zero, then the casefolded name, then the path.
-- A level is sorted when its rows are inserted and once more when that root's walk reports `done`, only for levels inserted while counts were pending. It is never re-sorted on each count batch. Focus and expansion are kept by path.
+- A level is sorted when its rows are inserted. When a root's walk reports `done`, the tree is rebuilt once from the cache, which sorts every open level with final counts. It is never re-sorted on each count batch. Focus and expansion are kept by path.
 - The daemon's sort stays as the first-paint order.
 
 ### F2. Worktrees
 
 - `discovery` reads a `.git` file's `gitdir:` line, resolved against the folder. If `<gitdir>/commondir` exists, the folder is a worktree; otherwise (a submodule) it stays a repo. Rows carry `worktree: true`, and `repo` is false for them.
-- The counting walk collects worktree folders and reports them in its final batch next to `datasets` (`discover_counts` gains `worktrees`).
+- The counting walk checks each folder it passes once for a `.git` entry and reports repositories and worktrees in its final batch (see C1).
 - A worktree under a checked folder is unchecked by default through the same path as datasets (`skipped`, kept in `proposed` so a re-check sticks), so it lands in the root's `excludes`. Worktrees never get Code.
 
 ### F3. Tag colours
@@ -133,7 +134,7 @@ DESIGN.md gets the worktree line.
 
 ## IPC and docs
 
-- `docs/ipc.md`: `discover_counts.worktrees`, the `worktree` row field, `degraded: "no-code-index"`, `detail: "embedding-failed"`.
+- `docs/ipc.md`: `discover_counts.repos` and `.worktrees`, the `worktree` row field, `notice: "no-code-index"` on code results, `detail: "embedding-failed"`.
 - No settings key changes, so `settings.example.json`, `settings.py`, `lib/Settings.js` and the README table stay as they are, apart from the README's note that repositories are indexed as code by default.
 
 ## Copy
@@ -148,7 +149,7 @@ DESIGN.md gets the worktree line.
   - Overflow marks the roots dirty, and ENOSPC logs once.
   - A PDF page over the token cap becomes several segments with the same `loc`.
   - An HTTP 500 for one file fails it and the next file is still indexed. A connection error still ends the run.
-  - `search_code` with no index returns `no-code-index`.
+  - `search_code` with no index returns `notice: "no-code-index"` and `degraded: null`.
   - `_start_query` does not report "starting" while a request holds the embedder.
   - Discovery tells a worktree from a submodule and a repo, and the walk reports worktrees.
   - Video frame argv and thumbnail size.
