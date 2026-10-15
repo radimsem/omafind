@@ -17,8 +17,8 @@ def env(tmp_path):
 @pytest.mark.parametrize(
     "editor,tail",
     [
-        ("nvim", ["+41", "/tmp/a.txt"]),
-        ("vim", ["+41", "/tmp/a.txt"]),
+        ("nvim", ["-c", "41", "/tmp/a.txt"]),
+        ("vim", ["-c", "41", "/tmp/a.txt"]),
         ("nano", ["+41", "/tmp/a.txt"]),
         ("micro", ["+41", "/tmp/a.txt"]),
         ("helix", ["/tmp/a.txt:41"]),
@@ -127,7 +127,8 @@ def test_code_editor_jump(env, editor, target):
     default.parent.mkdir(parents=True)
     default.write_text(editor)
     line = target or 41
-    tail = [f"/tmp/a.html:{line}"] if editor == "helix" else [f"+{line}", "/tmp/a.html"]
+    tail = {"helix": [f"/tmp/a.html:{line}"], "nvim": ["-c", str(line), "/tmp/a.html"],
+            "vim": ["-c", str(line), "/tmp/a.html"]}.get(editor, [f"+{line}", "/tmp/a.html"])
     assert command({"kind": "code", "path": "/tmp/a.html", "loc": 41,
                     "open_line": target}, env=env) == ["omarchy-launch-editor", *tail]
 

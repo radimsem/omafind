@@ -28,7 +28,10 @@ def command(item: Mapping, *, env: Mapping[str, str]) -> list[str]:
             line = None
         if line is not None:
             line = max(1, int(line))
-            if editor in ("nvim", "vim", "nano", "micro"):
+            # Ghostty drops a "+N" argument after -e, so vim and nvim get the line as a command.
+            if editor in ("nvim", "vim"):
+                return ["omarchy-launch-editor", "-c", str(line), path]
+            if editor in ("nano", "micro"):
                 return ["omarchy-launch-editor", f"+{line}", path]
             if editor in ("helix", "hx"):
                 return ["omarchy-launch-editor", f"{path}:{line}"]
