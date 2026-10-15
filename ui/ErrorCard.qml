@@ -30,8 +30,8 @@ Rectangle {
   readonly property int pollLimit: 600000
   readonly property color toneColor: tone === "warn" ? Plugin.Palette.yellow : Color.urgent
   readonly property var packages: Errors.hasInstall(error) ? error.fix.packages : []
-  // A new object with the same code (progress resends tool_errors) keeps the install running.
-  readonly property string fixKey: error ? String(error.code) : ""
+  // Progress resends keep installing until the code or packages change.
+  readonly property string fixKey: error ? String(error.code) + " " + packages.join(" ") : ""
   readonly property string command: compact || !error ? "" : Errors.installCommand(error.fix)
   readonly property string log: error && error.log ? String(error.log) : ""
 

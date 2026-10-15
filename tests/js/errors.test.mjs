@@ -60,6 +60,17 @@ test('fix helpers read the fix kind', () => {
   }
 });
 
+test('install fixes reject unsafe package names in both the button and copy line', () => {
+  for (const name of ['bad package', 'fd;whoami', '', 'UPPERCASE']) {
+    const fix = { kind: 'install', packages: ['ripgrep', name] };
+    assert.equal(e.hasInstall({ fix }), false, name);
+    assert.equal(e.installCommand(fix), '', name);
+  }
+  const fix = { kind: 'install', packages: ['lib32-gcc-libs', 'python3.12', 'foo+bar', 'foo_bar', 'foo@2'] };
+  assert.equal(e.hasInstall({ fix }), true);
+  assert.equal(e.installCommand(fix), 'sudo pacman -S --needed lib32-gcc-libs python3.12 foo+bar foo_bar foo@2');
+});
+
 test('the offline error offers Retry and links the startup log only when it exists', () => {
   assert.deepEqual(plain(e.offline()), { code: 'daemon-offline', title: 'The omafind service is not running.',
     detail: 'It did not answer on its socket. Press Retry to start it.', fix: { kind: 'retry' } });

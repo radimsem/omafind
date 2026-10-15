@@ -10,7 +10,8 @@ function service(values = {}) {
   const sent = [];
   const ctx = vm.createContext({
     walks: {}, childFolders: {}, childrenAsked: {}, discoverCounts: {}, datasets: {}, repos: {}, worktrees: {},
-    scanning: false, driveScanning: false, bindsReady: true, results: null, runtimeProgress: null,
+    scanning: false, driveScanning: false, driveDiscover: null, discover: null,
+    bindsReady: true, results: null, runtimeProgress: null,
     engineError: null, folderError: null, indexError: null, driveError: null, searchError: null, bindsError: null,
     Protocol: { decode: JSON.parse }, Errors: load('errors.js'),
     setupFailed() {}, warmFailed() {}, resultsReceived() {}, childrenReceived() {},
@@ -108,6 +109,34 @@ test('walk and child errors keep one fact and give the folder step the object', 
   assert.equal(ctx.childFolders['/h/a'].error, 'Pictures could not be scanned.');
   ctx.receive(JSON.stringify({ t: 'discover_children', path: '/h/b', dirs: [], error: 'Permission denied' }));
   assert.equal(ctx.childFolders['/h/b'].error, 'Permission denied');
+});
+
+test('drive walk errors stay on the walk instead of the folders step', () => {
+  for (const values of [
+    { driveScanning: true },
+    { driveDiscover: { volume: 'usb', roots: [{ path: '/m', volume: 'usb' }] } },
+    { discover: { roots: [{ path: '/h', volume: null }, { path: '/m', volume: 'usb' }] } },
+    { childFolders: { '/m': { dirs: [], volume: 'usb', error: '' } } },
+  ]) {
+    const ctx = service(values);
+    ctx.receiveCounts({ root: '/m', counts: {}, done: true, error: scanFailed });
+    assert.equal(ctx.folderError, null);
+    assert.deepEqual(plain(ctx.walks['/m'].failure), scanFailed);
+    assert.equal(ctx.walks['/m'].error, scanFailed.title);
+  }
+});
+
+test('a home walk error still reaches folders after a drive scan', () => {
+  const ctx = service({ driveDiscover: { volume: 'usb', roots: [{ path: '/m', volume: 'usb' }] } });
+  ctx.receiveCounts({ root: '/h', counts: {}, done: true, error: scanFailed });
+  assert.deepEqual(plain(ctx.folderError), scanFailed);
+});
+
+test('a known home root keeps its folder error while a drive scan is pending', () => {
+  const ctx = service({ driveScanning: true,
+    discover: { roots: [{ path: '/h', volume: null }, { path: '/m', volume: 'usb' }] } });
+  ctx.receiveCounts({ root: '/h', counts: {}, done: true, error: scanFailed });
+  assert.deepEqual(plain(ctx.folderError), scanFailed);
 });
 
 test('a folder save that fails reports on the surface that asked', () => {

@@ -83,7 +83,7 @@ Tone is the card color: red (`Color.urgent`) for a failure, yellow (`Palette.yel
 | `no-index` | red | Nothing is indexed yet. | Open setup and start the first index. | | |
 | `file-missing` | red | `<name>` is missing. | It was moved or deleted after it was indexed. | | |
 | `open-failed` | red | `<name>` could not be opened. | `<cause>`. | retry | |
-| `tool-missing` | red | `<n>` files need `<tool>`. (1 file needs `<tool>`.) | They were indexed without `<what>`. Install `<package>` and they are indexed again. | install | |
+| `tool-missing` | red | `<n>` files need `<tool>`. (1 file needs `<tool>`.) | They could not be indexed without `<what>`. Install `<package>` and they are indexed again. (1 file: It could not be indexed without `<what>`. Install `<package>` and it is indexed again.) | install | |
 | `bad-request` | red | omafind sent a request the service did not understand. | `<cause>`. Restart the overlay and try again. | | |
 | `internal` | red | Something failed inside the omafind service. | `<cause>`. | retry | |
 | `daemon-offline` (plugin) | red | The omafind service is not running. | It did not answer on its socket. Press Retry to start it. | retry | `omafindd-start.log` when it exists |
@@ -355,7 +355,7 @@ daemon: {"t":"progress","running":true,"done":612,"queued":597,"volume":"<uuid>"
          "skipped":{"size-cap":2},"failed":{"encrypted-pdf":1,"tool-missing":12},
          "problems":[{"path":"/home/u/Documents/a.pdf","code":"encrypted-pdf","detail":""}],
          "tool_errors":[{"code":"tool-missing","title":"12 files need tesseract.",
-                         "detail":"They were indexed without text recognition. Install tesseract and they are indexed again.",
+                         "detail":"They could not be indexed without text recognition. Install tesseract and they are indexed again.",
                          "fix":{"kind":"install","packages":["tesseract"]}}]}
 ```
 - `index_progress` replies the same `progress` body and starts nothing, so a view can fill before the next broadcast.

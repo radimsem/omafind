@@ -231,10 +231,18 @@ def open_failed(name, reason) -> UserError:
 
 def tool_missing(count: int, tool: str, what: str, package: str) -> UserError:
     files = "1 file needs" if count == 1 else f"{count:,} files need"
+    detail = (
+        f"It could not be indexed without {what}. Install {package} and it is indexed again."
+        if count == 1
+        else (
+            f"They could not be indexed without {what}. "
+            f"Install {package} and they are indexed again."
+        )
+    )
     return UserError(
         "tool-missing",
         f"{files} {tool}.",
-        f"They were indexed without {what}. Install {package} and they are indexed again.",
+        detail,
         install([package]),
     )
 

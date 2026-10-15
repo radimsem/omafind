@@ -155,7 +155,13 @@ def _open_log():
 
     try:
         path = paths.logs_dir() / SERVER_LOG
-        return path, open(path, "wb")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+            return path, os.fdopen(fd, "wb")
+        except OSError:
+            os.close(fd)
+            raise
     except OSError:
         return None, None
 

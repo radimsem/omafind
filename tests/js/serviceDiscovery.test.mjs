@@ -7,6 +7,7 @@ import { load } from './load.mjs';
 function service(values = {}) {
   const ctx = vm.createContext({
     discoverCounts: {}, walks: {}, datasets: {}, repos: {}, worktrees: {}, childFolders: {}, childrenAsked: {},
+    driveScanning: false, driveDiscover: null, discover: null,
     Protocol: { decode: JSON.parse }, Errors: load('errors.js'), childrenReceived() {}, setupFailed() {},
     send() { return true; }, ...values,
   });
@@ -100,7 +101,11 @@ test('socket loss finishes open walks and preserves completed walks', () => {
     Connection: load('Connection.js'), connection: { unit: 'enabled', socket: 'ready', failures: 0 },
     closeSocket() {}, reconnect: { restart() {} } });
   ctx.attemptFailed();
-  assert.deepEqual(plain(ctx.walks['/h']), { done: true, seconds: null, error: 'Connection lost' });
+  assert.deepEqual(plain(ctx.walks['/h']), { done: true, seconds: null,
+    error: 'The omafind service is not running.', failure: {
+      code: 'daemon-offline', title: 'The omafind service is not running.',
+      detail: 'It did not answer on its socket. Press Retry to start it.', fix: { kind: 'retry' },
+    } });
   assert.deepEqual(plain(ctx.walks['/m']), { done: true, seconds: 1, error: '' });
   assert.equal(ctx.scanning, false);
   assert.equal(ctx.driveScanning, false);

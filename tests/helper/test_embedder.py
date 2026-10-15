@@ -1,4 +1,5 @@
 import asyncio
+import os
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -669,6 +670,25 @@ def test_embedding_error_carries_an_optional_error_object():
     assert EmbeddingError("Embedding server is not running").user_error is None
 
 
+@pytest.mark.parametrize('existing', [False, True])
+def test_server_log_is_private_and_truncated(existing):
+    path = paths.logs_dir() / 'llama-server.log'
+    if existing:
+        path.write_bytes(b'previous run')
+        path.chmod(0o644)
+    opened_path, log = embedder_module._open_log()
+    assert opened_path == path
+    with log:
+        assert path.stat().st_mode & 0o777 == 0o600
+        log.write(b'new run')
+    assert path.read_bytes() == b'new run'
+
+
+def test_server_log_open_failure_returns_no_log(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths, 'logs_dir', lambda: tmp_path / 'missing')
+    assert embedder_module._open_log() == (None, None)
+
+
 async def test_start_sends_server_output_to_a_fresh_log(memory_runtime):
     embedder, spawner = memory_runtime
     log = paths.logs_dir() / 'llama-server.log'
@@ -676,13 +696,13 @@ async def test_start_sends_server_output_to_a_fresh_log(memory_runtime):
     options = []
 
     async def spawn(*argv, **kwargs):
+        assert os.path.samefile(log, kwargs['stdout'].fileno())
         options.append(kwargs)
         return await spawner(*argv, **kwargs)
 
     embedder.spawner = spawn
     try:
         await embedder.start('text')
-        assert options[0]['stdout'].name == str(log)
         assert options[0]['stdout'].closed
         assert options[0]['stderr'] == asyncio.subprocess.STDOUT
         assert log.read_bytes() == b''

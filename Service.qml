@@ -318,8 +318,9 @@ Item {
     driveScanning = false
     childrenAsked = {}
     var stopped = Object.assign({}, walks)
+    var failure = Errors.offline()
     for (var walkRoot in stopped) if (!stopped[walkRoot].done)
-      stopped[walkRoot] = {done: true, seconds: null, error: "Connection lost"}
+      stopped[walkRoot] = {done: true, seconds: null, error: failure.title, failure: failure}
     walks = stopped
     connection = Connection.reduce(connection, {type: "attempt-failed"})
     closeSocket()
@@ -541,7 +542,11 @@ Item {
     // `error` is the title, one fact in folder rows; `failure` keeps the object for the drive dialog.
     nextWalks[message.root] = {done: !!message.done, seconds: typeof message.seconds === "number" ? message.seconds : null,
       error: errorText(message.error), failure: Errors.wrap(message.error)}
-    if (message.error) folderError = Errors.wrap(message.error)
+    var roots = (driveDiscover && Array.isArray(driveDiscover.roots) ? driveDiscover.roots : [])
+      .concat(discover && Array.isArray(discover.roots) ? discover.roots : [])
+    var scanRoot = roots.find(entry => entry.path === message.root) || childFolders[message.root]
+    var driveWalk = scanRoot ? !!scanRoot.volume : driveScanning
+    if (message.error && !driveWalk) folderError = Errors.wrap(message.error)
     if (Array.isArray(message.datasets)) {
       var nextSets = Object.assign({}, datasets)
       message.datasets.forEach(entry => nextSets[entry.path] = entry)

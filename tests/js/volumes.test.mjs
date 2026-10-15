@@ -162,6 +162,17 @@ test('paused shows the disk banner and resumed clears it', () => {
   assert.deepEqual(plain(resumed.effects), []);
 });
 
+test('an older daemon disk pause still explains why indexing is paused', () => {
+  const v = volumes();
+  const { state } = v.reduce(freeze(v.initial()), {type: 'paused',
+    message: {t: 'paused', reason: 'disk', free_gb: 1.4, need_gb: 2}});
+  assert.deepEqual(plain(v.diskBanner(state)), {
+    error: {code: 'unknown', title: 'Indexing is paused.',
+      detail: 'The disk does not have enough free space. Free some space and indexing continues.'},
+    tokens: [{k: 'free', v: '1.4 GB'}, {k: 'needed', v: '2 GB'}],
+  });
+});
+
 test('fsName uses display casing without changing unknown filesystems', () => {
   const v = volumes();
   for (const [fs, expected] of [['exfat', 'exFAT'], ['vfat', 'FAT32'], ['ntfs', 'NTFS'],

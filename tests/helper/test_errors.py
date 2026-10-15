@@ -146,15 +146,19 @@ def test_cause_is_one_short_clause(text, expected):
     assert errors.cause(text) == expected
 
 
-def test_tool_missing_counts_files():
-    assert (
-        errors.tool_missing(1, "tesseract", "text recognition", "tesseract").title
-        == "1 file needs tesseract."
-    )
-    assert (
-        errors.tool_missing(1200, "ffmpeg", "video frames", "ffmpeg").title
-        == "1,200 files need ffmpeg."
-    )
+@pytest.mark.parametrize(("count", "tool", "what", "title", "detail"), [
+    (1, "tesseract", "text recognition", "1 file needs tesseract.",
+     "It could not be indexed without text recognition. "
+     "Install tesseract and it is indexed again."),
+    (1200, "ffmpeg", "video frames", "1,200 files need ffmpeg.",
+     "They could not be indexed without video frames. "
+     "Install ffmpeg and they are indexed again."),
+])
+def test_tool_missing_counts_files(count, tool, what, title, detail):
+    error = errors.tool_missing(count, tool, what, tool)
+    assert error.title == title
+    assert error.detail == detail
+    assert error.fix == {"kind": "install", "packages": [tool]}
 
 
 def test_missing_vulkan_header_names_the_package():
