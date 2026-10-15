@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import signal
 import sqlite3
@@ -9,7 +10,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from . import discovery
+from . import bindings, discovery
 from .install import RuntimeJob
 
 
@@ -27,11 +28,16 @@ class SetupService:
         "runtime_install",
         "runtime_pause",
         "discover_start",
-        "discover_tree",
+        "discover_stop",
+        "discover_children",
         "fs_list",
+        "binds_get",
         "index_start",
+        "index_progress",
         "drive_decision",
     }
+    # A finished walk answers repeat visits for this long; after it the next visit walks again.
+    WALK_TTL = 300.0
 
     def __init__(
         self,
@@ -41,10 +47,14 @@ class SetupService:
         settings,
         broadcast,
         runtime: RuntimeJob,
-        discover=discovery.scan,
-        tree=discovery.tree,
+        top=discovery.top,
+        walk=discovery.Walk,
+        children=discovery.children,
+        estimate_device=discovery.device,
+        volume_of=discovery._volume_of,
         list_dirs=discovery.list_dirs,
         spawn=asyncio.create_subprocess_exec,
+        run=subprocess.run,
         clock=time.monotonic,
         home=HOME,
         model_ready=lambda: True,
@@ -54,15 +64,23 @@ class SetupService:
     ):
         self.data_dir, self.plugin_root, self.home = data_dir, plugin_root, home
         self.settings, self.broadcast, self.runtime = settings, broadcast, runtime
-        self.discover, self.tree, self.list_dirs = discover, tree, list_dirs
+        self.top, self.walk, self.children = top, walk, children
+        self.estimate_device, self.volume_of, self.list_dirs = estimate_device, volume_of, list_dirs
         self.spawn, self.clock = spawn, clock
+        self.run = run
         self.model_ready, self.paused = model_ready, paused
         self.check_disk, self.push_status = check_disk, push_status
         self.ignored = set()
         self._deferred = set()
         self._active_volume = None
-        self._scan = None
-        self._scans = {}
+        self._walks = {}
+        self._roots = {}
+        self._walked = {}
+        self._discovery = set()
+        self._walk_tasks = {}
+        self._clients = {}
+        self._client_tokens = {}
+        self._walk_lock = asyncio.Lock()
         self._index = None
         self._starting = None
         self._index_lock = asyncio.Lock()
@@ -75,18 +93,7 @@ class SetupService:
     def _error(kind, code, reason):
         return {"t": "error", "for": kind, "code": code, "reason": reason}
 
-    async def _discover(self, volume=None):
-        task = self._scans.get(volume)
-        if task is None or task.done():
-            task = asyncio.create_task(
-                asyncio.to_thread(self.discover, home=self.home, volume=volume)
-            )
-            self._scans[volume] = task
-        scan = await asyncio.shield(task)
-        self._scan = scan
-        return scan
-
-    async def handle(self, message: dict) -> dict:
+    async def handle(self, message: dict, *, client=None) -> dict:
         kind = message["t"]
         try:
             if kind in ("runtime_status", "runtime_install", "runtime_pause"):
@@ -96,26 +103,72 @@ class SetupService:
                     "runtime_pause": self.runtime.pause,
                 }[kind]
                 return await method()
+            if kind == "index_progress":
+                return await asyncio.to_thread(self._progress)
+            if kind == "discover_stop":
+                await self.disconnect(client)
+                return {"t": kind}
+            if kind == "binds_get":
+                return await asyncio.to_thread(self._binds)
             if kind == "discover_start":
+                token = self._client_tokens.setdefault(client, object())
                 volume = message.get("volume")
                 if volume is not None and (not isinstance(volume, str) or not volume):
                     return self._error(kind, "bad-request", "Invalid discovery volume.")
-                scan = await self._discover(volume)
-                return {"t": "discover_result", **scan.body, "volume": volume}
-            if kind in ("discover_tree", "fs_list"):
-                key = "root" if kind == "discover_tree" else "path"
-                path = message.get(key)
+                body = await asyncio.to_thread(self.top, home=self.home, volume=volume)
+                device = await asyncio.to_thread(self.estimate_device, self.home)
+                if self._client_tokens.get(client) is not token:
+                    return {"t": "discover_stop"}
+                replay = []
+                for root in body["roots"]:
+                    self._roots[root["path"]] = root.get("volume")
+                    walk, fresh = self._start_walk(root["path"])
+                    self._clients.setdefault(client, set()).add(root["path"])
+                    if not fresh:
+                        replay.append(walk)
+                if replay:
+                    self._track(self._replay(replay))
+                return {"t": "discover_result", "volume": volume, "home": str(self.home),
+                        "device": device, "rates": discovery.RATES, **body}
+            if kind == "discover_children":
+                token = self._client_tokens.setdefault(client, object())
+                path = message.get("path")
+                if not isinstance(path, str) or not Path(path).is_absolute():
+                    return self._error(kind, "bad-request", "Pick an absolute folder path.")
+                path = os.path.normpath(path)
+                roots = [root for root in self._roots
+                         if path == root or path.startswith(root.rstrip("/") + "/")]
+                if path == "/" or (not roots and any(
+                    path == root or path.startswith(root + "/")
+                    for root in ("/proc", "/sys", "/dev", "/run")
+                )):
+                    return self._error(kind, "bad-request", "Pick a folder outside system paths.")
+                root = max(roots, key=len) if roots else path
+                if not roots:
+                    try:
+                        volume = (await asyncio.to_thread(self.volume_of, Path(path)))[0]
+                    except (OSError, ValueError, subprocess.SubprocessError):
+                        volume = None
+                    if self._client_tokens.get(client) is not token:
+                        return {"t": "discover_stop"}
+                    self._roots[root] = volume
+                # An expired walk still answers; only discover_start walks a root again.
+                walk = self._walks.get(root) or self._start_walk(root)[0]
+                self._clients.setdefault(client, set()).add(root)
+                body = await asyncio.to_thread(self.children, path, walk)
+                volume = self._roots[root]
+                if self._client_tokens.get(client) is not token:
+                    return {"t": "discover_stop"}
+                return {"t": kind, **body, "volume": volume}
+            if kind == "fs_list":
+                path = message.get("path")
                 if (
                     not isinstance(path, str)
                     or not path
                     or not (Path(path).is_absolute() or path == "~" or path.startswith("~/"))
                 ):
                     return self._error(kind, "bad-request", "Pick an absolute folder path.")
-                if kind == "discover_tree":
-                    scan = self._scan if self._scan is not None else await self._discover()
-                    body = await asyncio.to_thread(self.tree, scan, path, home=self.home)
-                else:
-                    body = await asyncio.to_thread(self.list_dirs, path, home=self.home)
+                body = await asyncio.to_thread(self.list_dirs, path, home=self.home)
                 return {"t": kind, **body}
             if kind == "drive_decision":
                 uuid, choice = message.get("uuid"), message.get("choice")
@@ -136,9 +189,119 @@ class SetupService:
             code = (
                 "runtime-failed"
                 if kind.startswith("runtime_") or kind == "index_start"
+                else "binds-failed" if kind == "binds_get"
                 else "scan-failed"
             )
             return self._error(kind, code, str(error))
+
+    def _binds(self):
+        try:
+            result = self.run(["hyprctl", "binds", "-j"], capture_output=True, text=True, timeout=5)
+            if result.returncode:
+                raise OSError(result.stderr.strip() or f"hyprctl exited with {result.returncode}")
+            if not result.stdout.lstrip().startswith("["):
+                raise ValueError("hyprctl did not return a JSON array")
+            items = bindings.binds_items(bindings.parse_binds(result.stdout))
+            return {"t": "binds", "binds": items}
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
+            raise OSError("Could not read your Hyprland bindings.") from error
+
+    def _track(self, coroutine):
+        task = asyncio.create_task(coroutine)
+        self._discovery.add(task)
+        task.add_done_callback(self._discovery.discard)
+        return task
+
+    def _start_walk(self, root):
+        """The walk of `root`: the running or recent one, else a new one. Returns (walk, fresh)."""
+        walk = self._walks.get(root)
+        finished = self._walked.get(root)
+        if walk is not None and not getattr(walk, "error", None) and (
+            finished is None or self.clock() - finished < self.WALK_TTL
+        ):
+            return walk, False
+        walk = self.walk(Path(root))
+        self._walks[root] = walk
+        self._walked.pop(root, None)
+        self._walk_tasks[root] = self._track(self._run_walk(root, walk))
+        return walk, True
+
+    async def _run_walk(self, root, walk):
+        async with self._walk_lock:
+            await self._count_walk(root, walk)
+
+    async def _count_walk(self, root, walk):
+        if self._walks.get(root) is not walk:
+            return
+        loop = asyncio.get_running_loop()
+        batches = asyncio.Queue()
+        worker = None
+
+        def emit(batch):
+            loop.call_soon_threadsafe(batches.put_nowait, batch)
+
+        def run():
+            try:
+                walk.run(emit)
+            except Exception as error:
+                walk.done = True
+                walk.error = str(error) or type(error).__name__
+                emit({"root": root, "counts": {}, "done": True, "seconds": None,
+                      "error": walk.error})
+
+        try:
+            await self.broadcast({"t": "discover_counts", "root": root, "counts": {},
+                                  "done": False, "seconds": None, "reset": True})
+            if self._walks.get(root) is not walk:
+                return
+            worker = asyncio.ensure_future(asyncio.to_thread(run))
+            while True:
+                batch = await batches.get()
+                if self._walks.get(root) is walk:
+                    await self.broadcast({"t": "discover_counts", **batch})
+                if batch["done"]:
+                    break
+        except Exception as error:
+            walk.stop()
+            if worker is not None:
+                await asyncio.gather(worker, return_exceptions=True)
+            walk.done = True
+            walk.error = str(error) or type(error).__name__
+            try:
+                await self.broadcast({"t": "discover_counts", "root": root, "counts": {},
+                                      "done": True, "seconds": None, "error": walk.error})
+            except Exception:
+                logging.exception("Could not broadcast discovery failure")
+        finally:
+            if worker is not None:
+                await asyncio.gather(worker, return_exceptions=True)
+            if self._walks.get(root) is walk and not getattr(walk, "error", None):
+                self._walked[root] = self.clock()
+
+    async def disconnect(self, client):
+        self._client_tokens.pop(client, None)
+        roots = self._clients.pop(client, set())
+        tasks = []
+        for root in roots:
+            if any(root in interest for interest in self._clients.values()):
+                continue
+            walk = self._walks.get(root)
+            if walk is None:
+                continue
+            walk.stop()
+            if not walk.done:
+                self._walks.pop(root, None)
+                self._walked.pop(root, None)
+            task = self._walk_tasks.get(root)
+            if task is not None:
+                tasks.append(task)
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _replay(self, walks):
+        for walk in walks:
+            if self._walks.get(str(walk.root)) is not walk:
+                continue
+            await self.broadcast({"t": "discover_counts", **walk.snapshot()})
 
     @property
     def busy(self):
@@ -317,19 +480,6 @@ class SetupService:
                 }
         except (OSError, ValueError, AttributeError):
             pass
-        if self._scan is not None:
-            roots = {root["path"] for root in self.settings().roots}
-            candidates = {c["path"]: c for c in self._scan.body["candidates"]}
-            candidates.update({path: tree.candidate for path, tree in self._scan.roots.items()})
-            secrets = sum(
-                entry["files"]
-                for candidate in candidates.values()
-                if candidate["path"] in roots
-                for entry in candidate["left_out"]
-                if entry["rule"] == "secrets"
-            )
-            if secrets:
-                skipped["secrets"] = secrets
         done = sum(kind["done"] for kind in kinds.values())
         total = sum(kind["total"] for kind in kinds.values())
         device, vram = self._device()
@@ -381,6 +531,11 @@ class SetupService:
                     await self.kick(volume)
 
     async def stop(self) -> None:
+        self._client_tokens.clear()
+        self._clients.clear()
+        for walk in self._walks.values():
+            walk.stop()
+        await asyncio.gather(*self._discovery, return_exceptions=True)
         if self._starting is not None:
             await asyncio.gather(self._starting, return_exceptions=True)
         if self._index is not None and self._index.returncode is None:

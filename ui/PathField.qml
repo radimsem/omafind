@@ -117,7 +117,7 @@ Item {
           }
         }
 
-        Text {
+        Label {
           anchors.left: parent.left
           anchors.leftMargin: Style.space(10)
           anchors.verticalCenter: parent.verticalCenter
@@ -153,7 +153,7 @@ Item {
       Repeater {
         model: root.error === "" ? root.matches : []
 
-        delegate: Text {
+        delegate: Label {
           required property string modelData
           required property int index
           text: modelData

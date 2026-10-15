@@ -169,6 +169,34 @@ async def test_preview_serializes_renders_and_skips_superseded_requests(
     assert server._jumps[writer] == {"latest": 12}
 
 
+@pytest.mark.parametrize("same_path,expected", [(True, "preview"), (False, "error")])
+async def test_preview_survives_a_later_reply_that_rebuilds_items(
+    server, tmp_path, monkeypatch, same_path, expected
+):
+    import asyncio
+
+    writer = Writer()
+    path, other = tmp_path / "file", tmp_path / "other"
+    path.touch()
+    other.touch()
+    server._results[writer] = {"a": {"id": "a", "kind": "text", "path": str(path)}}
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def render(function, item, query):
+        started.set()
+        await release.wait()
+        return {"t": "preview", "id": item["id"], "jump": 3}
+
+    monkeypatch.setattr(asyncio, "to_thread", render)
+    task = asyncio.create_task(server.dispatch(writer, {"t": "preview", "id": "a"}))
+    await started.wait()
+    rebuilt = str(path if same_path else other)
+    server._results[writer] = {"a": {"id": "a", "kind": "text", "path": rebuilt}}
+    release.set()
+    await task
+    assert writer.messages[-1]["t"] == expected
+
+
 async def test_status_runs_off_event_loop(server, monkeypatch):
     import asyncio
 
@@ -255,3 +283,67 @@ async def test_cancelled_preview_holds_slot_until_renderer_finishes(server, tmp_
     await asyncio.gather(old, latest, return_exceptions=True)
     assert calls == ["old", "latest"]
     assert writer.messages == [{"t": "preview", "id": "latest", "jump": 12}]
+
+
+async def test_meaning_leg_keeps_jump_and_new_seq_drops_it(server, tmp_path, monkeypatch):
+    path = tmp_path / "a.txt"
+    path.touch()
+    item = {"id": "hit", "kind": "text", "path": str(path), "loc": 205}
+    other = {"id": "gone", "kind": "text", "path": str(path), "loc": 1}
+    replies = []
+
+    async def handle(message):
+        return replies.pop(0)
+
+    server.service = SimpleNamespace(handle=handle)
+    writer = Writer()
+    replies.append({"t": "results", "seq": 4, "legs": ["words"], "items": [item, other]})
+    await server.dispatch(writer, {"t": "search", "seq": 4})
+    monkeypatch.setattr(preview, "render", lambda value, query: {
+        "t": "preview", "id": value["id"], "jump": 212, "mode": "lines"})
+    await server.dispatch(writer, {"t": "preview", "id": "hit", "q": "talk"})
+    await server.dispatch(writer, {"t": "preview", "id": "gone", "q": "talk"})
+    replies.append({"t": "results", "seq": 4, "legs": ["words", "meaning"], "items": [item]})
+    await server.dispatch(writer, {"t": "search", "seq": 4})
+    assert server._jumps[writer] == {"hit": 212}
+    replies.append({"t": "results", "seq": 5, "legs": ["words"], "items": [item]})
+    await server.dispatch(writer, {"t": "search", "seq": 5})
+    assert server._jumps.get(writer, {}) == {}
+
+
+async def test_open_prefers_client_line_and_rejects_bad_lines(server, tmp_path, monkeypatch):
+    path = tmp_path / "a.txt"
+    path.touch()
+    writer = Writer()
+    server._results[writer] = {"hit": {"id": "hit", "kind": "text", "path": str(path), "loc": 205}}
+    server._jumps[writer] = {"hit": 212}
+    calls = []
+    monkeypatch.setattr(opener, "launch", lambda item, **kw: calls.append(item))
+    await server.dispatch(writer, {"t": "open", "id": "hit", "how": "open", "line": 230})
+    assert calls[-1]["loc"] == 230
+    await server.dispatch(writer, {"t": "open", "id": "hit", "how": "open"})
+    assert calls[-1]["loc"] == 212
+    for line in (0, -3, "7", True, 2.5, None):
+        await server.dispatch(writer, {"t": "open", "id": "hit", "how": "open", "line": line})
+        assert writer.messages[-1] == {"t": "error", "id": "hit", "for": "open",
+                                       "code": "bad-request", "reason": "Invalid open arguments"}
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("kind,expected", [("code", 230), ("pdf", 3), ("image", None)])
+async def test_client_line_only_overrides_text_and_code(server, tmp_path, monkeypatch,
+                                                       kind, expected):
+    path = tmp_path / "file"
+    path.touch()
+    writer = Writer()
+    item = {"id": "hit", "kind": kind, "path": str(path), "loc": 3 if kind == "pdf" else None}
+    if kind == "code":
+        item["open_line"] = 8
+    server._results[writer] = {"hit": item}
+    calls = []
+    monkeypatch.setattr(opener, "launch", lambda item, **kw: calls.append(item))
+    await server.dispatch(writer, {"t": "open", "id": "hit", "line": 230})
+    assert calls[0]["loc"] == expected
+    if kind == "code":
+        assert calls[0]["open_line"] == 230
+    assert item["loc"] == (3 if kind == "pdf" else None)

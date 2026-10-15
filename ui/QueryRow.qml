@@ -88,6 +88,7 @@ Item {
       }
     }
 
+    // Mirrors the TextInput glyph for glyph, so it keeps the input's rendering.
     Text {
       id: styled
       x: -field.contentX
@@ -103,7 +104,7 @@ Item {
       font: input.font
     }
 
-    Text {
+    Label {
       visible: input.text === ""
       x: Style.space(10) + Style.space(6)
       anchors.verticalCenter: parent.verticalCenter
@@ -127,7 +128,7 @@ Item {
       running: root.spinning
     }
 
-    Text {
+    Label {
       anchors.verticalCenter: parent.verticalCenter
       text: root.status
       textFormat: Text.PlainText

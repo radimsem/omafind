@@ -20,22 +20,22 @@ Item {
     anchors.bottomMargin: Style.space(6)
     spacing: Style.space(8)
 
-    Text {
+    Label {
       text: root.title.toUpperCase()
       textFormat: Text.PlainText
       color: Plugin.Tokens.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
       font.bold: true
-      font.letterSpacing: Style.font.caption * 0.1
+      font.letterSpacing: Math.round(Style.font.caption * 0.1)
     }
 
-    Text {
+    Label {
       text: root.count
       textFormat: Text.PlainText
       color: Plugin.Tokens.dim
       font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.bodySmall
     }
   }
 }

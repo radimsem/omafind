@@ -27,7 +27,7 @@ Item {
       visible: root.crumb !== ""
       spacing: Style.space(6)
 
-      Text {
+      Label {
         anchors.verticalCenter: parent.verticalCenter
         text: root.crumb
         textFormat: Text.PlainText
@@ -43,7 +43,7 @@ Item {
         color: Plugin.Tokens.dim
       }
 
-      Text {
+      Label {
         anchors.verticalCenter: parent.verticalCenter
         text: root.crumbLeaf
         textFormat: Text.PlainText
@@ -53,7 +53,7 @@ Item {
       }
     }
 
-    Text {
+    Label {
       text: root.title
       textFormat: Text.PlainText
       color: Color.foreground
@@ -66,7 +66,7 @@ Item {
       width: parent.width
       height: Math.max(sentence.implicitHeight, factRow.implicitHeight)
 
-      Text {
+      Label {
         id: sentence
         width: parent.width
         visible: root.subtitle !== ""
@@ -100,7 +100,7 @@ Item {
     }
   }
 
-  Text {
+  Label {
     id: step
     anchors.right: parent.right
     // The tree header pins the label to the top; the step header centres it.
@@ -111,6 +111,6 @@ Item {
     font.family: Style.font.family
     font.pixelSize: Style.font.bodySmall
     font.capitalization: Font.AllUppercase
-    font.letterSpacing: Style.font.bodySmall * Plugin.Tokens.tracking
+    font.letterSpacing: Math.round(Style.font.bodySmall * Plugin.Tokens.tracking)
   }
 }

@@ -5,84 +5,46 @@ import "." as Plugin
 import "ui" as Parts
 import "lib/setup.js" as Setup
 
-// The first-run flow (boards Setup, Discover, Exclusions, Indexing; motion M3). The step comes
-// from daemon facts; only "Back" and the leave-out tree are local. Overlay sizes the card from
-// panelWidth and panelHeight.
+// The first-run flow derives its step from daemon facts; only "Back" is local.
 FocusScope {
   id: root
   objectName: "omafindSetup"
 
   property var service: null
   property bool back: false
-  // "" or "tree" (board 11b).
-  property string sub: ""
-  property string treeRoot: ""
 
   signal closeRequested()
   signal searchRequested()
 
   readonly property alias folders: foldersPage
-  readonly property alias tree: treeLoader
   readonly property int step: Setup.step({runtimeProgress: service ? service.runtimeProgress : null,
     progress: service ? service.progress : null, back: back})
-  readonly property var size: Setup.panelSize(step, step === 2 ? sub : "")
+  readonly property var size: Setup.panelSize(step)
   readonly property real panelWidth: Style.space(size.width)
-  // The 4 covers the card border on both edges.
-  readonly property real panelHeight: step === 2 && sub === ""
-    ? Math.max(Style.space(size.height), 2 * Plugin.Tokens.setupPadding + head.height + Plugin.Tokens.setupGap
-      + foldersPage.contentNeed + 4)
-    : Style.space(size.height) + (step === 3 ? indexPage.extraHeight : 0)
+  readonly property real panelHeight: Style.space(size.height) + (step === 3 ? indexPage.extraHeight : 0)
+  readonly property string walkError: service ? Setup.walkError(service.walks) : ""
   readonly property var discover: service ? service.discover : null
   readonly property string indexFailure: step === 3 && service ? Setup.indexFailure(service.progress, service.setupError) : ""
   readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
 
+
   function reset() {
     back = false
-    sub = ""
-    treeRoot = ""
+    if (step === 2) ensureScan(true)
+    if (step === 3 && service) service.getBinds()
+  }
+
+  function stop() {
+    indexPage.stop()
   }
 
   function focusFirst() {
-    if (sub === "tree" && treeLoader.item) treeLoader.item.focusFirst()
-    else if (step === 1) enginePage.focusFirst()
+    if (step === 1) enginePage.focusFirst()
     else if (step === 2) foldersPage.focusFirst()
     else indexPage.focusFirst()
   }
 
-  function ensureScan() {
-    if (!service || service.scanning) return
-    if (!service.discover || service.discoverError !== "") service.scan()
-  }
-
-  function showFolders() {
-    back = false
-    ensureScan()
-  }
-
-  function showTree(path) {
-    treeRoot = path
-    foldersPage.requestTree(path)
-    sub = "tree"
-    Qt.callLater(focusFirst)
-  }
-
-  function closeTree() {
-    sub = ""
-    Qt.callLater(focusFirst)
-  }
-
   function handleKey(event) {
-    var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
-    if (sub === "tree" && step === 2) {
-      if (event.key === Qt.Key_Escape) {
-        closeTree()
-        event.accepted = true
-      } else if (ctrl && event.key === Qt.Key_Z && treeLoader.item) {
-        treeLoader.item.undo()
-        event.accepted = true
-      }
-      return
-    }
     if (event.key === Qt.Key_Escape) {
       root.closeRequested()
       event.accepted = true
@@ -90,27 +52,32 @@ FocusScope {
   }
 
   onStepChanged: {
-    if (step !== 2) sub = ""
-    if (step === 2) {
-      ensureScan()
-      foldersPage.prefetch()
-    }
+    if (step === 2) ensureScan()
     if (step === 3) indexPage.begin()
     Qt.callLater(focusFirst)
   }
 
   Component.onCompleted: {
-    if (step === 2) {
-      ensureScan()
-      foldersPage.prefetch()
-    }
+    if (step === 2) ensureScan()
     if (step === 3) indexPage.begin()
   }
 
+  function ensureScan(force) {
+    if (!service || service.scanning) return
+    if (force || !service.discover || service.discoverError !== "" || walkError !== "") service.scan()
+  }
+
+  function showFolders() {
+    back = false
+    ensureScan()
+  }
+
+
   Connections {
     target: root.service
-    ignoreUnknownSignals: true
-    function onDiscoverChanged() { if (root.step === 2) foldersPage.prefetch() }
+    function onReadyChanged() {
+      if (root.visible && root.step === 2 && root.service.ready) root.ensureScan(true)
+    }
   }
 
   // Out 120 ms, then in 160 ms after a 120 ms delay (M3 step swap).
@@ -135,7 +102,7 @@ FocusScope {
 
     Swap {
       id: head
-      shown: root.sub === ""
+      shown: true
       width: parent.width
       height: headColumn.implicitHeight
 
@@ -146,18 +113,19 @@ FocusScope {
 
         Parts.SetupHeader {
           width: parent.width
-          title: root.step === 1 ? "Set up omafind" : root.step === 2 ? "Pick the folders to search" : "Indexing your files"
+          title: root.step === 1 ? "Set up omafind" : root.step === 2 ? "Pick the folders to search"
+            : Setup.indexTitle(root.service ? root.service.progress : null, root.indexFailure)
           stepText: Setup.stepLabel(root.step)
           subtitle: root.step === 1 ? "Everything runs on this machine. Nothing downloads until you press a button."
             : root.step === 3 ? root.indexFailure || "You can search already. Results fill in as files finish."
-            : root.service && !root.service.scanning && root.service.discoverError !== "" ? root.service.discoverError
+            : root.service && !root.service.scanning && root.service.discoverError !== "" ? Setup.folderError(root.service.discoverError)
+            : root.walkError !== "" ? Setup.folderError(root.walkError)
             : ""
           subtitleColor: root.step === 2 || root.indexFailure !== "" ? Color.urgent : Plugin.Tokens.dim
-          spinning: root.step === 2 && !!root.service && root.service.scanning
-          facts: root.step !== 2 ? []
-            : root.service && root.service.scanning ? Setup.scanningFacts()
-            : root.discover ? Setup.scanFacts(root.discover)
-            : []
+          spinning: root.step === 2 && !!root.service && (root.service.scanning
+            || Object.keys(root.service.walks).some(key => !root.service.walks[key].done))
+          facts: root.step !== 2 || !root.discover ? []
+            : Setup.scanFacts(foldersPage.folders.length, root.service.walks)
         }
 
         Parts.StepChips {
@@ -189,14 +157,13 @@ FocusScope {
 
       Swap {
         anchors.fill: parent
-        shown: root.step === 2 && root.sub === ""
+        shown: root.step === 2
 
         Parts.SetupFolders {
           id: foldersPage
           anchors.fill: parent
           service: root.service
           onBackRequested: root.back = true
-          onTreeRequested: path => root.showTree(path)
         }
       }
 
@@ -214,36 +181,5 @@ FocusScope {
       }
     }
 
-    Swap {
-      anchors.fill: parent
-      shown: root.step === 2 && root.sub === "tree"
-
-      Loader {
-        id: treeLoader
-        anchors.fill: parent
-        active: root.sub === "tree" && root.treeRoot !== ""
-        sourceComponent: Parts.SetupLeaveOut {
-          service: root.service
-          rootPath: root.treeRoot
-          home: root.home
-          rates: root.discover ? root.discover.rates : null
-          device: root.discover && root.discover.device ? root.discover.device : "gpu"
-          stepText: Setup.stepLabel(2)
-          initialExcludes: {
-            var c = foldersPage.allRows.find(row => row.path === root.treeRoot)
-            return c ? foldersPage.excludesFor(c) : []
-          }
-          initialChosen: {
-            var c = foldersPage.allRows.find(row => row.path === root.treeRoot)
-            return c ? foldersPage.chosenFor(c) : []
-          }
-          onDone: (excludes, chosen) => {
-            foldersPage.commitExcludes(root.treeRoot, excludes, chosen)
-            root.closeTree()
-          }
-          onCancelled: root.closeTree()
-        }
-      }
-    }
   }
 }

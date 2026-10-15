@@ -8,7 +8,7 @@ Row {
   id: root
 
   property var tokens: []
-  property real fontSize: Style.font.caption
+  property real fontSize: Style.font.bodySmall
   property real gap: Style.space(14)
 
   function escaped(value) {
@@ -41,7 +41,7 @@ Row {
       required property var modelData
       spacing: Style.space(5)
 
-      Text {
+      Label {
         text: modelData.k
         textFormat: Text.PlainText
         color: Plugin.Tokens.dim
@@ -49,7 +49,7 @@ Row {
         font.pixelSize: root.fontSize
       }
 
-      Text {
+      Label {
         readonly property string value: modelData.v === undefined || modelData.v === null ? "" : String(modelData.v)
         visible: value !== ""
         text: value.indexOf("<b>") >= 0 ? root.rich(value) : value

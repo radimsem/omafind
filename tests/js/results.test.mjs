@@ -27,17 +27,17 @@ test('weak results fold once at the end or expand without section headers', () =
   const items = fixture('main').items;
   const folded = group(items, { expanded: false });
   assert.equal(folded.weakCount, 3);
-  assert.deepEqual(plain(folded.rows.at(-1)), { type: 'weak', key: 'weak', count: 3 });
+  assert.deepEqual(plain(folded.rows.at(-1)), { type: 'weak', key: 'weak', count: 3, expanded: false });
   assert.equal(folded.rows.filter(row => row.type === 'item').length, 14);
   const expanded = group(items, { expanded: true });
   assert.equal(expanded.weakCount, 3);
-  assert.equal(expanded.rows.some(row => row.type === 'weak'), false);
+  assert.deepEqual(plain(expanded.rows.at(-4)), { type: 'weak', key: 'weak', count: 3, expanded: true });
   assert.deepEqual(plain(expanded.rows.slice(-3).map(row => [row.key, row.weak])),
     [['image:6', true], ['pdf:3', true], ['text:8', true]]);
   assert.deepEqual(plain(group([], { expanded: false })), { rows: [], sections: [], weakCount: 0 });
   const onlyWeak = group(items.slice(-3), { expanded: true });
   assert.equal(onlyWeak.sections.length, 0);
-  assert.equal(onlyWeak.rows.length, 3);
+  assert.equal(onlyWeak.rows.length, 4);
 });
 
 test('badge comes from offline field before location for each kind', () => {
@@ -117,4 +117,18 @@ test('idle footer uses offline labels and only shows incomplete indexing progres
   assert.deepEqual(plain(footerIdle({ files: 1, roots: 1, offline: ['Photos', 'Backup'], done: 1, total: 1 })),
     { text: '1 files · watching 1 folder · Photos offline · Backup offline', progress: null });
   assert.equal(footerIdle({ files: 0, roots: 0, offline: [], done: 0, total: 0 }).progress, null);
+});
+
+test('jump moves by selectable rows and clamps at both ends', () => {
+  const { group, jump, selectable } = load('format.js', 'results.js');
+  const rows = group(fixture('main').items, { expanded: false }).rows;
+  const indexes = selectable(rows);
+  assert.equal(jump(rows, indexes[0], 3), indexes[3]);
+  assert.equal(jump(rows, indexes[5], -2), indexes[3]);
+  assert.equal(jump(rows, indexes[2], 1000), indexes.at(-1));
+  assert.equal(jump(rows, indexes[2], -1000), indexes[0]);
+  assert.equal(jump(rows, indexes[2], Infinity), indexes.at(-1));
+  assert.equal(jump(rows, indexes[2], -Infinity), indexes[0]);
+  assert.equal(jump(rows, -1, 1), indexes[0]);
+  assert.equal(jump([], 0, 1), -1);
 });

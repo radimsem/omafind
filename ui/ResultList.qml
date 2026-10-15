@@ -17,6 +17,7 @@ Item {
   property var freshKeys: []
 
   signal picked(int index)
+  signal weakToggled(int index)
 
   function heightOf(row) {
     if (row.type === "header") return Plugin.Tokens.headerHeight
@@ -188,7 +189,11 @@ Item {
           visible: slot.type === "weak"
           count: slot.row && slot.type === "weak" ? slot.row.count : 0
           selected: slot.key === root.selectedKey
-          onClicked: root.picked(slot.rowIndex)
+          expanded: slot.row && slot.type === "weak" ? !!slot.row.expanded : false
+          onClicked: {
+            root.picked(slot.rowIndex)
+            root.weakToggled(slot.rowIndex)
+          }
         }
       }
     }

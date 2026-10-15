@@ -7,8 +7,6 @@ import ".." as Plugin
 Item {
   id: root
 
-  // Exclusions shows a 6 px kind dot before each count header.
-  property bool kindDots: false
   property string folderLabel: "Folder"
 
   readonly property int gap: Plugin.Tokens.tableGap
@@ -20,28 +18,12 @@ Item {
     var flex = Math.max(0, width - 2 * padding - fixed - gap * (columns.length - 1))
     return columns.map((w, i) => i === 1 ? flex : w)
   }
-  readonly property var kinds: ["text", "pdf", "image", "video", "audio"]
   readonly property var labels: ["", folderLabel, "Text", "PDF", "Images", "Video", "Audio", "Index", "Time", ""]
 
   function cellX(index) {
     var x = padding
     for (var i = 0; i < index; i++) x += widths[i] + gap
     return x
-  }
-
-  // Index and Time together, where the hatched "not indexed" cell sits.
-  function spanWidth(index, count) {
-    var w = 0
-    for (var i = index; i < index + count; i++) w += widths[i]
-    return w + gap * (count - 1)
-  }
-
-  function kindColor(kind) {
-    return kind === "pdf" ? Color.urgent
-      : kind === "image" ? Plugin.Palette.cyan
-      : kind === "video" ? Color.accent
-      : kind === "audio" ? Plugin.Palette.yellow
-      : Plugin.Tokens.fg2
   }
 
   implicitHeight: Plugin.Tokens.tableHeader
@@ -53,28 +35,19 @@ Item {
       required property string modelData
       required property int index
       readonly property bool numeric: index >= 2 && index <= 8
-      readonly property bool dotted: root.kindDots && index >= 2 && index <= 6
       x: numeric ? root.cellX(index) + root.widths[index] - implicitWidth : root.cellX(index)
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(6)
 
-      Rectangle {
-        anchors.verticalCenter: parent.verticalCenter
-        visible: parent.dotted
-        width: Style.space(6)
-        height: width
-        color: parent.dotted ? root.kindColor(root.kinds[parent.index - 2]) : "transparent"
-      }
-
-      Text {
+      Label {
         anchors.verticalCenter: parent.verticalCenter
         text: parent.modelData
         textFormat: Text.PlainText
         color: Plugin.Tokens.dim
         font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.bodySmall
         font.capitalization: Font.AllUppercase
-        font.letterSpacing: Style.font.caption * Plugin.Tokens.tracking
+        font.letterSpacing: Math.round(Style.font.bodySmall * Plugin.Tokens.tracking)
       }
     }
   }

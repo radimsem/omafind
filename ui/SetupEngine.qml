@@ -99,7 +99,7 @@ FocusScope {
             Row {
               spacing: Style.space(8)
 
-              Text {
+              Label {
                 width: Style.space(10)
                 horizontalAlignment: Text.AlignHCenter
                 text: modelData.icon
@@ -111,7 +111,7 @@ FocusScope {
                 font.pixelSize: Style.font.bodySmall
               }
 
-              Text {
+              Label {
                 id: name
                 text: modelData.name
                 textFormat: Text.PlainText
@@ -121,7 +121,7 @@ FocusScope {
               }
             }
 
-            Text {
+            Label {
               anchors.right: parent.right
               text: modelData.mb
               textFormat: Text.PlainText
@@ -152,7 +152,7 @@ FocusScope {
     width: parent.width
     height: Style.space(32)
 
-    Text {
+    Label {
       anchors.left: parent.left
       anchors.right: buttons.left
       anchors.rightMargin: Style.space(8)

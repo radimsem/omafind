@@ -32,19 +32,13 @@ QtObject {
   readonly property int setupPadding: Style.space(18)
   readonly property int setupGap: Style.space(14)
   readonly property int tableRow: Style.space(44)
-  readonly property int leftOutRow: Style.space(50)
-  readonly property int leftOutHead: Style.space(30)
-  readonly property int treeRow: Style.space(46)
   readonly property int tableHeader: Style.space(30)
   readonly property int tableGap: Style.space(10)
   readonly property int tablePadding: Style.space(10)
   // `.dt` columns: check, folder (0 = flexible), text, pdf, images, video, audio, index, time, action.
   readonly property var tableColumns: [28, 0, 64, 56, 64, 56, 56, 84, 72, 32].map(px => Style.space(px))
-  // The boards' 9 px (rule tags, key caps inside rows) has no Style.font token.
-  readonly property int tiny: Math.round(Style.font.caption * 0.9)
-  // Tracking of uppercase captions in em: headers 0.08, rule tags 0.06.
+  // Tracking of uppercase headers in em, rounded to whole pixels where used.
   readonly property real tracking: 0.08
-  readonly property real tagTracking: 0.06
   readonly property color crust: Util.alpha(Color.background, 0.42)
   readonly property color rowLine: Util.alpha(Color.foreground, 0.06)
 

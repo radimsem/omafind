@@ -335,14 +335,14 @@ def test_discover_json_prints_body_and_exits_0(cli, env, monkeypatch, capsys):
 
     python = Path(env['HOME']) / '.local/share/omafind/venv/bin/python'
     monkeypatch.setattr(sys, 'prefix', str(python.parent.parent))
-    body = {'home': env['HOME'], 'candidates': []}
+    body = {'home': env['HOME'], 'folders': []}
     calls = []
 
-    def scan(**kwargs):
+    def snapshot(**kwargs):
         calls.append(kwargs)
-        return discovery.Scan(body, {}, 1)
+        return body
 
-    monkeypatch.setattr(discovery, 'scan', scan)
+    monkeypatch.setattr(discovery, 'snapshot', snapshot)
     assert cli.main(['discover', '--json', '--volume', 'u'], env) == 0
     assert json.loads(capsys.readouterr().out) == body
     assert calls == [{'home': Path(env['HOME']), 'volume': 'u'}]
@@ -355,10 +355,10 @@ def test_discover_failure_exits_1_with_one_stderr_line(cli, env, monkeypatch, ca
     python = Path(env['HOME']) / '.local/share/omafind/venv/bin/python'
     monkeypatch.setattr(sys, 'prefix', str(python.parent.parent))
 
-    def scan(**kwargs):
+    def snapshot(**kwargs):
         raise OSError('scan failed\nmore details')
 
-    monkeypatch.setattr(discovery, 'scan', scan)
+    monkeypatch.setattr(discovery, 'snapshot', snapshot)
     assert cli.main(['discover', '--json'], env) == 1
     assert capsys.readouterr().err.splitlines() == ['scan failed more details']
 
@@ -428,7 +428,7 @@ def test_discover_missing_interpreter_reports_one_line(cli, env, capsys):
 def test_discovery_modules_import_with_only_stdlib(env):
     result = subprocess.run([sys.executable, '-S', '-c',
                              'import sys; sys.path.insert(0, sys.argv[1]); '
-                             'from omafindd import discovery, leftout, selection, rules',
+                             'from omafindd import discovery, selection, rules',
                              str(ROOT / 'helper')],
                             env=env, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr

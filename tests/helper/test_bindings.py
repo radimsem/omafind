@@ -35,21 +35,31 @@ def test_parse_live_binds_conflict_overrides_ours():
     assert bindings.check("SUPER + E", bindings.parse_binds(json.dumps(values[:1]))) == "conflict"
 
 
-@pytest.mark.parametrize("occupied,suggestion", [("", "Super E"), ("E", "Super D"),
-                                                 ("ED", "Super U")])
-def test_cli_conflict_and_fallback(cli, env, capsys, occupied, suggestion):
-    values = [{"modmask": 64, "key": key, "description": "Taken"} for key in occupied]
+def test_cli_conflict_names_the_holder_without_suggesting(cli, env, capsys):
+    values = [{"modmask": 64, "key": "E", "description": "Taken"}]
 
     def run(argv, **kwargs):
         assert argv == ["hyprctl", "binds", "-j"]
         assert kwargs["timeout"]
         return subprocess.CompletedProcess(argv, 0, json.dumps(values), "")
 
-    chord = "SUPER + U" if not occupied else "SUPER + E"
-    if not occupied:
-        values.append({"modmask": 64, "key": "U", "description": "Taken"})
-    assert cli.main(["bindings", "check", "--chord", chord], env, run=run) == 2
-    assert f"Try {suggestion}." in capsys.readouterr().out
+    assert cli.main(["bindings", "check", "--chord", "SUPER + E"], env, run=run) == 2
+    assert capsys.readouterr().out == "Super E is taken by Taken.\n"
+
+
+def test_binds_items_label_chords_and_skip_ours_and_empty_keys():
+    values = [{"modmask": 64, "key": "e", "description": "omafind"},
+              {"modmask": 65, "key": "SPACE", "description": "Launcher"},
+              {"modmask": 76, "key": "h", "description": "Hardware"},
+              {"modmask": 64, "key": "", "description": "Workspace"},
+              {"modmask": 0, "key": "F9", "description": ""},
+              {"modmask": 65, "key": "space", "description": "Second"},
+              {"modmask": 64, "key": "R", "description": "resize", "submap": "resize"}]
+    assert bindings.binds_items(bindings.parse_binds(json.dumps(values))) == [
+        {"chord": "Super Shift Space", "description": "Launcher"},
+        {"chord": "Super Ctrl Alt H", "description": "Hardware"},
+        {"chord": "F9", "description": ""},
+    ]
 
 
 def test_cli_checks_file_when_hyprctl_missing(cli, env, capsys):

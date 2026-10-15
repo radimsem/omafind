@@ -163,7 +163,7 @@ PanelWindow {
                 : Color.notifications.text
             }
 
-            Text {
+            Label {
               anchors.verticalCenter: parent.verticalCenter
               width: Math.min(implicitWidth, column.width - Style.space(22))
               elide: Text.ElideMiddle
@@ -176,7 +176,7 @@ PanelWindow {
             }
           }
 
-          Text {
+          Label {
             width: parent.width
             wrapMode: Text.Wrap
             text: card.toast.body

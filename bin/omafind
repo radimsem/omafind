@@ -413,10 +413,10 @@ def discover(args, env, execve=os.execve):
             return 1
         return execve(str(python), [str(python), str(PLUGIN_ROOT / "bin/omafind"),
                                   "discover", *args], env)
-    from omafindd.discovery import scan
+    from omafindd.discovery import snapshot
 
     try:
-        body = scan(home=Path(env["HOME"]), volume=parsed.volume).body
+        body = snapshot(home=Path(env["HOME"]), volume=parsed.volume)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(" ".join(str(error).splitlines()), file=sys.stderr)
         return 1
@@ -469,9 +469,7 @@ def bindings(args, env, run=subprocess.run):
                            else part.strip() for part in chord.split("+"))
         if result == "conflict":
             holder = next(bind for bind in module.matching(chord, values) if not bind.ours)
-            fallback = module.first_free(values)
-            suggestion = f" Try {fallback.replace('SUPER + ', 'Super ')}." if fallback else ""
-            print(f"{display} is taken by {holder.description or holder.key}.{suggestion}")
+            print(f"{display} is taken by {holder.description or holder.key}.")
             return 2
         print(f"{display} is {'free' if result == 'free' else 'bound by omafind'}.")
         return 0

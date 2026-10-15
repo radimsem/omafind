@@ -35,7 +35,7 @@ Item {
       }
     }
 
-    Text {
+    Label {
       anchors.horizontalCenter: parent.horizontalCenter
       text: "Search photos, screenshots, PDFs, notes, videos and recordings by what they contain."
       textFormat: Text.PlainText
@@ -44,7 +44,7 @@ Item {
       font.pixelSize: Style.font.heading
     }
 
-    Text {
+    Label {
       anchors.horizontalCenter: parent.horizontalCenter
       width: Math.min(implicitWidth, Style.space(640))
       horizontalAlignment: Text.AlignHCenter
@@ -82,7 +82,7 @@ Item {
             anchors.centerIn: parent
             spacing: Style.space(8)
 
-            Text {
+            Label {
               text: chip.modelData.p
               textFormat: Text.PlainText
               color: Color.accent
@@ -90,7 +90,7 @@ Item {
               font.pixelSize: Style.font.bodySmall
             }
 
-            Text {
+            Label {
               text: chip.modelData.label
               textFormat: Text.PlainText
               color: Plugin.Tokens.fg2

@@ -32,19 +32,19 @@ Row {
         Behavior on color { ColorAnimation { duration: 160 } }
         Behavior on border.color { ColorAnimation { duration: 160 } }
 
-        Text {
+        Label {
           anchors.centerIn: parent
           text: chip.modelData.mark
           textFormat: Text.PlainText
           color: chip.done ? Plugin.Palette.green : chip.cur ? Color.accent : Plugin.Tokens.dim
           font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.bodySmall
           font.bold: true
           Behavior on color { ColorAnimation { duration: 160 } }
         }
       }
 
-      Text {
+      Label {
         anchors.verticalCenter: parent.verticalCenter
         text: chip.modelData.label
         textFormat: Text.PlainText

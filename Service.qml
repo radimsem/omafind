@@ -35,13 +35,21 @@ Item {
   property var discover: null
   property string discoverError: ""
   property bool scanning: false
-  // Absolute root -> discover_tree reply.
-  property var trees: ({})
+  // Absolute folder -> rolled-up counts, merged from every discover_counts batch.
+  property var discoverCounts: ({})
+  // Walk root -> {done, seconds, error} from its latest batch.
+  property var walks: ({})
+  // Dataset folder -> {path, kind, files, named} from each walk's last batch.
+  property var datasets: ({})
+  // Folder -> {dirs, volume, error} from discover_children. `childrenAsked` stops a second request.
+  property var childFolders: ({})
+  property var childrenAsked: ({})
   property var fsList: null
   property var progress: null
   property bool indexPending: false
-  // Chord -> "free", "ours", {conflict: line}, or null while its check runs.
-  property var bindingChecks: ({})
+  property var binds: []
+  property bool bindsReady: false
+  property string bindsError: ""
   property string setupError: ""
   property bool helperRunning: false
   // Issue #16: the lib/Update.js state. `updateRun` marks a helperSetup run started by an update;
@@ -74,7 +82,7 @@ Item {
   signal openFailed(var reply)
   signal warmFailed(string reason)
   signal statusReceived(var reply)
-  signal treeReceived(var reply)
+  signal childrenReceived(string path)
   signal fsListReceived(var reply)
   signal setupFailed(string forType, string reason)
   // A reconciled drive changed what a search can find.
@@ -108,6 +116,7 @@ Item {
   function startIndexing(roots, codeRoots, volume) {
     setupError = ""
     var changes = volume ? {roots: roots} : {roots: roots, codeRoots: codeRoots, setupDone: true}
+    if (volume && Array.isArray(codeRoots)) changes.codeRoots = codeRoots
     if (!persist(changes)) {
       setupError = volume
         ? "Could not save the folders to shell.json. Check that the omafind plugin is enabled, then press Index this drive again."
@@ -193,6 +202,7 @@ Item {
   function runtimeInstall() { return send({t: "runtime_install"}) }
   function runtimePause() { return send({t: "runtime_pause"}) }
   function requestRuntimeStatus() { return send({t: "runtime_status"}) }
+  function requestProgress() { return send({t: "index_progress"}) }
 
   function scan() {
     discoverError = ""
@@ -200,7 +210,25 @@ Item {
     return scanning
   }
 
-  function requestTree(root) { return send({t: "discover_tree", root: root}) }
+  function requestChildren(path) {
+    if ((childFolders[path] && !childFolders[path].error) || childrenAsked[path]) return true
+    var asked = Object.assign({}, childrenAsked)
+    asked[path] = true
+    if (!send({t: "discover_children", path: path})) return false
+    childrenAsked = asked
+    return true
+  }
+  function stopDiscovery() {
+    scanning = false
+    driveScanning = false
+    // The daemon answers children requests still in flight with `discover_stop`.
+    childrenAsked = {}
+    var stopped = Object.assign({}, walks)
+    for (var path in stopped) stopped[path] = Object.assign({}, stopped[path], {done: true})
+    walks = stopped
+    return send({t: "discover_stop"})
+  }
+
   function listDirs(path) { return send({t: "fs_list", path: path}) }
 
   // Port of omaone's runSetup: bin/omafind setup installs the venv and enables the unit.
@@ -211,16 +239,12 @@ Item {
     helperSetup.running = true
   }
 
-  function checkBindings(chords) {
-    var next = Object.assign({}, bindingChecks)
-    for (var i = 0; i < chords.length; i++) {
-      next[chords[i]] = null
-      bindingProcess.createObject(root, {chord: chords[i]})
-    }
-    bindingChecks = next
+  function getBinds() {
+    bindsReady = false
+    bindsError = ""
+    if (!send({t: "binds_get"})) bindsError = "omafindd is not running."
   }
 
-  // Saves the chord, writes the Hyprland block, then the menu row when asked. `done(ok, errorLine)`.
   function saveShortcut(chord, menuRow, done) {
     if (!persist({shortcut: chord})) {
       done(false, "Could not save the shortcut to shell.json. Check that the omafind plugin is enabled.")
@@ -282,6 +306,11 @@ Item {
     runtimeAsked = false
     scanning = false
     driveScanning = false
+    childrenAsked = {}
+    var stopped = Object.assign({}, walks)
+    for (var walkRoot in stopped) if (!stopped[walkRoot].done)
+      stopped[walkRoot] = {done: true, seconds: null, error: "Connection lost"}
+    walks = stopped
     connection = Connection.reduce(connection, {type: "attempt-failed"})
     closeSocket()
     // A daemon that dies on import never sends `state`; status tells whether its venv is behind.
@@ -332,10 +361,16 @@ Item {
       status = message
       statusReceived(message)
       break
+    case "binds":
+      binds = Array.isArray(message.binds) ? message.binds : []
+      bindsReady = true
+      bindsError = ""
+      break
     case "runtime_progress":
       runtimeProgress = message
       break
     case "discover_result":
+      if (Array.isArray(message.roots)) message.roots.forEach(entry => clearDiscovery(entry.path))
       if (message.volume) {
         driveScanning = false
         driveError = ""
@@ -346,11 +381,27 @@ Item {
       discoverError = ""
       discover = message
       break
-    case "discover_tree":
-      var nextTrees = Object.assign({}, trees)
-      nextTrees[message.abs || message.root] = message
-      trees = nextTrees
-      treeReceived(message)
+    case "discover_counts":
+      receiveCounts(message)
+      break
+    case "discover_children":
+      var nextChildren = Object.assign({}, childFolders)
+      nextChildren[message.path] = {dirs: Array.isArray(message.dirs) ? message.dirs : [],
+        volume: typeof message.volume === "string" ? message.volume : "",
+        error: typeof message.error === "string" ? message.error : ""}
+      childFolders = nextChildren
+      var childCounts = Object.assign({}, discoverCounts)
+      nextChildren[message.path].dirs.forEach(dir => { if (dir.counts && !childCounts[dir.path]) childCounts[dir.path] = dir.counts })
+      discoverCounts = childCounts
+      var childSets = Object.assign({}, datasets)
+      nextChildren[message.path].dirs.forEach(dir => {
+        if (dir.evidence) childSets[dir.path] = Object.assign({path: dir.path}, dir.evidence)
+      })
+      datasets = childSets
+      var pendingChildren = Object.assign({}, childrenAsked)
+      delete pendingChildren[message.path]
+      childrenAsked = pendingChildren
+      childrenReceived(message.path)
       break
     case "fs_list":
       fsList = message
@@ -385,10 +436,43 @@ Item {
     } else if (message.for === "discover_start") {
       scanning = false
       discoverError = reason
+    } else if (message.for === "binds_get") {
+      bindsReady = false
+      bindsError = reason
     } else {
       setupError = reason
     }
+    if (message.for === "discover_children") childrenAsked = {}
     setupFailed(message.for, reason)
+  }
+
+  // Clears counts and datasets under `walkRoot`. Cached children stay: they hold the folder
+  // lists and the volume of folders added outside every root.
+  function clearDiscovery(walkRoot) {
+    function outside(path) { return path !== walkRoot && path.indexOf(walkRoot.replace(/\/$/, "") + "/") !== 0 }
+    var counts = Object.assign({}, discoverCounts)
+    var sets = Object.assign({}, datasets)
+    for (var path in counts) if (!outside(path)) delete counts[path]
+    for (var path in sets) if (!outside(path)) delete sets[path]
+    discoverCounts = counts
+    datasets = sets
+  }
+
+  function receiveCounts(message) {
+    if (typeof message.root !== "string" || !message.counts) return
+    if (message.reset) clearDiscovery(message.root)
+    var counts = Object.assign({}, discoverCounts)
+    for (var path in message.counts) counts[path] = message.counts[path]
+    discoverCounts = counts
+    var nextWalks = Object.assign({}, walks)
+    nextWalks[message.root] = {done: !!message.done, seconds: typeof message.seconds === "number" ? message.seconds : null,
+      error: typeof message.error === "string" ? message.error : ""}
+    walks = nextWalks
+    if (Array.isArray(message.datasets)) {
+      var nextSets = Object.assign({}, datasets)
+      message.datasets.forEach(entry => nextSets[entry.path] = entry)
+      datasets = nextSets
+    }
   }
 
   function receiveState(message) {
@@ -498,26 +582,6 @@ Item {
         root.reduceUpdate({type: "local", build: localBuildOut.text.trim()})
       else
         console.warn("omafind: no plugin build, so the daemon is not updated: " + localBuildErr.text.trim())
-    }
-  }
-
-  // `bin/omafind bindings check --chord C`: exit 0 is free or ours, exit 2 a conflict line.
-  Component {
-    id: bindingProcess
-    Process {
-      id: check
-      property string chord: ""
-      command: [root.pluginDir + "/bin/omafind", "bindings", "check", "--chord", chord]
-      running: true
-      stdout: StdioCollector { id: checkOut; waitForEnd: true }
-      onExited: (exitCode, exitStatus) => {
-        var line = checkOut.text.trim()
-        var next = Object.assign({}, root.bindingChecks)
-        next[chord] = exitCode === 0 ? (line.indexOf("free") >= 0 ? "free" : "ours")
-          : {conflict: line || "Could not read your Hyprland bindings."}
-        root.bindingChecks = next
-        check.destroy()
-      }
     }
   }
 

@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import ".." as Plugin
 import "../lib/setup.js" as Setup
+import "../lib/keycombo.js" as Keycombo
 
 // Step 3 (board Indexing, M3 step 5): first index progress, skips and the global shortcut.
 FocusScope {
@@ -17,47 +18,33 @@ FocusScope {
   signal closeRequested()
   signal searchRequested()
 
-  readonly property var chords: ["SUPER + E", "SUPER + D", "SUPER + U"]
   readonly property var progress: service ? service.progress : null
   readonly property var rates: service && service.discover ? service.discover.rates : null
   readonly property var head: Setup.indexHead(progress, rates)
-  readonly property var checks: service ? service.bindingChecks : ({})
-  readonly property var line: Setup.shortcutLine(checks, chosen)
   readonly property var problems: progress && progress.problems ? progress.problems : []
   // The problem list grows the panel instead of scrolling inside it, up to eight rows.
   readonly property real extraHeight: showList && problems.length ? list.height + Style.space(8) : 0
+  readonly property var bindMap: service ? Keycombo.bindMap(service.binds) : ({})
+  readonly property bool bindsKnown: !!service && (service.bindsReady || service.bindsError !== "")
+  readonly property var chosenParts: Keycombo.fromHyprland(chosen)
+  // The saved chord may be taken by a bind added since; the user must pick another first. A
+  // saved chord the recorder cannot spell is shown raw and not checked.
+  readonly property string chosenConflict: service && service.bindsReady && chosenParts.length
+    ? Keycombo.bindConflict(chosenParts, bindMap) || "" : ""
 
   function begin() {
     saveError = ""
-    if (service) service.checkBindings(chords)
+    chosen = service ? service.settings.shortcut : "SUPER + E"
+    if (service) service.getBinds()
+  }
+
+  function stop() {
+    recorder.stop()
   }
 
   function focusFirst() {
     if (save.enabled) save.forceActiveFocus()
     else closeButton.forceActiveFocus()
-  }
-
-  function usable(chord) {
-    return checks[chord] === "free" || checks[chord] === "ours"
-  }
-
-  // The configured shortcut when it is free or ours, else the first free one.
-  function pick() {
-    if (chosen !== "" && checks[chosen] !== undefined && checks[chosen] !== null) return
-    var configured = service ? service.settings.shortcut : "SUPER + E"
-    if (checks[configured] === undefined || checks[configured] === null) return
-    if (usable(configured)) {
-      chosen = configured
-      return
-    }
-    for (var i = 0; i < chords.length; i++) {
-      if (checks[chords[i]] === undefined || checks[chords[i]] === null) return
-      if (usable(chords[i])) {
-        chosen = chords[i]
-        return
-      }
-    }
-    chosen = configured
   }
 
   function saveShortcut() {
@@ -71,8 +58,6 @@ FocusScope {
     })
   }
 
-  onChecksChanged: pick()
-
   Column {
     width: parent.width
     spacing: Plugin.Tokens.setupGap
@@ -85,7 +70,7 @@ FocusScope {
         width: parent.width
         height: countText.implicitHeight
 
-        Text {
+        Label {
           id: countText
           text: root.head.count
           textFormat: Text.PlainText
@@ -130,50 +115,10 @@ FocusScope {
       }
     }
 
-    Column {
+    KindProgress {
       width: parent.width
       topPadding: Style.space(2)
-      spacing: Style.space(8)
-
-      Repeater {
-        model: Setup.kindRows(root.progress)
-
-        delegate: Item {
-          required property var modelData
-          width: parent.width
-          height: kindLabel.implicitHeight
-
-          Text {
-            id: kindLabel
-            width: Style.space(80)
-            text: modelData.label
-            textFormat: Text.PlainText
-            color: Plugin.Tokens.fg2
-            font.family: Style.font.family
-            font.pixelSize: Style.font.body
-          }
-
-          ProgressBar {
-            x: Style.space(80) + Style.space(14)
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - x - Style.space(190) - Style.space(14)
-            height: Style.space(6)
-            fraction: modelData.fraction
-            done: modelData.done
-          }
-
-          Text {
-            anchors.right: parent.right
-            width: Style.space(190)
-            horizontalAlignment: Text.AlignRight
-            text: modelData.text
-            textFormat: Text.PlainText
-            color: Plugin.Tokens.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.body
-          }
-        }
-      }
+      progress: root.progress
     }
 
     Item {
@@ -237,7 +182,7 @@ FocusScope {
       width: parent.width
       spacing: Style.space(4)
 
-      Text {
+      Label {
         text: "Open omafind from anywhere"
         textFormat: Text.PlainText
         color: Color.foreground
@@ -246,7 +191,7 @@ FocusScope {
         font.bold: true
       }
 
-      Text {
+      Label {
         width: parent.width
         wrapMode: Text.Wrap
         text: "omafind writes its own block in your Hyprland bindings and reloads Hyprland. Nothing else in your config changes."
@@ -257,72 +202,30 @@ FocusScope {
       }
     }
 
-    Item {
+    ShortcutRow {
+      id: shortcutRow
       width: parent.width
-      height: Style.space(28)
-
-      Row {
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.space(12)
-
-        Row {
-          anchors.verticalCenter: parent.verticalCenter
-          spacing: Style.space(4)
-
-          Repeater {
-            model: root.chosen ? Setup.chordKeys(root.chosen) : []
-            delegate: SetupKey {
-              required property string modelData
-              text: modelData
-              implicitHeight: Style.space(26)
-              fontSize: Style.font.body
-              padding: Style.space(8)
-            }
-          }
-        }
-
-        Row {
-          anchors.verticalCenter: parent.verticalCenter
-          spacing: Style.space(6)
-
-          Spinner {
-            anchors.verticalCenter: parent.verticalCenter
-            visible: root.line.tone === "busy"
-            running: visible
-          }
-
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            visible: root.line.tone === "ok"
-            text: "✓"
-            textFormat: Text.PlainText
-            color: Plugin.Palette.green
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.line.tone === "busy" ? "Checking your bindings" : root.line.text
-            textFormat: Text.PlainText
-            color: root.line.tone === "warn" ? Plugin.Palette.yellow
-              : root.line.tone === "busy" ? Plugin.Tokens.dim
-              : Color.foreground
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-          }
-        }
+      parts: root.chosenParts.length ? root.chosenParts : root.chosen !== "" ? [root.chosen] : []
+      recording: recorder.active
+      canChange: !!root.service && root.service.bindsReady
+      note: recorder.conflict
+        || (recorder.lost ? "Hyprland left recording mode, so omafind stopped recording. Press Change to try again." : "")
+        || (recorder.exposed ? "Hyprland could not enter recording mode. Press Change to try again." : "")
+        || root.chosenConflict
+        || (root.service && root.service.bindsError !== "" ? root.service.bindsError + " The shortcut has not been checked for conflicts. Close setup and open it again to retry." : "")
+      noteTone: note !== "" ? "warn" : ""
+      onChange: {
+        recorder.start()
+        shortcutRow.take()
       }
+      onCancel: recorder.stop()
+      onCaptured: (key, modifiers) => recorder.capture(key, modifiers)
+    }
 
-      ActionButton {
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        text: "Change"
-        focusable: true
-        buttonHeight: Style.space(28)
-        enabled: root.line.tone !== "busy"
-        onClicked: root.chosen = Setup.nextChord(root.checks, root.chosen)
-      }
+    ShortcutRecorder {
+      id: recorder
+      binds: root.bindMap
+      onRecorded: chord => root.chosen = chord
     }
 
     Row {
@@ -339,7 +242,7 @@ FocusScope {
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.space(2)
 
-        Text {
+        Label {
           text: "Add \"Find files\" to the Omarchy menu"
           textFormat: Text.PlainText
           color: Color.foreground
@@ -347,7 +250,7 @@ FocusScope {
           font.pixelSize: Style.font.body
         }
 
-        Text {
+        Label {
           text: "One row in ~/.config/omarchy/extensions/omarchy-menu.jsonc"
           textFormat: Text.PlainText
           color: Plugin.Tokens.dim
@@ -363,7 +266,7 @@ FocusScope {
     width: parent.width
     spacing: Plugin.Tokens.setupGap
 
-    Text {
+    Label {
       visible: root.saveError !== ""
       width: parent.width
       wrapMode: Text.Wrap
@@ -380,7 +283,7 @@ FocusScope {
       width: parent.width
       height: Style.space(32)
 
-      Text {
+      Label {
         anchors.left: parent.left
         anchors.right: buttons.left
         anchors.rightMargin: Style.space(8)
@@ -404,7 +307,10 @@ FocusScope {
           objectName: "omafindSetupClose"
           text: "Close"
           focusable: true
-          onClicked: root.closeRequested()
+          onClicked: {
+            recorder.stop()
+            root.closeRequested()
+          }
         }
 
         ActionButton {
@@ -414,7 +320,7 @@ FocusScope {
           primary: true
           neutral: true
           focusable: true
-          enabled: root.chosen !== "" && root.line.tone !== "busy" && root.line.tone !== "warn" && !root.saving
+          enabled: root.chosen !== "" && root.bindsKnown && root.chosenConflict === "" && !recorder.active && recorder.operation === "" && !recorder.pendingLeave && !root.saving
           onClicked: root.saveShortcut()
         }
       }

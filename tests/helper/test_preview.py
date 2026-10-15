@@ -149,12 +149,10 @@ def test_shortcut_setting(environment, value, expected):
 
 @pytest.mark.parametrize("kind", ["pdf", "video"])
 def test_failed_concurrent_render_preserves_finished_image(environment, monkeypatch, kind):
-    import hashlib
-
     path = environment / "source"
     path.touch()
     jump = 1
-    key = hashlib.sha256(f"{path}:{path.stat().st_mtime_ns}:{jump}".encode()).hexdigest()
+    key = preview._cache_key(path, jump, preview.RENDER_SIDE if kind == "pdf" else 1024)
     image = preview.paths.preview_dir() / (key + (".png" if kind == "pdf" else ".jpg"))
     outputs = []
 
@@ -197,3 +195,43 @@ def test_audio_decodes_low_rate_and_caches_by_mtime(environment, monkeypatch):
     os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 1))
     preview._bars(path)
     assert len(calls) == 2
+
+
+def test_online_image_previews_the_original(environment):
+    path = environment / "photo.png"
+    path.write_bytes(b"png")
+    reply = preview.render({"id": "image", "kind": "image", "path": str(path),
+                            "thumb": "/cached.jpg"})
+    assert reply["image"] == str(path)
+
+
+def test_heic_gets_one_cached_render_at_twice_the_box(environment, monkeypatch):
+    path = environment / "photo.HEIC"
+    path.write_bytes(b"heic")
+    calls = []
+
+    def run(argv):
+        calls.append(argv)
+        Path(argv[-1]).write_bytes(b"jpeg")
+
+    monkeypatch.setattr(preview, "_run", run)
+    item = {"id": "image", "kind": "image", "path": str(path), "thumb": "/cached.jpg"}
+    first = preview.render(item)["image"]
+    assert preview.render(item)["image"] == first
+    assert len(calls) == 1
+    assert calls[0][:5] == ["magick", f"{path}[0]", "-auto-orient", "-resize", "1200x840>"]
+    assert first.endswith(".jpg") and Path(first).read_bytes() == b"jpeg"
+
+
+def test_pdf_page_renders_at_render_side(environment, monkeypatch):
+    path = environment / "a.pdf"
+    path.write_bytes(b"%PDF")
+    calls = []
+
+    def run(argv):
+        calls.append(argv)
+        Path(argv[-1] + ".png").write_bytes(b"png")
+
+    monkeypatch.setattr(preview, "_run", run)
+    preview.render({"id": "pdf", "kind": "pdf", "path": str(path), "loc": 3})
+    assert calls[0][calls[0].index("-scale-to") + 1] == "1200"

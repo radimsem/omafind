@@ -172,3 +172,11 @@ test('new sequence exposes words phase to footer while old results remain visibl
   assert.equal(footerLeft(typing), 'Matching words…');
   assert.equal(status(typing).text, '');
 });
+
+test('latency shows whole milliseconds', () => {
+  const { initial, reduce, status } = search();
+  const typed = reduce(initial(), { type: 'typed', query: 'router', now: 100 }).state;
+  const reply = freeze({ ...fixture('main'), seq: 1, ms: { total: 17.418 } });
+  const done = reduce(freeze(typed), { type: 'reply', reply });
+  assert.deepEqual(plain(status(done.state, reply)), { text: '17 ms', spinner: false });
+});

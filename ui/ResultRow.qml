@@ -106,7 +106,7 @@ Rectangle {
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(4)
 
-    Text {
+    Label {
       width: parent.width
       text: root.item.name || ""
       textFormat: Text.PlainText
@@ -119,7 +119,7 @@ Rectangle {
       font.bold: true
     }
 
-    Text {
+    Label {
       width: parent.width
       text: root.hasSnippet ? root.snippetMarkup(root.item) : root.escaped(root.folder(root.item))
       textFormat: Text.StyledText
@@ -147,14 +147,14 @@ Rectangle {
     // M4: the `new` badge fades in over 700 ms; other badges change over 240 ms.
     Behavior on opacity { NumberAnimation { duration: root.newBadge ? 700 : 240 } }
 
-    Text {
+    Label {
       id: badgeText
       anchors.centerIn: parent
       text: root.shownBadge
       textFormat: Text.PlainText
       color: root.offline ? Plugin.Palette.yellow : root.newBadge ? Color.accent : Color.foreground
       font.family: Style.font.family
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.bodySmall
       font.bold: true
     }
   }

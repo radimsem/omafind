@@ -16,13 +16,6 @@ test('step derives from daemon facts and local back', () => {
   assert.equal(s.step({runtimeProgress: {state: 'done'}, progress, back: true}), 1);
   assert.equal(s.engineReady(null), false);
 });
-test('chips and panel sizes follow each step', () => {
-  assert.deepEqual(plain(s.chips(2)), [{label:'Search engine',state:'done',mark:'✓'}, {label:'Folders',state:'cur',mark:'2'}, {label:'Index',state:'todo',mark:'3'}]);
-  assert.equal(s.stepLabel(2), 'Step 2 of 3');
-  for (const [step, sub, size] of [[1,'',[760,474]], [2,'',[1120,992]], [2,'tree',[1120,948]], [3,'',[920,574]]]) {
-    assert.deepEqual(Object.values(plain(s.panelSize(step,sub))), size);
-  }
-});
 test('formatters use specified rounding and whole-name home prefixes', () => {
   assert.equal(s.count(1209), '1,209');
   assert.equal(s.displayPath('/home/u/Documents','/home/u'), '~/Documents');
@@ -69,23 +62,8 @@ test('file lines distinguish wait run verify and verified', () => {
     assert.equal(line.fraction, done ? 1 : 202/555);
   }
 });
-test('scan and not-proposed facts omit zero groups', () => {
-  assert.deepEqual(values(s.scanFacts(discover)), [['scan','0.8 s'],['roots','$HOME'],['volumes','0'],['dirs','4,812'],['read','names only']]);
-  assert.deepEqual(values(s.scanningFacts()), [['roots','$HOME'],['read','names only']]);
-  assert.deepEqual(values(s.notProposed(discover.not_proposed,discover.home)), [['not proposed',''],['no-kind','~/Music'],['dot','212 dirs'],['heavy','14 dirs'],['dataset','2 dirs']]);
-  assert.deepEqual(plain(s.notProposed({dot:0,heavy:0,dataset:0,no_kind:[]},'/h')), []);
-});
-test('home row facts match the board ledger', () => {
-  const expected=[[['dirs','1,550'],['kept','793/899'],['left out','4']], [['dirs','3'],['.png','388']], [['dirs','4'],['left out','1']], [['dirs','2'],['.mp4','6']]];
-  discover.candidates.slice(0,4).forEach((c,i) => assert.deepEqual(values(s.rowFacts(c,i===0?{found:899,kept:793,entries:[1,2,3,4]}:null)),expected[i]));
-  assert.deepEqual(values(s.rowFacts(discover.candidates[4])), [['dirs','8'],['rule','dense'],['.md','118'],['.png','31']]);
-  assert.deepEqual(values(s.repoFacts(discover.repos[0])), [['git','tracked 1,842'],['rule','secrets, generated']]);
-});
-test('totals only include checked content and recompute estimates', () => {
-  const rows=discover.candidates.map((c,i)=>({...c,counts:i===0?{text:731,pdf:45,image:17,video:0,audio:0}:c.counts}));
-  const totals=s.totals(rows,discover.rates,'gpu');
-  assert.deepEqual(plain(totals), {files:1209,bytes:13606000,seconds:147.51});
-  assert.deepEqual(values(s.totalFacts(totals,'gpu')), [['selected','1,209 files'],['index','14 MB'],['time','~2 min'],['device','GPU']]);
+test('total facts and estimates use kind rates', () => {
+  assert.deepEqual(values(s.totalFacts({files:1209,bytes:13606000,seconds:147.51},'gpu')), [['selected','1,209 files'],['index','14 MB'],['time','~2 min'],['device','GPU']]);
   assert.deepEqual(plain(s.estimate({text:2,pdf:0,image:0,video:0,audio:0},discover.rates,'cpu')), {bytes:22000,seconds:.26});
 });
 test('kind rows show per-kind progress and soundtrack-only audio', () => {
@@ -101,18 +79,6 @@ test('index header derives total and remaining time from kind rates', () => {
   assert.deepEqual(values(s.indexHead({...progress,device:null,vram_gb:null,running:false},discover.rates).side), []);
   assert.deepEqual(values(s.problemFacts(progress)), [['skipped',''],['secrets','4'],['size-cap','2'],['failed',''],['encrypted-pdf','1']]);
 });
-test('shortcut checks handle free ours conflict pending and cycling', () => {
-  const checks={'SUPER + E':'free','SUPER + D':'free','SUPER + U':'free'};
-  assert.deepEqual(plain(s.shortcutLine(checks,'SUPER + E')), {tone:'ok',text:'Free. Also free: Super D, Super U.'});
-  assert.equal(s.shortcutLine({...checks,'SUPER + E':'ours'},'SUPER + E').text,'Bound by omafind.');
-  assert.deepEqual(plain(s.shortcutLine({'SUPER + E':{conflict:'Taken'}},'SUPER + E')), {tone:'warn',text:'Taken'});
-  assert.equal(s.shortcutLine({},'SUPER + E').tone,'busy');
-  assert.deepEqual(plain(s.chordKeys('SUPER + SHIFT + E')), ['Super','Shift','E']);
-  assert.equal(s.nextChord(checks,'SUPER + E'),'SUPER + D');
-  assert.equal(s.nextChord(checks,'SUPER + D'),'SUPER + U');
-  assert.equal(s.nextChord(checks,'SUPER + U'),'SUPER + E');
-  assert.equal(s.nextChord({...checks,'SUPER + D':{conflict:'taken'}},'SUPER + E'),'SUPER + U');
-});
 
 test('formatting boundaries and empty progress stay finite',()=>{
   assert.equal(s.treeTime(.5),'1 s'); assert.equal(s.treeTime(90),'2 min');
@@ -120,8 +86,6 @@ test('formatting boundaries and empty progress stay finite',()=>{
   assert.equal(s.indexHead(null,discover.rates).fraction,0);
   assert.equal(s.kindRows(null).length,5);
   assert.deepEqual(plain(s.fileLines(null)),[]);
-  assert.equal(s.nextChord({},'SUPER + E'),'SUPER + E');
-  assert.equal(s.shortcutLine({'SUPER + E':'free'},'SUPER + E').text,'Free.');
 });
 test('paused build presents a stationary task while verified server stays installed',()=>{
   const paused=s.serverTask({state:'paused',build:{state:'run',seconds:65}});
@@ -131,7 +95,6 @@ test('paused build presents a stationary task while verified server stays instal
 test('estimates and problem facts tolerate data that has not arrived', () => {
   assert.deepEqual(plain(s.estimate(null, discover.rates, 'gpu')), {bytes: 0, seconds: 0});
   assert.deepEqual(plain(s.estimate({text: 1}, null, 'gpu')), {bytes: 0, seconds: 0});
-  assert.deepEqual(plain(s.totals(null, null, 'gpu')), {files: 0, bytes: 0, seconds: 0});
   assert.deepEqual(plain(s.problemFacts(null)), []);
 });
 
@@ -140,4 +103,55 @@ test('index failure prefers the daemon sentence, then a failed exit code',()=>{
   assert.equal(s.indexFailure({running:false,exit:2},''),'exit 2');
   assert.equal(s.indexFailure({running:false,exit:0},''),'');
   assert.equal(s.indexFailure({running:true},''),'');assert.equal(s.indexFailure(null,''),'');
+});
+
+test('step 3 title follows the run outcome', () => {
+  assert.equal(s.indexTitle(null, ''), 'Indexing your files');
+  assert.equal(s.indexTitle({...progress, running: true}, ''), 'Indexing your files');
+  assert.equal(s.indexTitle({...progress, running: false, done: 5, queued: 0}, ''), 'Indexing finished');
+  assert.equal(s.indexTitle({...progress, running: false, exit: 1}, 'exit 1'), 'Indexing stopped');
+  assert.equal(s.indexTitle({...progress, running: true}, 'No folders are selected.'), 'Indexing stopped');
+});
+
+
+test('step 3 title stops for paused queues and failed exits without an error sentence', () => {
+  assert.equal(s.indexTitle({...progress, running: false, done: 5, queued: 4}, ''), 'Indexing stopped');
+  assert.equal(s.indexTitle({...progress, running: false, done: 5, queued: 0, exit: 1}, ''), 'Indexing stopped');
+});
+
+test('scan time shows one decimal place', () => {
+  assert.equal(s.scanFacts(1, {'/h': {done: true, seconds: .84129}})[0].v, '0.8 s');
+  assert.equal(s.scanFacts(1, {'/h': {done: true, seconds: 1}})[0].v, '1.0 s');
+});
+
+test('chips and panel sizes follow each step', () => {
+  assert.deepEqual(plain(s.chips(2)), [{label:'Search engine',state:'done',mark:'✓'}, {label:'Folders',state:'cur',mark:'2'}, {label:'Index',state:'todo',mark:'3'}]);
+  assert.equal(s.stepLabel(2), 'Step 2 of 3');
+  for (const [step, size] of [[1,[760,474]], [2,[1120,992]], [3,[920,574]]]) {
+    assert.deepEqual(Object.values(plain(s.panelSize(step))), size);
+  }
+});
+test('scan facts count folders while walks run, then show the walk time', () => {
+  assert.deepEqual(values(s.scanFacts(1234, {})), [['folders','1,234'],['scanning','']]);
+  assert.deepEqual(values(s.scanFacts(12, {'/h': {done: true, seconds: 1.4}, '/m': {done: false}})), [['folders','12'],['scanning','']]);
+  assert.deepEqual(values(s.scanFacts(12, {'/h': {done: true, seconds: 1.44}, '/m': {done: true, seconds: 0.3}})), [['scanned in','1.4 s']]);
+  assert.equal(s.walkError({'/h': {done: true, error: ''}}), '');
+  assert.equal(s.walkError({'/h': {done: true, error: 'fd failed: boom'}}), 'fd failed: boom');
+});
+test('dataset facts name the kind, the file count and the machine-named share', () => {
+  assert.deepEqual(values(s.datasetFacts({kind: 'image', files: 1418, named: 96})), [['images','1,418'],['named','96%']]);
+  assert.deepEqual(values(s.datasetFacts({kind: 'audio', files: 300, named: 70})), [['audio','300'],['named','70%']]);
+});
+
+
+test('failed walks show no scan time', () => {
+  assert.deepEqual(values(s.scanFacts(12, { '/h': { done: true, seconds: 0, error: 'fd failed' } })),
+    [['folders', '12']]);
+});
+
+test('folder errors trim tool prefixes and trailing punctuation and give a next step', () => {
+  assert.equal(s.folderError('fd failed: Permission denied.\n'),
+    'Could not list your folders: Permission denied. Press Back and try again.');
+  assert.equal(s.folderError('Connection lost!'),
+    'Could not list your folders: Connection lost. Press Back and try again.');
 });
