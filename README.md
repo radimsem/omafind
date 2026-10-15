@@ -128,6 +128,8 @@ bin/omafind search --json --limit 40 "invoice 4412"
 It exits 0 with JSON, 1 with one error line on stderr, or 2 without `--json`.
 The optional volume UUID lists only that mounted non-system volume.
 The overlay requests children on expansion and receives streamed file counts.
+Repositories under picked folders are indexed as code by default once their folder walk finishes; turn off a repository's Code toggle to leave it out.
+Git worktrees are left out: they are unchecked and tagged "worktree", because the main repository already covers their code.
 
 `reindex --incremental` keeps unchanged files and their vectors. The setup view
 starts this command after saving selected folders; progress remains available

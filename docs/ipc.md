@@ -104,6 +104,9 @@ Extracted HTML/docx/odt set `info.extracted:true`. `part` is `text`, `image`
 results. `weak` means score below half the top score. `total` counts qualified
 files before the limit; `weaker` counts weak items in the returned list.
 `degraded` is null or a reason string; embedding failures still return words.
+A `kinds:["code"]` search with no code index adds `notice:"no-code-index"` when no repository has
+Code turned on, or `notice:"code-index-pending"` when one has but the index is not built yet;
+`degraded` stays null.
 Timing fields are milliseconds.
 
 Proposed error replies are `{"t":"error","seq":7,"code":"no-index","reason":"No index exists. Run omafind reindex --root PATH."}` or
@@ -225,12 +228,12 @@ daemon: {"t":"discover_result","volume":null,"home":"/home/u","device":"gpu",
                   "cpu":{"text":0.13,"pdf":0.54,"image":1.36,"video":18.0,"audio":11.1,"code":0.084},
                   "bytes":{"text":11000,"pdf":48000,"image":7000,"video":40000,"audio":12000,"code":10000}},
          "roots":[{"path":"/home/u","volume":"<uuid>"},{"path":"/run/media/u/USB","volume":"<uuid>"}],
-         "folders":[{"path":"/home/u/Documents","name":"Documents","xdg":true,"repo":false,"hasChildren":true,"volume":"<uuid>"},
-                    {"path":"/home/u/omaone","name":"omaone","xdg":false,"repo":true,"hasChildren":true,"volume":"<uuid>"},
-                    {"path":"/run/media/u/USB","name":"/run/media/u/USB","xdg":false,"repo":false,"hasChildren":true,"volume":"<uuid>"}]}
+         "folders":[{"path":"/home/u/Documents","name":"Documents","xdg":true,"repo":false,"worktree":false,"hasChildren":true,"volume":"<uuid>"},
+                    {"path":"/home/u/omaone","name":"omaone","xdg":false,"repo":true,"worktree":false,"hasChildren":true,"volume":"<uuid>"},
+                    {"path":"/run/media/u/USB","name":"/run/media/u/USB","xdg":false,"repo":false,"worktree":false,"hasChildren":true,"volume":"<uuid>"}]}
 ```
 - The reply comes after one directory read per root (plus one peek per folder for `hasChildren`). `folders` lists the folders directly under `$HOME`, sorted by name, then one row per volume mounted outside `$HOME`; with `volume` it lists the folders under that volume's mount. At most 500 home folders, plus the volume rows. A volume-only request lists at most 500 folders.
-- Symlinks, hidden names, the heavy and vendor names in `rules.HEAVY_GLOBS` and secret names are never listed. `xdg` is true for the Documents, Pictures, Videos, Music, Download and Desktop folders of `user-dirs.dirs`. `repo` is true when the folder holds `.git`.
+- Symlinks, hidden names, the heavy and vendor names in `rules.HEAVY_GLOBS` and secret names are never listed. `xdg` is true for the Documents, Pictures, Videos, Music, Download and Desktop folders of `user-dirs.dirs`. `repo` is true when the folder holds a `.git` directory or a submodule; `worktree` is true for a linked git worktree, and `repo` is false for it.
 - `rates` lets the client estimate index size and time for any counts on `device`.
 - After the reply the daemon walks each root once with `fd` (one pass over the indexable kinds, no hidden paths, heavy names or secrets) and broadcasts `discover_counts`. A walk of the same root that is running, or finished successfully less than 300 s ago, is reused: the daemon broadcasts its counts so far as one `discover_counts` instead of walking again. The overlay sends `discover_stop` when its picker closes. Walks stop when their last interested connection stops discovery or disconnects, or when the daemon stops.
 
@@ -238,19 +241,20 @@ daemon: {"t":"discover_result","volume":null,"home":"/home/u","device":"gpu",
 daemon: {"t":"discover_counts","root":"/home/u","done":false,"seconds":null,
          "counts":{"/home/u/Documents":{"text":745,"pdf":67,"image":26,"video":0,"audio":0,"dirs":4}}}
 daemon: {"t":"discover_counts","root":"/home/u","done":true,"seconds":1.4,"counts":{...},
-         "datasets":[{"path":"/home/u/Pictures/frames","kind":"image","files":1418,"named":96}]}
+         "datasets":[{"path":"/home/u/Pictures/frames","kind":"image","files":1418,"named":96}],
+         "repos":["/home/u/omaone"],"worktrees":["/home/u/omaone-wt"]}
 ```
 - A fresh walk starts with `counts:{}`, `done:false`, `seconds:null`, and `reset:true`. Clients clear that root's previous counts, datasets, and child replies; a reused walk replays a snapshot without `reset`.
 - Sent about every 250 ms with the folders whose counts changed since the last batch. `counts` are rolled up: a folder counts every indexable file below it. `dirs` counts the rolled-up directories containing those files, including the folder itself; it never contributes to file totals. A folder the walk never reached has no entry; once `done` is true a missing folder has zero files.
-- The last batch has `done:true`, `seconds` rounded to 0.1, and `datasets`: media folders with 300 or more files of one kind (image, video or audio) of which at least 70% are machine-named; `named` is that share in percent. A failed walk still ends with `done:true` and adds `error` (the last error line from fd or the OS reason). Failed walks are never cached, so the next discovery request retries. Folder and file names that cannot be encoded as UTF-8 are skipped.
+- The last batch has `done:true`, `seconds` rounded to 0.1, and `datasets`: media folders with 300 or more files of one kind (image, video or audio) of which at least 70% are machine-named; `named` is that share in percent. `repos` and `worktrees` are sorted lists of the absolute paths of the git repositories and linked worktrees the walk found. A done snapshot of a reused walk carries `datasets`, `repos` and `worktrees` too. A failed walk still ends with `done:true` and adds `error` (the last error line from fd or the OS reason). Failed walks are never cached, so the next discovery request retries. Folder and file names that cannot be encoded as UTF-8 are skipped.
 
 ```
 plugin: {"t":"discover_children","path":"/home/u/Pictures"}
 daemon: {"t":"discover_children","path":"/home/u/Pictures","volume":"<uuid>","error":null,
-         "dirs":[{"path":"/home/u/Pictures/frames","name":"frames","repo":false,"hasChildren":false,
+         "dirs":[{"path":"/home/u/Pictures/frames","name":"frames","repo":false,"worktree":false,"hasChildren":false,
                   "counts":{"text":0,"pdf":0,"image":1418,"video":0,"audio":0,"dirs":1},
                   "rule":"dataset","evidence":{"kind":"image","files":1418,"named":96}},
-                 {"path":"/home/u/Pictures/2024","name":"2024","repo":false,"hasChildren":true,
+                 {"path":"/home/u/Pictures/2024","name":"2024","repo":false,"worktree":false,"hasChildren":true,
                   "counts":null,"rule":null,"evidence":null}]}
 ```
 - One level, same filters as `folders`, sorted by indexable files (descending), then by name. `counts` is null until the walk reaches the folder; the counts arrive later in `discover_counts`. Paths under a known root reuse its walk and volume UUID without probing the mount again, even after that walk is older than 300 s; only `discover_start` walks a root again. A path outside every known root starts a walk scoped to that path, even when its volume mount is higher up. `/`, `/proc`, `/sys`, `/dev`, `/run`, and paths below these pseudo-filesystem roots are refused with `bad-request`; a known mounted volume below `/run` can still be expanded. `volume` is the UUID of the volume holding `path`, or null. An unreadable folder replies `dirs:[]` with `error` set to the OS reason. A request still running when its connection sends `discover_stop` replies `{"t":"discover_stop"}` instead, and the plugin forgets every children request in flight when it stops discovery.
@@ -280,6 +284,7 @@ daemon: {"t":"progress","running":true,"done":612,"queued":597,"volume":"<uuid>"
 - Reply to `index_start` is a `progress` snapshot. Then the daemon broadcasts `progress` at most twice per second while the index job runs, and once more when it exits (`running:false`). `status` keeps working unchanged for the #4 footer.
 - When the child exits non-zero, the final `progress` includes `exit:<code>` (negative for termination by a signal). The daemon then broadcasts exactly one `error` with `for:"index_start"`, `code:"runtime-failed"`, and a `reason` naming the exit code and the absolute `<data>/index/reindex.log` path. These broadcasts report failure after the initial reply; they carry no `seq` or `id`. Successful completion omits `exit` and sends no error.
 - `device` is `gpu`, `cpu` or null; `vram_gb` is a float or null (unknown is null, the client hides the token). `skipped` and `failed` omit zero keys. Secrets are never listed, so they are not counted in `skipped`. `problems` lists at most 50 failed files.
+- A file whose embedding the server rejects gets detail `embedding-failed`: state `failed`, or, for a `partial` file whose earlier pages are already indexed, state `partial` with that detail. The halted file stays searchable up to where it stopped and leaves the queue.
 - `kinds.image.ocr` counts ready images with a non-empty OCR text segment (`kind:"ocr"`); filename and parent-folder text in `name` segments does not count.
 - Error codes: `no-roots` (settings have no roots and no codeRoots), `bad-request`, `scan-failed`, `runtime-failed`, `binds-failed`.
 
@@ -322,8 +327,8 @@ The daemon rereads that setting; it does not write shell.json.
 A returning known drive gets `volume` with `known:true`, followed by size/mtime
 reconciliation. `reconcile` is pushed at most twice per second, plus a final
 snapshot with `done == total`. An unplugged known drive gets `online:false` and
-`mount:null`, followed by a fresh status. Internal roots use watchdog and a two
-second directory coalescing window. Removable drives reconcile on mount.
+`mount:null`, followed by a fresh status. Internal roots share one inotify instance
+and reader thread, with a two second directory coalescing window. Removable drives reconcile on mount.
 
 Disk free space is checked every 30 seconds and before every indexing kick;
 the child checks it before each batch. Below 2,000,000,000 bytes it pauses;

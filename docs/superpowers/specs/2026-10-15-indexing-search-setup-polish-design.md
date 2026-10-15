@@ -76,7 +76,7 @@ These findings are from 2026-10-15, measured on the live host.
 - The counting walk reports every repository and worktree it passes (`discover_counts` gains `repos` and `worktrees` in its final batch), including ones the user never expands.
 - In the Folders step, a detected repository (not a worktree) under a checked folder has Code checked by default. The user can switch it off per repository, and that choice is kept as it is today.
 - The first index after setup builds `code.sqlite` for those roots.
-- When there are no code roots or no `code.sqlite`, `search_code` adds `notice: "no-code-index"` to its reply. `degraded` stays null, because the semantic leg did not fail. The footer shows "No code is indexed yet. Turn on Code for a repository in setup." in place of "0 results in your code", without the "Semantic search unavailable" banner.
+- When there are no code roots, `search_code` adds `notice: "no-code-index"` to its reply; when code roots exist but `code.sqlite` does not yet, it adds `notice: "code-index-pending"`. `degraded` stays null, because the semantic leg did not fail. In place of "0 results in your code", without the "Semantic search unavailable" banner, the footer shows "No code is indexed yet. Turn on Code for a repository in setup." or "The code index is not built yet. It is built on the next index run."
 
 ### C2. Meaning leg
 
@@ -134,12 +134,13 @@ DESIGN.md gets the worktree line.
 
 ## IPC and docs
 
-- `docs/ipc.md`: `discover_counts.repos` and `.worktrees`, the `worktree` row field, `notice: "no-code-index"` on code results, `detail: "embedding-failed"`.
+- `docs/ipc.md`: `discover_counts.repos` and `.worktrees`, the `worktree` row field, `notice: "no-code-index"` and `"code-index-pending"` on code results, `detail: "embedding-failed"`.
 - No settings key changes, so `settings.example.json`, `settings.py`, `lib/Settings.js` and the README table stay as they are, apart from the README's note that repositories are indexed as code by default.
 
 ## Copy
 
 - "No code is indexed yet. Turn on Code for a repository in setup."
+- "The code index is not built yet. It is built on the next index run."
 - Tag label: "worktree".
 
 ## Testing
@@ -149,7 +150,7 @@ DESIGN.md gets the worktree line.
   - Overflow marks the roots dirty, and ENOSPC logs once.
   - A PDF page over the token cap becomes several segments with the same `loc`.
   - An HTTP 500 for one file fails it and the next file is still indexed. A connection error still ends the run.
-  - `search_code` with no index returns `notice: "no-code-index"` and `degraded: null`.
+  - `search_code` with no code roots returns `notice: "no-code-index"`, with roots but no index `notice: "code-index-pending"`, both with `degraded: null`.
   - `_start_query` does not report "starting" while a request holds the embedder.
   - Discovery tells a worktree from a submodule and a repo, and the walk reports worktrees.
   - Video frame argv and thumbnail size.
