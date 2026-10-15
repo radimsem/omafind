@@ -115,6 +115,7 @@ class Jobs:
         started = False
         done = 0
         pool = _pool()
+        finished = False
         try:
             while True:
                 sql = ("SELECT * FROM files WHERE "
@@ -152,6 +153,7 @@ class Jobs:
                     pending[row["id"]] = (future, info, append)
 
                 ordered = [dict(row) for row in rows]
+                text_vectors = {}
                 for row in ordered[:prefetch]:
                     submit(row, pool)
                 for index, row in enumerate(ordered):
@@ -163,8 +165,9 @@ class Jobs:
                         except BrokenProcessPool as error:
                             pool.shutdown(wait=True, cancel_futures=True)
                             pool = _pool()
-                            for queued in ordered[index + 1:index + prefetch]:
-                                submit(queued, pool)
+                            for queued in ordered[index + 1:]:
+                                if queued["id"] in pending:
+                                    submit(queued, pool)
                             raise ExtractionError("extract-failed") from error
                         except Exception as error:
                             detail = "extract-failed"
@@ -178,9 +181,63 @@ class Jobs:
                         if result.segments and not started:
                             await self.embedder.start("full")
                             started = True
+                        if (row["kind"] == "text" and row["state"] == "pending"
+                            and file not in text_vectors and result.state == "done"
+                            and 0 < len(result.segments) <= 16
+                            and all(s.image is None and s.audio is None for s in result.segments)):
+                            gathered = [(row, result)]
+                            count = len(result.segments)
+                            for next_index in range(index + 1, len(ordered)):
+                                if count == 16:
+                                    break
+                                refill = next_index + prefetch - 1
+                                if refill < len(ordered) and ordered[refill]["id"] not in pending:
+                                    submit(ordered[refill], pool)
+                                candidate = ordered[next_index]
+                                if candidate["kind"] != "text" or candidate["state"] != "pending":
+                                    break
+                                ready = pending[candidate["id"]][0]
+                                if not ready.done() or ready.cancelled() or ready.exception():
+                                    break
+                                extracted = ready.result()
+                                if (extracted.state != "done" or not extracted.segments
+                                    or count + len(extracted.segments) > 16
+                                    or any(s.image is not None or s.audio is not None
+                                           for s in extracted.segments)):
+                                    break
+                                gathered.append((candidate, extracted))
+                                count += len(extracted.segments)
+                            if len(gathered) > 1:
+                                if self.pause is not None:
+                                    await self.pause()
+                                for candidate, _ in gathered:
+                                    self._begin(candidate["id"])
+                                batch = [document_text(Path(candidate["path"]).name, s.text)
+                                         for candidate, extracted in gathered
+                                         for s in extracted.segments]
+                                try:
+                                    values = await self.embedder.embed_documents(batch)
+                                    if len(values) != len(batch):
+                                        raise ValueError("embedding precision fault")
+                                    values = [validated(value) for value in values]
+                                except (EmbeddingError, ValueError) as error:
+                                    if (isinstance(error, EmbeddingError)
+                                        and not isinstance(error, EmbeddingRejected)
+                                        and str(error) != "embedding precision fault"):
+                                        raise
+                                    text_vectors.update((candidate["id"], None)
+                                                        for candidate, _ in gathered)
+                                else:
+                                    offset = 0
+                                    for candidate, extracted in gathered:
+                                        end = offset + len(extracted.segments)
+                                        text_vectors[candidate["id"]] = values[offset:end]
+                                        offset = end
                         segments = result.segments
-                        vectors = []
-                        groups = [segments]
+                        vectors = text_vectors.pop(file, None)
+                        groups = [segments] if vectors is None else []
+                        if vectors is None:
+                            vectors = []
                         if row["kind"] == "video":
                             groups = [[s for s in segments if s.audio is None],
                                       [s for s in segments if s.audio is not None]]
@@ -258,6 +315,7 @@ class Jobs:
                     finally:
                         result = batch = vectors = future = segments = groups = group = None
                         group_vectors = values = None
+                        gathered = candidate = extracted = ready = None
                         # Release the completed asyncio future before the next PNG window.
                         await asyncio.sleep(0)
                     self._committed(file)
@@ -277,7 +335,10 @@ class Jobs:
                             "state": state,
                         }
                     )
-                    if index + prefetch < len(ordered):
+                    if (index + prefetch < len(ordered)
+                        and ordered[index + prefetch]["id"] not in pending):
                         submit(ordered[index + prefetch], pool)
+            finished = True
         finally:
-            pool.shutdown(wait=True, cancel_futures=True)
+            # After an error, waiting would hold the report until prefetched extractions end.
+            pool.shutdown(wait=finished, cancel_futures=True)
