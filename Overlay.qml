@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import qs.Commons
 import "." as Plugin
 import "ui" as Parts
+import "lib/errors.js" as Errors
 
 // The search overlay. The shell calls only open(payload) and close(), and reads `opened` to toggle.
 Item {
@@ -207,8 +208,8 @@ Item {
         pending: root.pendingOpen
         onCloseRequested: root.dismiss()
         onToastRequested: (title, tokens, error) => toast.show(title, tokens, error)
-        onOpenStarted: (item, how) => {
-          root.pendingOpen = {id: item.id, how: how, item: item, reply: null, closed: false}
+        onOpenStarted: (item, how, message) => {
+          root.pendingOpen = {id: item.id, how: how, item: item, message: message, reply: null, closed: false}
           openTimeout.restart()
           closeTimer.restart()
         }
@@ -271,6 +272,8 @@ Item {
   }
 
   property var pendingOpen: null
+  // The last open that failed, so the toast's Retry can send it again.
+  property var failedOpen: null
 
   function announce() {
     var pending = pendingOpen
@@ -286,13 +289,26 @@ Item {
     pendingOpen = null
   }
 
-  function failOpen(reason) {
-    var name = pendingOpen.item.name
+  function failOpen(error) {
+    var failed = pendingOpen
     closeTimer.stop()
     openTimeout.stop()
     searchView.flash = ""
     pendingOpen = null
-    toast.show("Could not open " + name, [{k: "reason", v: reason, tone: "warn"}], true)
+    failedOpen = {message: failed.message, item: failed.item, how: failed.how}
+    toast.showError(error)
+  }
+
+  // The reply to a retried open is announced as a first open is.
+  function retryOpen() {
+    var failed = failedOpen
+    failedOpen = null
+    toast.dismiss()
+    if (!failed || !failed.message || !service || !service.send(failed.message)) return
+    pendingOpen = {id: failed.item.id, how: failed.how, item: failed.item, message: failed.message,
+      reply: null, closed: !opened}
+    openTimeout.restart()
+    if (opened) closeTimer.restart()
   }
 
   Connections {
@@ -304,10 +320,11 @@ Item {
       if (root.pendingOpen.closed) root.announce()
     }
     function onOpenFailed(message) {
-      if (root.pendingOpen && message.id === root.pendingOpen.id) root.failOpen(message.reason)
+      if (root.pendingOpen && message.id === root.pendingOpen.id) root.failOpen(Errors.from(message))
     }
     function onItemFailed(message) {
-      if (root.pendingOpen && message.for === "open" && message.id === root.pendingOpen.id) root.failOpen("error")
+      if (root.pendingOpen && message.for === "open" && message.id === root.pendingOpen.id)
+        root.failOpen(Errors.from(message))
     }
   }
 
@@ -328,5 +345,6 @@ Item {
 
   Parts.Toast {
     id: toast
+    onRetryRequested: root.retryOpen()
   }
 }

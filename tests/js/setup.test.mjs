@@ -98,11 +98,12 @@ test('estimates and problem facts tolerate data that has not arrived', () => {
   assert.deepEqual(plain(s.problemFacts(null)), []);
 });
 
-test('index failure prefers the daemon sentence, then a failed exit code',()=>{
-  assert.equal(s.indexFailure({running:false,exit:2},'Indexing stopped. See ~/.local/state/omafind/index.log.'),'Indexing stopped. See ~/.local/state/omafind/index.log.');
-  assert.equal(s.indexFailure({running:false,exit:2},''),'exit 2');
-  assert.equal(s.indexFailure({running:false,exit:0},''),'');
-  assert.equal(s.indexFailure({running:true},''),'');assert.equal(s.indexFailure(null,''),'');
+test('a failed run adds an exit token to the index header', () => {
+  const stopped = {...progress, running: false, device: null, vram_gb: null};
+  assert.deepEqual(values(s.indexHead({...stopped, exit: 2}, discover.rates).side), [['exit', '2']]);
+  assert.deepEqual(values(s.indexHead({...stopped, exit: 0}, discover.rates).side), []);
+  assert.deepEqual(values(s.indexHead({...stopped, exit: 2, running: true}, discover.rates).side), []);
+  assert.equal(s.indexFailure, undefined);
 });
 
 test('step 3 title follows the run outcome', () => {
@@ -110,7 +111,7 @@ test('step 3 title follows the run outcome', () => {
   assert.equal(s.indexTitle({...progress, running: true}, ''), 'Indexing your files');
   assert.equal(s.indexTitle({...progress, running: false, done: 5, queued: 0}, ''), 'Indexing finished');
   assert.equal(s.indexTitle({...progress, running: false, exit: 1}, 'exit 1'), 'Indexing stopped');
-  assert.equal(s.indexTitle({...progress, running: true}, 'No folders are selected.'), 'Indexing stopped');
+  assert.equal(s.indexTitle({...progress, running: true}, {code: 'no-roots', title: 'No folders are selected.', detail: 'Pick at least one folder to index.'}), 'Indexing stopped');
 });
 
 
@@ -149,11 +150,15 @@ test('failed walks show no scan time', () => {
     [['folders', '12']]);
 });
 
-test('folder errors trim tool prefixes and trailing punctuation and give a next step', () => {
-  assert.equal(s.folderError('fd failed: Permission denied.\n'),
-    'Could not list your folders: Permission denied. Press Back and try again.');
-  assert.equal(s.folderError('Connection lost!'),
-    'Could not list your folders: Connection lost. Press Back and try again.');
+test('the header no longer builds folder error sentences', () => {
+  assert.equal(s.folderError, undefined);
+});
+
+test('problem rows show the code, the detail and the path', () => {
+  assert.deepEqual(values(s.problemTokens(progress.problems[0], '/home/u')),
+    [['encrypted-pdf', 'pdfinfo failed: Incorrect password'], ['path', '~/Documents/a.pdf']]);
+  assert.deepEqual(values(s.problemTokens({path: '/home/u/b.pdf', reason: 'timeout'}, '/home/u')),
+    [['timeout', ''], ['path', '~/b.pdf']]);
 });
 
 const idle = freeze({ ...plain(runtime), state: 'idle', step: null, file: null, done: 0, left_seconds: null,

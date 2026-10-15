@@ -26,7 +26,8 @@ test('counts merge batches and retain errors and dataset evidence', () => {
   ctx.receiveCounts({ root: '/h', counts: { '/h/b': { pdf: 1 } }, done: true,
     seconds: 0.4, error: 'fd failed', datasets: [{ path: '/h/a/data', kind: 'image' }] });
   assert.deepEqual(plain(ctx.discoverCounts), { '/h/a': { text: 2 }, '/h/b': { pdf: 1 } });
-  assert.deepEqual(plain(ctx.walks['/h']), { done: true, seconds: 0.4, error: 'fd failed' });
+  assert.deepEqual(plain(ctx.walks['/h']), { done: true, seconds: 0.4, error: 'fd failed',
+    failure: { code: 'unknown', title: 'fd failed', detail: '' } });
   assert.equal(ctx.datasets['/h/a/data'].kind, 'image');
 });
 

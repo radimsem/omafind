@@ -12,7 +12,13 @@
   },
   "total": 6,
   "weaker": 0,
-  "degraded": "Vulkan device lost",
+  "degraded": {
+    "code": "embedding-unavailable",
+    "title": "Search by meaning is unavailable.",
+    "detail": "Vulkan device lost. Showing keyword matches.",
+    "fix": {"kind": "retry"},
+    "log": "/home/u/.local/share/omafind/cache/logs/llama-server.log"
+  },
   "items": [
     {
       "id": "image:1",

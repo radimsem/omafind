@@ -58,3 +58,18 @@ test('a readiness notification and timeout cannot swap twice', () => {
   ctx.swap();
   assert.equal(ctx.current.item.id, 'b');
 });
+
+test('a preview error reaches the layer that shows its item', () => {
+  const ctx = pane();
+  const source = readFileSync(new URL('../../ui/PreviewPane.qml', import.meta.url), 'utf8');
+  vm.runInContext('function previewChanged() {' + source.match(/^  onPreviewChanged: \{([^]*?)^  \}/m)[1] + '}', ctx);
+  const error = { code: 'file-missing', title: 'a.pdf is missing.', detail: 'It was moved or deleted after it was indexed.' };
+  ctx.first.item = { id: 'a' }; ctx.first.shown = true; ctx.pendingSwap = false;
+  ctx.preview = { id: 'a', error };
+  ctx.previewChanged();
+  assert.equal(ctx.first.preview.error, error);
+  ctx.show({ id: 'b' });
+  ctx.preview = { id: 'b', error };
+  ctx.previewChanged();
+  assert.equal(ctx.second.preview.error, error);
+});

@@ -106,7 +106,8 @@ test('saving allows unknown binds after an error but waits for cleanup', () => {
   assert.equal(saveEnabled(), false);
   ctx.service.bindsError = { code: 'binds-failed', title: 'Your Hyprland bindings could not be read.', detail: '' };
   assert.equal(saveEnabled(), true);
-  assert.match(rowValue('note'), /not been checked for conflicts/);
+  // The binds card shows the failure, so the shortcut note stays empty.
+  assert.equal(rowValue('note'), '');
   ctx.recorder.operation = 'leave';
   assert.equal(saveEnabled(), false);
   ctx.recorder.operation = '';

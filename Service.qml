@@ -538,8 +538,9 @@ Item {
     for (var path in message.counts) counts[path] = message.counts[path]
     discoverCounts = counts
     var nextWalks = Object.assign({}, walks)
+    // `error` is the title, one fact in folder rows; `failure` keeps the object for the drive dialog.
     nextWalks[message.root] = {done: !!message.done, seconds: typeof message.seconds === "number" ? message.seconds : null,
-      error: errorText(message.error)}
+      error: errorText(message.error), failure: Errors.wrap(message.error)}
     if (message.error) folderError = Errors.wrap(message.error)
     if (Array.isArray(message.datasets)) {
       var nextSets = Object.assign({}, datasets)

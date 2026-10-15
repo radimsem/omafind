@@ -25,8 +25,7 @@ FocusScope {
     + (step === 1 ? enginePage.extraHeight : 0)
   readonly property string walkError: service ? Setup.walkError(service.walks) : ""
   readonly property var discover: service ? service.discover : null
-  readonly property string indexFailure: step === 3 && service ? Setup.indexFailure(service.progress,
-    service.indexError ? (service.indexError.title + " " + service.indexError.detail).trim() : "") : ""
+  readonly property var indexFailure: step === 3 && service ? service.indexError : null
   readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
 
 
@@ -119,12 +118,8 @@ FocusScope {
             : Setup.indexTitle(root.service ? root.service.progress : null, root.indexFailure)
           stepText: Setup.stepLabel(root.step)
           subtitle: root.step === 1 ? "Everything runs on this machine. Nothing downloads until you press a button."
-            : root.step === 3 ? root.indexFailure || "You can search already. Results fill in as files finish."
-            : root.service && !root.service.scanning && root.service.folderError
-              ? (root.service.folderError.title + " " + root.service.folderError.detail).trim()
-            : root.walkError !== "" ? Setup.folderError(root.walkError)
+            : root.step === 3 ? "You can search already. Results fill in as files finish."
             : ""
-          subtitleColor: root.step === 2 || root.indexFailure !== "" ? Color.urgent : Plugin.Tokens.dim
           spinning: root.step === 2 && !!root.service && (root.service.scanning
             || Object.keys(root.service.walks).some(key => !root.service.walks[key].done))
           facts: root.step !== 2 || !root.discover ? []

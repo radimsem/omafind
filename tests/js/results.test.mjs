@@ -105,6 +105,9 @@ test('footer copy uses daemon totals, weaker counts, phases, and code prefix', (
   assert.equal(footerLeft({ reply: { total: 4, weaker: 5 }, prefix: 'code:' }), '4 results in your code · 5 weaker');
   assert.equal(footerLeft({ reply: { total: 1, weaker: 0 } }), '1 result');
   assert.equal(footerLeft({ reply: { total: 1204, weaker: 0 } }), '1,204 results');
+  assert.equal(footerLeft({ reply: { total: 2, weaker: 0, degraded: { code: 'server-starting',
+    title: 'The embedding server is starting.', detail: 'Showing keyword matches until it is ready.' } },
+  phase: 'degraded' }), '2 results · keyword matches only');
 });
 
 test('idle footer uses offline labels and only shows incomplete indexing progress', () => {
@@ -145,4 +148,25 @@ test('a code search before the first code index says the index is pending', () =
   assert.equal(R.footerLeft({ phase: 'done', prefix: 'code:',
     reply: { total: 0, items: [], notice: 'code-index-pending' } }),
     'The code index is not built yet. It is built on the next index run.');
+});
+
+test('the banner slot shows one error and names what its Retry does', () => {
+  const R = load('format.js', 'errors.js', 'results.js');
+  const update = { code: 'update-failed', title: 'omafindd did not update.',
+    detail: 'uv sync failed. Press Retry to try again.', fix: { kind: 'retry' } };
+  const offline = R.offline('');
+  const degraded = fixture('degraded');
+  const warm = { code: 'server-start-failed', title: 'The embedding server did not start.',
+    detail: 'It exited with code 1. Showing keyword matches until it starts.', fix: { kind: 'retry' } };
+  assert.equal(R.bannerFor({ reply: fixture('main') }), null);
+  assert.deepEqual(plain(R.bannerFor({ update, offline, reply: degraded })), { error: update, retry: 'update' });
+  assert.equal(R.bannerFor({ offline, reply: degraded }).retry, 'connect');
+  assert.deepEqual(plain(R.bannerFor({ reply: degraded, warm })), { error: plain(degraded.degraded), retry: 'warm' });
+  assert.deepEqual(plain(R.bannerFor({ reply: fixture('main'), warm })), { error: warm, retry: 'warm' });
+  assert.deepEqual(plain(R.bannerFor({ reply: { t: 'error', seq: 4, code: 'no-index',
+    title: 'Nothing is indexed yet.', detail: 'Open setup and start the first index.' } })),
+  { error: { code: 'no-index', title: 'Nothing is indexed yet.', detail: 'Open setup and start the first index.' },
+    retry: 'search' });
+  assert.deepEqual(plain(R.bannerFor({ reply: { ...fixture('main'), degraded: 'Vulkan device lost' } })),
+    { error: { code: 'unknown', title: 'Vulkan device lost', detail: '' }, retry: 'search' });
 });

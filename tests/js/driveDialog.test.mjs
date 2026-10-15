@@ -34,3 +34,32 @@ test('drive save carries excludes and code choices and preserves other volumes',
     { path: '/m/Photos', volume: 'usb', excludes: ['data'] }], ['/h/code', '/m/repo'], 'usb']);
   assert.equal(ctx.phase, 'run');
 });
+
+test('the dialog shows its own error, then the walk, then the drive index run', () => {
+  const own = { code: 'drive-not-mounted', title: 'Photos2024 is not connected.',
+    detail: 'Connect it, then press Retry.', fix: { kind: 'retry' } };
+  const walk = { code: 'scan-failed', title: '/m could not be scanned.',
+    detail: 'Permission denied. Press Retry to scan it again.', fix: { kind: 'retry' } };
+  const index = { code: 'index-exited', title: 'Indexing stopped.',
+    detail: 'The indexer exited with code 2. Open the log for the cause, then press Retry.', fix: { kind: 'retry' } };
+  const ctx = dialog({ service: { driveError: own, indexError: index },
+    walk: { done: true, error: walk.title, failure: walk } });
+  assert.equal(ctx.driveFailure(), own);
+  ctx.service.driveError = null;
+  assert.equal(ctx.driveFailure(), walk);
+  ctx.walk = { done: true, error: '', failure: null };
+  assert.equal(ctx.driveFailure(), null);
+  ctx.phase = 'run';
+  assert.equal(ctx.driveFailure(), index);
+});
+
+test('Retry scans the drive again while picking and indexes it again after', () => {
+  const calls = [];
+  const ctx = dialog({ service: { scanDrive: uuid => calls.push(['scan', uuid]),
+    settings: { roots: [], codeRoots: [] },
+    startIndexing: (roots, code, volume) => { calls.push(['index', volume]); return true; } } });
+  ctx.retry();
+  ctx.phase = 'run';
+  ctx.retry();
+  assert.deepEqual(calls, [['scan', 'usb'], ['index', 'usb']]);
+});

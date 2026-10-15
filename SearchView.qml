@@ -10,6 +10,7 @@ import "lib/results.js" as Results
 import "lib/searchState.js" as SearchState
 import "lib/Update.js" as Update
 import "lib/volumes.js" as Volumes
+import "lib/errors.js" as Errors
 
 // The search overlay body: query row, banner, result list, preview and footer.
 Item {
@@ -45,14 +46,40 @@ Item {
   readonly property bool daemonDown: !service || (!service.ready && !!connection
     && (connection.unit === "missing" || connection.failures > 0))
   // Set while Service.qml brings the daemon to the plugin's build (issue #16).
-  readonly property var updateBanner: service && service.update ? Update.banner(service.update) : null
-  // Service.qml turns `degraded` and a failed warm-up into error objects.
-  readonly property var degradedError: reply && reply.degraded ? reply.degraded
-    : service && service.searchError ? service.searchError : null
+  readonly property var updateError: service && service.update ? Update.banner(service.update) : null
+  readonly property var bannerView: Results.bannerFor({update: updateError,
+    offline: daemonDown ? Errors.offline(startLog.loaded ? startLog.path : "") : null,
+    reply: reply, warm: service ? service.searchError : null})
+
+  function retryBanner() {
+    if (!service || !bannerView) return
+    switch (bannerView.retry) {
+    case "update":
+      service.retryUpdate()
+      break
+    case "connect":
+      service.checkUnit()
+      service.connectSocket()
+      break
+    case "warm":
+      service.warm()
+      break
+    default:
+      search = SearchState.reduce(search, {type: "typed", query: search.query, now: Date.now()}).state
+      arm(meaningTimer, SearchState.meaningDelay)
+    }
+  }
+
+  // A preview error stands in for the preview of its row, so the pane shows it as a card.
+  function previewFailed(message) {
+    if (message.for !== undefined || !selectedItem || message.id !== selectedItem.id) return
+    preview = {id: message.id, error: Errors.from(message)}
+  }
 
   signal closeRequested()
   signal toastRequested(string title, var tokens, bool error)
-  signal openStarted(var item, string how)
+  // `message` is the open request, kept so the failure toast can send it again.
+  signal openStarted(var item, string how, var message)
 
   function reset() {
     previewTimer.stop()
@@ -256,7 +283,7 @@ Item {
     if (pending || !service || !service.send(message)) return
     player.stop()
     flash = how === "open" ? "acc" : "sec"
-    openStarted(item, how)
+    openStarted(item, how, message)
   }
 
   function toggleProgress() {
@@ -340,6 +367,7 @@ Item {
     if (previewKey) previewTimer.restart()
     else previewTimer.stop()
   }
+  onDaemonDownChanged: if (daemonDown) startLog.reload()
 
   Connections {
     target: root.service
@@ -351,6 +379,7 @@ Item {
         if (message.editor) root.editorCommand = message.editor
       }
     }
+    function onItemFailed(message) { root.previewFailed(message) }
     function onStatusReceived(message) {
       var files = typeof message.files === "number" ? message.files : -1
       var before = root.lastFiles
@@ -374,6 +403,16 @@ Item {
       var first = text().split("\n")[0].trim().split(/\s+/)[0]
       if (first) root.editorCommand = first
     }
+  }
+
+  // The daemon's startup log. The offline card links it once it exists.
+  FileView {
+    id: startLog
+    path: (Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") || "") + "/.local/share")
+      + "/omafind/cache/logs/omafindd-start.log"
+    printErrors: false
+    watchChanges: true
+    onFileChanged: reload()
   }
 
   Timer {
@@ -421,51 +460,32 @@ Item {
     onKeyPressed: event => root.handleKey(event)
   }
 
-  Parts.Banner {
+  Parts.ErrorCard {
     id: banner
+    objectName: "omafindSearchError"
     anchors.top: query.bottom
     anchors.left: parent.left
     anchors.right: parent.right
-    visible: !!root.updateBanner || root.daemonDown || !!root.degradedError
-      || (!!root.reply && root.reply.t === "error")
+    error: root.bannerView ? root.bannerView.error : null
+    visible: !!error
     height: visible ? implicitHeight : 0
-    action: root.updateBanner ? root.updateBanner.action : "Retry"
-    lead: root.updateBanner ? root.updateBanner.lead
-      : root.daemonDown ? "" : root.degradedError ? root.degradedError.title
-      : root.reply && root.reply.t === "error" ? root.reply.title || "" : ""
-    text: root.updateBanner ? root.updateBanner.text
-      : root.daemonDown ? "omafindd is not running. Run systemctl --user start omafind, then retry."
-      : root.degradedError ? root.degradedError.detail || ""
-      : root.reply && root.reply.t === "error" ? root.reply.detail || String(root.reply.reason || "") : ""
-    onTriggered: {
-      if (root.updateBanner) {
-        root.service.retryUpdate()
-      } else if (root.daemonDown) {
-        if (root.service) {
-          root.service.checkUnit()
-          root.service.connectSocket()
-        }
-      } else if (root.degradedError) {
-        root.service.warm()
-      } else {
-        root.search = SearchState.reduce(root.search, {type: "typed", query: root.search.query, now: Date.now()}).state
-        arm(meaningTimer, SearchState.meaningDelay)
-      }
-    }
+    retryHere: true
+    onRetry: root.retryBanner()
   }
 
   // Spec 6.5: indexing waits for disk space. The banner has no action; it clears on `resumed`.
   Parts.Banner {
     id: diskBanner
+    objectName: "omafindDiskBanner"
     readonly property var info: root.service && root.service.volumes ? Volumes.diskBanner(root.service.volumes) : null
     anchors.top: banner.bottom
     anchors.left: parent.left
     anchors.right: parent.right
     visible: !!info
     height: visible ? implicitHeight : 0
-    lead: info ? info.title : ""
+    lead: info && info.error ? info.error.title : ""
     tokens: info ? info.tokens.map(t => ({k: t.k, v: t.v, tone: "plain"})) : []
-    text: info ? info.text : ""
+    text: info && info.error ? info.error.detail : ""
     action: ""
   }
 

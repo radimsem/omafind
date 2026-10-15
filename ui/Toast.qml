@@ -13,8 +13,15 @@ PanelWindow {
   property var tokens: []
   property bool error: false
   property bool showing: false
+  // An error object from the daemon, shown as a compact card.
+  property var failure: null
+  // A toast whose error has a fix stays until it is dismissed or retried.
+  readonly property bool sticky: !!failure && !!failure.fix
+
+  signal retryRequested()
 
   function show(nextTitle, nextTokens, isError) {
+    failure = null
     title = nextTitle
     tokens = nextTokens || []
     error = isError === true
@@ -22,6 +29,24 @@ PanelWindow {
     showing = true
     visible = true
     hold.restart()
+  }
+
+  function showError(next) {
+    if (!next) return
+    failure = next
+    title = next.title
+    tokens = []
+    error = true
+    if (!visible) screen = focusedScreen()
+    showing = true
+    visible = true
+    if (sticky) hold.stop()
+    else hold.restart()
+  }
+
+  function dismiss() {
+    hold.stop()
+    showing = false
   }
 
   function focusedScreen() {
@@ -43,8 +68,8 @@ PanelWindow {
   WlrLayershell.namespace: "omafind-toast"
   WlrLayershell.layer: WlrLayer.Overlay
   WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-  // Clicks pass through to the windows below.
-  mask: Region {}
+  // Clicks pass through to the windows below, except on a toast that waits for its fix.
+  mask: Region { item: root.sticky ? card : null }
 
   Timer {
     id: hold
@@ -87,6 +112,7 @@ PanelWindow {
       spacing: Style.space(10)
 
       Row {
+        visible: !root.failure
         spacing: Style.space(8)
 
         Icon {
@@ -110,10 +136,29 @@ PanelWindow {
       }
 
       Facts {
-        visible: root.tokens.length > 0
+        visible: !root.failure && root.tokens.length > 0
         width: Math.min(implicitWidth, column.width)
         tokens: root.tokens
         fontSize: Style.font.bodySmall
+      }
+
+      ErrorCard {
+        objectName: "omafindToastError"
+        width: column.width
+        compact: true
+        retryHere: true
+        error: root.failure
+        visible: !!error
+        onRetry: root.retryRequested()
+      }
+
+      ActionButton {
+        objectName: "omafindToastDismiss"
+        visible: root.sticky
+        anchors.right: parent.right
+        buttonHeight: Style.space(26)
+        text: "Dismiss"
+        onClicked: root.dismiss()
       }
     }
   }

@@ -36,6 +36,8 @@ Item {
   readonly property bool playingHere: mine && player.playing
   // The daemon's preview picks the line the opener jumps to; actions name that line.
   readonly property var jump: preview && (kind === "text" || kind === "code") ? preview.jump : null
+  // A preview error from the daemon (`{id, error}`), shown in place of the media.
+  readonly property var failure: preview && preview.error ? preview.error : null
   // Set when Qt cannot decode the full image (for example a missing image plugin).
   property bool fullFailed: false
   onPreviewChanged: fullFailed = false
@@ -68,6 +70,7 @@ Item {
 
   Item {
     id: media
+    visible: !root.failure
     anchors.top: parent.top
     anchors.topMargin: Style.space(26)
     anchors.left: parent.left
@@ -542,6 +545,15 @@ Item {
         }
       }
     }
+  }
+
+  ErrorCard {
+    objectName: "omafindPreviewError"
+    anchors.centerIn: media
+    width: Style.space(600)
+    compact: true
+    error: root.failure
+    visible: !!error
   }
 
   Column {

@@ -23,6 +23,8 @@ FocusScope {
   readonly property var discover: service ? service.discover : null
   readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
   readonly property var rates: discover ? discover.rates : null
+  // Step 2 shows its own error, else a failed start of the first index.
+  readonly property var failure: service ? service.folderError || service.indexError : null
   readonly property string device: discover && discover.device ? discover.device : "gpu"
   readonly property var folders: (discover && Array.isArray(discover.folders) ? discover.folders : []).concat(added)
   // Drives mounted inside another root, such as a disk under $HOME.
@@ -108,6 +110,12 @@ FocusScope {
     if (!Tree.searched(absolute, choices)) choices = Tree.click(choices, absolute)
     // The volume lookup must finish before the root can be saved.
     if (service) service.requestChildren(absolute)
+  }
+
+  function retry() {
+    if (!service) return
+    if (service.folderError) service.scan()
+    else startIndexing()
   }
 
   function startIndexing() {
@@ -196,13 +204,13 @@ FocusScope {
 
     Rectangle { width: parent.width; height: 1; color: Plugin.Tokens.sep }
 
-    Label {
-      visible: !!root.service && !!root.service.indexError
+    ErrorCard {
+      objectName: "omafindFolderError"
       width: parent.width
-      wrapMode: Text.Wrap
-      text: root.service && root.service.indexError
-        ? (root.service.indexError.title + " " + root.service.indexError.detail).trim() : ""
-      color: Color.urgent
+      error: root.failure
+      visible: !!error
+      retryHere: true
+      onRetry: root.retry()
     }
 
     Item {

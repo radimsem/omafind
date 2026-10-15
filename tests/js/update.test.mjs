@@ -119,12 +119,18 @@ test('a ready or unknown venv, or no local build, runs nothing', () => {
   assert.deepEqual(run([{ type: 'venv', state: 'stale' }]).effects, []);
 });
 
-test('the banner names the update phase', () => {
+test('the banner is an error object for each update phase', () => {
   const { banner } = load('Update.js');
   assert.equal(banner(initial()), null);
-  assert.deepEqual(plain(banner({ ...initial(), phase: 'updating' })), { lead: '', action: '',
-    text: 'Updating omafindd to match the installed plugin. Search returns when it restarts.' });
+  assert.deepEqual(plain(banner({ ...initial(), phase: 'updating' })), { code: 'update-running',
+    title: 'omafindd is updating to match the installed plugin.', detail: 'Search returns when it restarts.' });
   assert.deepEqual(plain(banner({ ...initial(), phase: 'failed', error: 'uv sync failed.' })), {
-    lead: 'omafindd did not update:', action: 'Retry',
-    text: 'uv sync failed. Press Retry to run bin/omafind setup again.' });
+    code: 'update-failed', title: 'omafindd did not update.',
+    detail: 'uv sync failed. Press Retry to try again.', fix: { kind: 'retry' } });
+});
+
+test('a running update is a yellow card and a failed one is red', () => {
+  const { tone } = load('errors.js');
+  assert.equal(tone('update-running'), 'warn');
+  assert.equal(tone('update-failed'), 'urgent');
 });

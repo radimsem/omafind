@@ -40,7 +40,8 @@
   "problems": [
     {
       "path": "/home/u/Documents/a.pdf",
-      "reason": "encrypted-pdf"
+      "code": "encrypted-pdf",
+      "detail": "pdfinfo failed: Incorrect password"
     }
   ]
 }

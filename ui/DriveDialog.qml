@@ -38,8 +38,7 @@ FocusScope {
   readonly property bool anyChecked: choices.chosen.length > 0
   readonly property var progress: service ? service.progress : null
   readonly property var footer: Volumes.dialogFooter(progress, uuid, label)
-  readonly property var failure: service ? service.driveError || service.indexError : null
-  readonly property string errorText: failure ? (failure.title + " " + failure.detail).trim() : walk ? walk.error : ""
+  readonly property var failure: driveFailure()
 
   readonly property real panelWidth: Style.space(1120)
   // The 4 covers the card border on both edges.
@@ -56,6 +55,18 @@ FocusScope {
 
   function begin() {
     if (service && uuid) service.scanDrive(uuid)
+  }
+
+  // The dialog's one error: its own request's, the drive walk's, then the drive's index run.
+  function driveFailure() {
+    if (!service) return null
+    return service.driveError || (walk && walk.failure ? walk.failure : null)
+      || (phase === "run" ? service.indexError : null)
+  }
+
+  function retry() {
+    if (phase === "run") startIndexing()
+    else begin()
   }
 
   function focusFirst() {
@@ -231,15 +242,13 @@ FocusScope {
         tokens: [{k: "watch", v: "off · removable", tone: "plain"}, {k: "reconcile", v: "on mount", tone: "plain"}]
       }
 
-      Label {
-        visible: root.errorText !== ""
+      ErrorCard {
+        objectName: "omafindDriveError"
         width: parent.width
-        wrapMode: Text.Wrap
-        text: root.errorText
-        textFormat: Text.PlainText
-        color: Color.urgent
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
+        error: root.failure
+        visible: !!error
+        retryHere: true
+        onRetry: root.retry()
       }
 
       // `.fx-bot`: the totals and buttons cross-fade to the drive's progress over 180 ms.

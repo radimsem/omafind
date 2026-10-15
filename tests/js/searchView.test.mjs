@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { load } from './load.mjs';
+import { plain } from './fixtures.mjs';
 
 function view(values = {}) {
   const context = vm.createContext({
@@ -86,4 +87,40 @@ test('an early timer tick re-arms the timer for the remaining time', () => {
   });
   context.due('meaning-due');
   assert.deepEqual(armed, [50]);
+});
+
+test('banner Retry follows the source of the card', () => {
+  const calls = [];
+  const service = { retryUpdate: () => calls.push('update'), checkUnit: () => calls.push('unit'),
+    connectSocket: () => calls.push('connect'), warm: () => calls.push('warm') };
+  for (const [retry, expected] of [['update', ['update']], ['connect', ['unit', 'connect']], ['warm', ['warm']]]) {
+    calls.length = 0;
+    view({ service, bannerView: { error: {}, retry } }).retryBanner();
+    assert.deepEqual(calls, expected);
+  }
+});
+
+test('banner Retry on a search error sends the query again', () => {
+  const armed = [];
+  const context = view({ service: {}, bannerView: { error: {}, retry: 'search' },
+    SearchState: load('format.js', 'results.js', 'searchState.js'),
+    Date: { now: () => 5000 },
+    meaningTimer: { interval: 0, restart() { armed.push(this.interval); } },
+    search: { query: 'router', seq: 3, phase: 'done', sentWords: 3, sentMeaning: 3, reply: null, started: 0 } });
+  context.retryBanner();
+  assert.equal(context.search.seq, 4);
+  assert.equal(context.search.phase, 'words');
+  assert.deepEqual(armed, [200]);
+});
+
+test('a preview error replaces the preview of the selected row', () => {
+  const context = view({ Errors: load('errors.js'), selectedItem: { id: 'pdf:1' }, preview: null });
+  const reply = { t: 'error', id: 'pdf:1', code: 'file-missing', title: 'a.pdf is missing.',
+    detail: 'It was moved or deleted after it was indexed.' };
+  context.previewFailed({ ...reply, id: 'pdf:2' });
+  context.previewFailed({ ...reply, for: 'open' });
+  assert.equal(context.preview, null);
+  context.previewFailed(reply);
+  assert.deepEqual(plain(context.preview), { id: 'pdf:1', error: { code: 'file-missing',
+    title: 'a.pdf is missing.', detail: 'It was moved or deleted after it was indexed.' } });
 });
