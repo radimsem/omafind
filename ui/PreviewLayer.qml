@@ -39,11 +39,16 @@ Item {
   // Set when Qt cannot decode the full image (for example a missing image plugin).
   property bool fullFailed: false
   onPreviewChanged: fullFailed = false
+  onItemChanged: fullFailed = false
   readonly property string imageSource: {
+    var direct = kind === "image" && !offline && !fullFailed && Format.qtImage(entry.path) ? entry.path : ""
     var full = preview && preview.image && !fullFailed ? preview.image : ""
-    var path = full || entry.thumb || (kind === "image" ? entry.path : "")
+    var path = direct || full || entry.thumb || ""
     return path ? Util.fileUrl(path) : ""
   }
+  readonly property bool mediaReady: imageSource === "" || kind === "audio"
+    || (kind === "text" || kind === "code") || (kind === "pdf" ? page.status !== Image.Loading
+      : frame.status !== Image.Loading)
 
   function folder(value) {
     var dir = value.dir || ""
@@ -86,7 +91,7 @@ Item {
 
       Icon {
         anchors.centerIn: parent
-        visible: frame.status !== Image.Ready && root.kind !== "video"
+        visible: (frame.status === Image.Error || root.imageSource === "") && root.kind !== "video"
         name: "image"
         size: Style.space(40)
         strokeWidth: 1.1
@@ -101,12 +106,13 @@ Item {
         source: root.imageSource
         fillMode: Image.PreserveAspectFit
         asynchronous: true
+        retainWhileLoading: root.shown
         // The box has stable dimensions; changing the decode size reloads the image.
         sourceSize: Qt.size(Math.round(width * Screen.devicePixelRatio), Math.round(height * Screen.devicePixelRatio))
-        mipmap: true
+        mipmap: false
         smooth: true
         opacity: root.offline ? 0.5 : 1
-        onStatusChanged: if (status === Image.Error && root.preview && source == Util.fileUrl(root.preview.image)) root.fullFailed = true
+        onStatusChanged: if (status === Image.Error && String(source) !== Util.fileUrl(root.entry.thumb || "")) root.fullFailed = true
       }
 
       VideoOutput {
@@ -398,13 +404,15 @@ Item {
       clip: true
 
       Image {
+        id: page
         anchors.fill: parent
         source: root.kind === "pdf" ? root.imageSource : ""
         fillMode: Image.PreserveAspectFit
         asynchronous: true
+        retainWhileLoading: root.shown
         // The box has stable dimensions; changing the decode size reloads the image.
         sourceSize: Qt.size(Math.round(width * Screen.devicePixelRatio), Math.round(height * Screen.devicePixelRatio))
-        mipmap: true
+        mipmap: false
         smooth: true
       }
 

@@ -82,3 +82,9 @@ test('snippet normalization merges only adjacent equal match runs without mutati
   assert.notEqual(runs[0], input[0]);
   assert.deepEqual(plain(snippetRuns(null)), []);
 });
+
+test('qtImage accepts formats Qt decodes and rejects the rest', () => {
+  const F = load('format.js');
+  assert.deepEqual(['a.JPG', 'b.png', 'c.webp', 'd.heic', 'e.tiff', 'f'].map(F.qtImage),
+    [true, true, true, false, false, false]);
+});
