@@ -16,6 +16,15 @@ test('step derives from daemon facts and local back', () => {
   assert.equal(s.step({runtimeProgress: {state: 'done'}, progress, back: true}), 1);
   assert.equal(s.engineReady(null), false);
 });
+test('the shortcut opens setup until the engine is installed', () => {
+  assert.equal(s.opensSetup('search', false, null), true);
+  assert.equal(s.opensSetup('setup', true, { state: 'done' }), true);
+  assert.equal(s.opensSetup('search', true, null), false);
+  assert.equal(s.opensSetup('search', true, { state: 'done' }), false);
+  for (const state of ['idle', 'running', 'paused', 'failed'])
+    assert.equal(s.opensSetup('search', true, { state }), true, state);
+});
+
 test('formatters use specified rounding and whole-name home prefixes', () => {
   assert.equal(s.count(1209), '1,209');
   assert.equal(s.displayPath('/home/u/Documents','/home/u'), '~/Documents');

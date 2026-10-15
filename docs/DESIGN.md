@@ -255,7 +255,7 @@ Global (Hyprland, an owned block in the bindings written by setup):
 
 | Key | Action |
 |---|---|
-| `Super E` | Open or close omafind (default of the `shortcut` setting). Setup offers `Super D` or `Super U` when it is taken. |
+| `Super E` | Open or close omafind (default of the `shortcut` setting). It opens setup until the search engine is installed, also after a finished setup lost its runtime or model. Setup offers `Super D` or `Super U` when it is taken. |
 
 In the overlay:
 

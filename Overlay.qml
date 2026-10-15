@@ -6,6 +6,7 @@ import qs.Commons
 import "." as Plugin
 import "ui" as Parts
 import "lib/errors.js" as Errors
+import "lib/setup.js" as Setup
 
 // The search overlay. The shell calls only open(payload) and close(), and reads `opened` to toggle.
 Item {
@@ -36,7 +37,8 @@ Item {
     // A dialog already showing this drive starts over; a new one scans when its uuid is set.
     var again = drive && view === "drive" && driveVolume === parsed.volume && !!driveLoader.item
     if (drive) driveVolume = parsed.volume
-    view = drive ? "drive" : parsed && parsed.view === "setup" || (service && !service.settings.setupDone) ? "setup" : "search"
+    view = drive ? "drive" : Setup.opensSetup(parsed && parsed.view, service ? service.settings.setupDone : true,
+      service ? service.runtimeProgress : null) ? "setup" : "search"
     if (again) {
       driveLoader.item.reset()
       driveLoader.item.begin()
