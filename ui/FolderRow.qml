@@ -40,6 +40,7 @@ Item {
   signal twistyClicked()
 
   readonly property bool focused: check !== "" && checkBox.activeFocus
+  readonly property bool holdsFocus: checkBox.activeFocus || actionButton.activeFocus
   readonly property real indent: Style.space(18)
 
   function focusCheck() {

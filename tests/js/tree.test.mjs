@@ -92,3 +92,24 @@ test('a drive mounted below a searched folder is its own root and adds to its pa
   assert.deepEqual(plain(t.toRoots(off.chosen, off.skipped, () => 'u', mounts)),
     [{ path: '/h/Media', volume: 'u', excludes: ['USB'] }]);
 });
+
+test('rows sort by known total, then unknown, then zero, then name', () => {
+  const Tree = load('tree.js');
+  const counts = { '/h/a': { text: 1, pdf: 0, image: 0, video: 0, audio: 0 },
+    '/h/b': { text: 0, pdf: 0, image: 9, video: 0, audio: 0 },
+    '/h/z': { text: 0, pdf: 0, image: 0, video: 0, audio: 0 } };
+  const rows = ['/h/z', '/h/Unknown', '/h/a', '/h/b', '/h/c'].map(path => (
+    { path, name: path.slice(3) }));
+  const sorted = Tree.byCount(rows, path => counts[path] || null);
+  assert.deepEqual(plain(sorted.map(row => row.path)), ['/h/b', '/h/a', '/h/c', '/h/Unknown', '/h/z']);
+});
+
+test('repos inside skipped folders or worktrees are not offered code', () => {
+  const Tree = load('tree.js');
+  const state = { chosen: ['/h/p'], skipped: ['/h/p/skip'], code: [] };
+  const repos = [{ path: '/h/p/a' }, { path: '/h/p/skip/b' }, { path: '/h/p/wt/c' },
+    { path: '/h/other/d' }];
+  const next = Tree.addCode(state, repos, [], ['/h/p/wt']);
+  assert.deepEqual(plain(next.code), ['/h/p/a']);
+  assert.deepEqual(plain(Tree.addCode(Tree.toggleCode(next, '/h/p/a'), repos, ['/h/p/a'], ['/h/p/wt']).code), []);
+});

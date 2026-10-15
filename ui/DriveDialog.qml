@@ -80,7 +80,8 @@ FocusScope {
 
   function offerDatasets() {
     if (!service || !seeded) return
-    var list = Object.keys(service.datasets).map(path => service.datasets[path])
+    var found = Object.assign({}, service.datasets, service.worktrees)
+    var list = Object.keys(found).map(path => found[path])
     choices = Tree.addDatasets(choices, list, proposed)
     proposed = proposed.concat(list.map(entry => entry.path).filter(path => proposed.indexOf(path) < 0))
   }
@@ -124,6 +125,7 @@ FocusScope {
     target: root.service
     ignoreUnknownSignals: true
     function onDatasetsChanged() { root.offerDatasets() }
+    function onWorktreesChanged() { root.offerDatasets() }
     function onProgressChanged() { if (root.phase === "run") root.sawProgress = true }
   }
 

@@ -6,7 +6,7 @@ import { load } from './load.mjs';
 
 function service(values = {}) {
   const ctx = vm.createContext({
-    discoverCounts: {}, walks: {}, datasets: {}, childFolders: {}, childrenAsked: {},
+    discoverCounts: {}, walks: {}, datasets: {}, repos: {}, worktrees: {}, childFolders: {}, childrenAsked: {},
     Protocol: { decode: JSON.parse }, childrenReceived() {}, setupFailed() {},
     send() { return true; }, ...values,
   });
@@ -128,4 +128,59 @@ test('a fresh walk keeps the volume of a folder added outside every root', () =>
   ctx.receive(JSON.stringify({ t: 'discover_children', path: '/srv/data', dirs: [], volume: 'u' }));
   ctx.receiveCounts({ root: '/srv/data', counts: {}, done: false, reset: true });
   assert.equal(ctx.childFolders['/srv/data'].volume, 'u');
+});
+
+test('the final walk batch records repos and worktrees and a reset clears them', () => {
+  const ctx = service();
+  ctx.receiveCounts({ root: '/h', counts: {}, done: true, datasets: [],
+    repos: ['/h/p/main'], worktrees: ['/h/p/wt'] });
+  assert.deepEqual(Object.keys(ctx.repos), ['/h/p/main']);
+  assert.deepEqual(Object.keys(ctx.worktrees), ['/h/p/wt']);
+  ctx.receiveCounts({ root: '/h', counts: {}, reset: true });
+  assert.deepEqual(Object.keys(ctx.repos), []);
+});
+
+test('worktree exclusions are known before repo proposals notify the folders step', () => {
+  const ctx = service();
+  let repos = ctx.repos;
+  const snapshots = [];
+  Object.defineProperty(ctx, 'repos', { get: () => repos, set(value) {
+    repos = value;
+    snapshots.push(Object.keys(ctx.worktrees));
+  } });
+  ctx.receiveCounts({ root: '/h', counts: {}, done: true,
+    repos: ['/h/wt/nested'], worktrees: ['/h/wt'] });
+  assert.deepEqual(snapshots.at(-1), ['/h/wt']);
+});
+
+test('finished walks notify after dataset and worktree exclusions are known', () => {
+  const ctx = service();
+  let walks = ctx.walks;
+  const snapshots = [];
+  Object.defineProperty(ctx, 'walks', { get: () => walks, set(value) {
+    walks = value;
+    if (value['/h'].done) snapshots.push([Object.keys(ctx.datasets), Object.keys(ctx.worktrees)]);
+  } });
+  ctx.receiveCounts({ root: '/h', counts: {}, done: true,
+    datasets: [{ path: '/h/data' }], worktrees: ['/h/wt'], repos: ['/h/main'] });
+  assert.deepEqual(snapshots, [[['/h/data'], ['/h/wt']]]);
+});
+
+test('a rescan forgets the finished walk so its next finish sorts the folders again', () => {
+  const ctx = service();
+  ctx.receiveCounts({ root: '/h', counts: { '/h/a': { text: 2 } }, done: true });
+  ctx.receiveCounts({ root: '/m', counts: { '/m/b': { pdf: 1 } }, done: true });
+  ctx.receive(JSON.stringify({ t: 'discover_result', roots: [{ path: '/h' }], folders: [] }));
+  assert.equal(ctx.walks['/h'], undefined);
+  assert.equal(ctx.walks['/m'].done, true);
+});
+
+test('a home walk reset keeps the replayed walk of a drive mounted inside home', () => {
+  const ctx = service();
+  ctx.receiveCounts({ root: '/h/disk', counts: { '/h/disk/p': { image: 3 } }, done: true });
+  ctx.receiveCounts({ root: '/h', counts: { '/h/a': { text: 2 } }, done: false, reset: true });
+  assert.equal(ctx.walks['/h/disk'].done, true);
+  assert.deepEqual(plain(ctx.discoverCounts['/h/disk/p']), { image: 3 });
+  ctx.receiveCounts({ root: '/h', counts: {}, done: false, reset: true });
+  assert.equal(ctx.discoverCounts['/h/a'], undefined);
 });

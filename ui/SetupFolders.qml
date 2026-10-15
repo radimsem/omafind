@@ -14,6 +14,7 @@ FocusScope {
   property var added: []
   // Datasets already offered, so a later walk does not skip one the user checked.
   property var proposed: []
+  property var proposedCode: []
   property bool seeded: false
   property bool picking: false
 
@@ -29,7 +30,8 @@ FocusScope {
     .map(row => row.path).filter((path, index, all) => all.some(other => other !== path && Tree.isInside(path, other)))
   readonly property var roots: Tree.toRoots(choices.chosen, choices.skipped, volumeOf, mounts)
   readonly property bool ready: !!discover && !!service && !service.scanning
-    && (roots.length > 0 || choices.code.length > 0) && roots.every(r => r.volume !== "")
+    && (roots.length > 0 || choices.code.length > 0)
+    && roots.every(r => r.volume !== "" && walkDone(r.path)) && choices.code.every(walkDone)
 
   function focusFirst() {
     if (!tree.focusFirst()) {
@@ -43,18 +45,46 @@ FocusScope {
     choices = Tree.initial(discover.folders)
     seeded = true
     offerDatasets()
+    offerRepos()
   }
 
   function offerDatasets() {
     if (!service || !seeded) return
-    var list = Object.keys(service.datasets).filter(path => {
+    var found = Object.assign({}, service.datasets, service.worktrees)
+    var list = Object.keys(found).filter(path => {
       if (proposed.indexOf(path) >= 0) return false
       var owner = Tree.owner(path, choices)
       return owner.on || owner.path === path
-    }).map(path => service.datasets[path])
+    }).map(path => found[path])
     if (!list.length) return
     var next = Tree.addDatasets(choices, list, proposed)
     proposed = proposed.concat(list.map(entry => entry.path))
+    choices = next
+  }
+
+  function walkDone(path) {
+    var boundary = ""
+    ;(discover && discover.roots || []).forEach(root => {
+      if (Tree.isInside(path, root.path) && root.path.length > boundary.length) boundary = root.path
+    })
+    var found = false
+    for (var folder in (service && service.walks || {})) {
+      if (!Tree.isInside(path, folder) || !Tree.isInside(folder, boundary)) continue
+      if (!service.walks[folder].done) return false
+      found = true
+    }
+    return found
+  }
+
+  function offerRepos() {
+    if (!service || !seeded) return
+    var list = Object.keys(service.repos || {}).filter(path => {
+      if (proposedCode.indexOf(path) >= 0 || !Tree.searched(path, choices)) return false
+      return walkDone(path)
+    }).map(path => service.repos[path])
+    if (!list.length) return
+    var next = Tree.addCode(choices, list, proposedCode, Object.keys(service.worktrees || {}))
+    proposedCode = proposedCode.concat(list.map(entry => entry.path))
     choices = next
   }
 
@@ -81,17 +111,21 @@ FocusScope {
   }
 
   function startIndexing() {
+    if (!ready) return
     service.startIndexing(roots, choices.code)
   }
 
   onDiscoverChanged: seed()
-  onChoicesChanged: offerDatasets()
+  onChoicesChanged: { offerDatasets(); offerRepos() }
   Component.onCompleted: seed()
 
   Connections {
     target: root.service
     ignoreUnknownSignals: true
     function onDatasetsChanged() { root.offerDatasets() }
+    function onWorktreesChanged() { root.offerDatasets() }
+    function onReposChanged() { root.offerRepos() }
+    function onWalksChanged() { root.offerRepos() }
   }
 
   FolderTable {

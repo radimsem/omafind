@@ -6,14 +6,16 @@ import { load } from './load.mjs';
 const plain = value => JSON.parse(JSON.stringify(value));
 
 function folders(values = {}) {
-  const ctx = vm.createContext({ Tree: load('tree.js'), seeded: true, proposed: [],
+  const ctx = vm.createContext({ Tree: load('tree.js'), seeded: true, proposed: [], proposedCode: [], discover: null,
     choices: { chosen: [], skipped: [], code: [] },
-    service: { datasets: { '/h/Photos/data': { path: '/h/Photos/data' } } }, ...values });
+    service: { worktrees: {}, repos: {}, datasets: { '/h/Photos/data': { path: '/h/Photos/data' } } }, ...values });
   ctx.root = ctx;
   const source = readFileSync(new URL('../../ui/SetupFolders.qml', import.meta.url), 'utf8');
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
   const handler = source.match(/^  onChoicesChanged: (.*)$/m);
   vm.runInContext('function choicesChanged() {' + (handler ? handler[1] : '') + '}', ctx);
+  const ready = source.match(/readonly property bool ready: ([^]*?)\n\n/);
+  Object.defineProperty(ctx, 'ready', { get: () => vm.runInContext(ready[1], ctx) });
   return ctx;
 }
 
@@ -39,4 +41,68 @@ test('explicit dataset choices are never replaced by a proposal', () => {
     ctx.offerDatasets();
     assert.deepEqual(plain(ctx.choices), choices);
   }
+});
+
+test('worktrees under a searched folder start unchecked and repos start with code', () => {
+  const ctx = folders({
+    choices: { chosen: ['/h/p'], skipped: [], code: [] },
+    service: { datasets: {}, walks: { '/h': { done: true } },
+      worktrees: { '/h/p/wt': { path: '/h/p/wt' } },
+      repos: { '/h/p/main': { path: '/h/p/main' } } },
+  });
+  ctx.offerDatasets();
+  ctx.offerRepos();
+  assert.deepEqual(plain(ctx.choices.skipped), ['/h/p/wt']);
+  assert.deepEqual(plain(ctx.choices.code), ['/h/p/main']);
+});
+
+test('repos on a queued drive wait until its covering walk finishes', () => {
+  for (const mount of ['/m', '/h/USB']) {
+    const ctx = folders({ choices: { chosen: [mount], skipped: [], code: [] },
+      discover: { roots: [{ path: '/h' }, { path: mount }] },
+      service: { datasets: {}, worktrees: {}, walks: { '/h': { done: true } },
+        repos: { [mount + '/data/repo']: { path: mount + '/data/repo' },
+          [mount + '/main']: { path: mount + '/main' } } } });
+    ctx.offerRepos();
+    assert.deepEqual(plain(ctx.choices.code), []);
+    ctx.service.walks[mount] = { done: false };
+    ctx.offerRepos();
+    assert.deepEqual(plain(ctx.choices.code), []);
+    ctx.service.datasets = { [mount + '/data']: { path: mount + '/data' } };
+    ctx.service.walks[mount] = { done: true };
+    ctx.offerDatasets(); ctx.offerRepos();
+    assert.deepEqual(plain(ctx.choices.skipped), [mount + '/data']);
+    assert.deepEqual(plain(ctx.choices.code), [mount + '/main']);
+  }
+});
+
+test('repos wait for the walk to reveal dataset exclusions before getting code', () => {
+  const ctx = folders({ choices: { chosen: ['/h/p'], skipped: [], code: [] },
+    service: { datasets: {}, worktrees: {}, walks: { '/h': { done: false } },
+      repos: { '/h/p/data/repo': { path: '/h/p/data/repo' },
+        '/h/p/main': { path: '/h/p/main' } } } });
+  ctx.offerRepos();
+  assert.deepEqual(plain(ctx.choices.code), []);
+  ctx.service.datasets = { '/h/p/data': { path: '/h/p/data' } };
+  ctx.service.walks = { '/h': { done: true } };
+  ctx.offerDatasets(); ctx.offerRepos();
+  assert.deepEqual(plain(ctx.choices.skipped), ['/h/p/data']);
+  assert.deepEqual(plain(ctx.choices.code), ['/h/p/main']);
+});
+
+test('start indexing waits for discovery and saves the automatic Code choices', () => {
+  const saved = [];
+  const ctx = folders({ discover: {}, roots: [{ path: '/h/p', volume: 'u' }],
+    choices: { chosen: ['/h/p'], skipped: [], code: [] },
+    service: { scanning: false, datasets: {}, worktrees: {}, walks: { '/h': { done: false } },
+      repos: { '/h/p/main': { path: '/h/p/main' } },
+      startIndexing(roots, code) { saved.push(plain({ roots, code })); } } });
+  ctx.startIndexing();
+  assert.deepEqual(saved, []);
+  assert.equal(ctx.ready, false);
+  ctx.service.walks = { '/h': { done: true } };
+  ctx.offerDatasets(); ctx.offerRepos();
+  assert.equal(ctx.ready, true);
+  ctx.startIndexing();
+  assert.deepEqual(saved, [{ roots: [{ path: '/h/p', volume: 'u' }], code: ['/h/p/main'] }]);
 });

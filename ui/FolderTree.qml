@@ -95,7 +95,7 @@ FocusScope {
 
   function insert(index, path, depth) {
     var reply = cached[path]
-    var dirs = reply ? reply.dirs : []
+    var dirs = Tree.byCount(reply ? reply.dirs : [], countOf)
     remember(dirs)
     var at = index + 1
     for (var i = 0; i < dirs.length; i++) {
@@ -140,7 +140,7 @@ FocusScope {
     }
     expanded = next
     rows.clear()
-    folders.forEach(folder => {
+    Tree.byCount(folders, countOf).forEach(folder => {
       var index = rows.count
       rows.append({path: folder.path, depth: 0})
       if (!expanded[folder.path]) return
@@ -159,6 +159,35 @@ FocusScope {
       if (i + 1 < rows.count && rows.get(i + 1).depth > depth) continue
       insert(i, path, depth)
     }
+  }
+
+  property var finished: ({})
+
+  function focusedPath() {
+    for (var i = 0; i < rows.count; i++) {
+      var item = list.itemAtIndex(i)
+      if (item && item.holdsFocus) return rows.get(i).path
+    }
+    return ""
+  }
+
+  onWalksChanged: {
+    var next = {}
+    var changed = false
+    for (var walkRoot in walks) {
+      if (!walks[walkRoot].done) continue
+      next[walkRoot] = true
+      if (!finished[walkRoot]) changed = true
+    }
+    finished = next
+    if (!changed) return
+    var path = focusedPath()
+    reload()
+    var index = path ? indexOf(path) : -1
+    if (index < 0) return
+    list.positionViewAtIndex(index, ListView.Contain)
+    var item = list.itemAtIndex(index)
+    if (item) item.focusCheck()
   }
 
   onFoldersChanged: reload()
@@ -194,7 +223,7 @@ FocusScope {
       checkLabel: "Include " + (info.name || path)
       twisty: info.hasChildren ? (root.expanded[path] ? "open" : "closed") : "leaf"
       name: root.label(info, depth)
-      rule: evidence ? "dataset" : info.repo ? "repo" : ""
+      rule: evidence ? "dataset" : info.worktree ? "worktree" : info.repo ? "repo" : ""
       facts: root.cached[path] && root.cached[path].error
         ? [Setup.token("error", root.cached[path].error, "fail")]
         : evidence ? Setup.datasetFacts(evidence) : []
@@ -203,7 +232,7 @@ FocusScope {
       cells: shown ? Setup.KINDS.map(kind => ({n: shown[kind] || 0, cut: false})) : []
       indexText: estimate ? Setup.mb(estimate.bytes) : ""
       timeText: estimate ? Setup.minutes(estimate.seconds) : ""
-      action: info.repo ? "code" : ""
+      action: info.repo && !info.worktree ? "code" : ""
       actionActive: root.choices.code.indexOf(path) >= 0
       actionLabel: "Index the code in " + (info.name || path)
       fill: check === "on" ? "on" : ""

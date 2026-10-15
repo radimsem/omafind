@@ -12,12 +12,14 @@ function tree(values = {}) {
     remove: (i, n) => items.splice(i, n), clear: () => items.splice(0),
   };
   const ctx = vm.createContext({ Tree: load('tree.js'), Setup: load('setup.js'),
-    folders: [], mounts: [], meta: {}, expanded: {}, counts: {}, walks: {}, datasets: {}, cached: {},
+    finished: {}, folders: [], mounts: [], meta: {}, expanded: {}, counts: {}, walks: {}, datasets: {}, cached: {},
     rows: model, service: null, home: '/h', mount: '', ...values });
   ctx.root = ctx;
   const file = new URL('../../ui/FolderTree.qml', import.meta.url);
   const source = existsSync(file) ? readFileSync(file, 'utf8') : '';
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
+  const walkHandler = source.match(/^  onWalksChanged: \{([^]*?)^  \}/m);
+  if (walkHandler) vm.runInContext('function walksChanged() {' + walkHandler[1] + '}', ctx);
   const totals = source.match(/readonly property var totals: \{([^]*?)^  \}/m);
   if (totals) vm.runInContext('function calculatedTotals() {' + totals[1] + '}', ctx);
   return ctx;
@@ -135,4 +137,51 @@ test('cached errors in expanded descendants wait for an explicit retry', () => {
   assert.deepEqual(asks, []);
   ctx.toggle(1); ctx.toggle(1);
   assert.deepEqual(asks, ['/h/a/b']);
+});
+
+
+test('a finished walk sorts each open level once and keeps focus and expansion by path', () => {
+  let focused = '/h/a/b', positioned = [];
+  const ctx = tree({ folders: [folder('/h/a'), folder('/h/z')],
+    expanded: { '/h/a': true }, cached: { '/h/a': { dirs: [folder('/h/a/b'), folder('/h/a/c')] } },
+    walks: { '/h': { done: false } },
+    list: { itemAtIndex(index) { return { holdsFocus: ctx.rows.get(index)?.path === focused,
+      focusCheck() { focused = ctx.rows.get(index).path; } }; },
+    positionViewAtIndex(index) { positioned.push(index); } }, ListView: { Contain: 1 } });
+  ctx.reload();
+  ctx.counts = { '/h/z': { text: 10 }, '/h/a': { text: 5 }, '/h/a/c': { text: 4 }, '/h/a/b': { text: 1 } };
+  const before = ctx.rows.get(0);
+  ctx.walksChanged();
+  assert.equal(ctx.rows.get(0), before);
+  ctx.walks = { '/h': { done: true } };
+  ctx.walksChanged();
+  assert.deepEqual(paths(ctx), ['/h/z', '/h/a', '/h/a/c', '/h/a/b']);
+  assert.equal(focused, '/h/a/b');
+  assert.equal(ctx.expanded['/h/a'], true);
+  const sorted = ctx.rows.get(0);
+  ctx.walksChanged();
+  assert.equal(ctx.rows.get(0), sorted);
+  assert.deepEqual(positioned, [3]);
+});
+
+test('a rescan sorts again when the same root finishes', () => {
+  const ctx = tree({ folders: [folder('/h/a'), folder('/h/b')], walks: { '/h': { done: true } },
+    counts: { '/h/a': { text: 3 }, '/h/b': { text: 1 } },
+    list: { itemAtIndex() { return null; } } });
+  ctx.reload(); ctx.walksChanged();
+  ctx.walks = { '/h': { done: false } }; ctx.walksChanged();
+  ctx.counts = { '/h/a': { text: 1 }, '/h/b': { text: 5 } };
+  ctx.walks = { '/h': { done: true } }; ctx.walksChanged();
+  assert.deepEqual(paths(ctx), ['/h/b', '/h/a']);
+});
+
+test('a rescan that drops the walk sorts again when the root finishes', () => {
+  const ctx = tree({ folders: [folder('/h/a'), folder('/h/b')], walks: { '/h': { done: true } },
+    counts: { '/h/a': { text: 3 }, '/h/b': { text: 1 } },
+    list: { itemAtIndex() { return null; } } });
+  ctx.reload(); ctx.walksChanged();
+  ctx.walks = {}; ctx.walksChanged();
+  ctx.counts = { '/h/a': { text: 1 }, '/h/b': { text: 5 } };
+  ctx.walks = { '/h': { done: true } }; ctx.walksChanged();
+  assert.deepEqual(paths(ctx), ['/h/b', '/h/a']);
 });

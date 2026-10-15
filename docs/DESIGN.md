@@ -93,7 +93,7 @@ Other values with no theme token, derived in QML from the roles above:
 - Caption chips on images and frames `rgba(17,17,27,.85)`: `Util.alpha(Color.background, 0.85)`. The player play button uses 0.78.
 - Hit wash behind a word `rgba(249,226,175,.18)`: `Util.alpha(Palette.yellow, 0.18)`, text in `Palette.yellow`.
 - Offline badge fill: `Palette.yellow` at 0.12. Done step fill: `Palette.green` at 0.16. Running step fill: accent at 0.12.
-- Rule tag borders: accent for repos and yellow for datasets.
+- Rule tag borders: accent for repos, cyan for worktrees and yellow for datasets.
 - Rendered PDF page `#e6e9ef` with text `#4c4f69`, and its hit highlight `rgba(223,142,29,.35)`: these draw page content, not shell chrome. They stay fixed in every theme.
 - Placeholder image tints `#2c3a52`, `#3a3346`, `#2f3f3d`, `#403a33`, `#33364a`: mock photo content. The real thumbnail replaces them.
 - Popup 0.97 alpha: `Color.popups.background` is opaque by default. Use the theme value. Do not force 0.97.

@@ -41,6 +41,8 @@ Item {
   property var walks: ({})
   // Dataset folder -> {path, kind, files, named} from each walk's last batch.
   property var datasets: ({})
+  property var repos: ({})
+  property var worktrees: ({})
   // Folder -> {dirs, volume, error} from discover_children. `childrenAsked` stops a second request.
   property var childFolders: ({})
   property var childrenAsked: ({})
@@ -398,6 +400,14 @@ Item {
         if (dir.evidence) childSets[dir.path] = Object.assign({path: dir.path}, dir.evidence)
       })
       datasets = childSets
+      var childRepos = Object.assign({}, repos)
+      var childTrees = Object.assign({}, worktrees)
+      nextChildren[message.path].dirs.forEach(dir => {
+        if (dir.repo) childRepos[dir.path] = {path: dir.path}
+        if (dir.worktree) childTrees[dir.path] = {path: dir.path}
+      })
+      worktrees = childTrees
+      repos = childRepos
       var pendingChildren = Object.assign({}, childrenAsked)
       delete pendingChildren[message.path]
       childrenAsked = pendingChildren
@@ -446,16 +456,29 @@ Item {
     setupFailed(message.for, reason)
   }
 
-  // Clears counts and datasets under `walkRoot`. Cached children stay: they hold the folder
-  // lists and the volume of folders added outside every root.
+  // Clears counts, datasets and walks under `walkRoot`. Cached children stay: they hold the folder
+  // lists and the volume of folders added outside every root. A drive mounted inside the root has
+  // its own walk, and its snapshot may already have arrived, so its subtree stays.
   function clearDiscovery(walkRoot) {
-    function outside(path) { return path !== walkRoot && path.indexOf(walkRoot.replace(/\/$/, "") + "/") !== 0 }
+    function under(path, root) { return path === root || path.indexOf(root.replace(/\/$/, "") + "/") === 0 }
+    var nested = Object.keys(walks).filter(root => root !== walkRoot && under(root, walkRoot))
+    function outside(path) { return !under(path, walkRoot) || nested.some(root => under(path, root)) }
     var counts = Object.assign({}, discoverCounts)
     var sets = Object.assign({}, datasets)
+    var foundRepos = Object.assign({}, repos)
+    var foundTrees = Object.assign({}, worktrees)
     for (var path in counts) if (!outside(path)) delete counts[path]
     for (var path in sets) if (!outside(path)) delete sets[path]
+    for (var path in foundRepos) if (!outside(path)) delete foundRepos[path]
+    for (var path in foundTrees) if (!outside(path)) delete foundTrees[path]
+    // The folders step sorts when a walk finishes, so a rescan must not inherit the old finish.
+    var nextWalks = Object.assign({}, walks)
+    for (var path in nextWalks) if (!outside(path)) delete nextWalks[path]
     discoverCounts = counts
     datasets = sets
+    repos = foundRepos
+    worktrees = foundTrees
+    walks = nextWalks
   }
 
   function receiveCounts(message) {
@@ -467,12 +490,22 @@ Item {
     var nextWalks = Object.assign({}, walks)
     nextWalks[message.root] = {done: !!message.done, seconds: typeof message.seconds === "number" ? message.seconds : null,
       error: typeof message.error === "string" ? message.error : ""}
-    walks = nextWalks
     if (Array.isArray(message.datasets)) {
       var nextSets = Object.assign({}, datasets)
       message.datasets.forEach(entry => nextSets[entry.path] = entry)
       datasets = nextSets
     }
+    if (Array.isArray(message.worktrees)) {
+      var nextTrees = Object.assign({}, worktrees)
+      message.worktrees.forEach(path => nextTrees[path] = {path: path})
+      worktrees = nextTrees
+    }
+    if (Array.isArray(message.repos)) {
+      var nextRepos = Object.assign({}, repos)
+      message.repos.forEach(path => nextRepos[path] = {path: path})
+      repos = nextRepos
+    }
+    walks = nextWalks
   }
 
   function receiveState(message) {
