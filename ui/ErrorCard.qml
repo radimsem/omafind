@@ -36,7 +36,7 @@ Rectangle {
   readonly property string log: error && error.log ? String(error.log) : ""
 
   function install() {
-    Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", "omarchy-pkg-add"].concat(packages))
+    Plugin.Installer.install(packages)
     waited = 0
     installing = true
   }

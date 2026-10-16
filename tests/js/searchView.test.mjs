@@ -170,7 +170,7 @@ test('an update install card offers Retry and auto-retries the update after pack
     packages: bannerView.error.fix.packages, installing: false, waited: 0, retryText: 'Retry',
     retryHere: vm.runInContext(retryHere, context),
     retry() { vm.runInContext(onRetry, context); },
-    Quickshell: { execDetached(command) { commands.push(plain(command)); } } });
+    Plugin: { Installer: { install(packages) { commands.push(plain(packages)); } } } });
   card.root = card;
   const cardSource = readFileSync(new URL('../../ui/ErrorCard.qml', import.meta.url), 'utf8');
   for (const match of cardSource.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], card);
@@ -179,7 +179,7 @@ test('an update install card offers Retry and auto-retries the update after pack
   vm.runInContext('(function() {' + retryButton.match(/onClicked: \{([^]*?)^      \}/m)[1] + '})()', card);
   assert.equal(retries, 1);
   card.install();
-  assert.deepEqual(commands, [['omarchy-launch-floating-terminal-with-presentation', 'omarchy-pkg-add', 'fd']]);
+  assert.deepEqual(commands, [['fd']]);
   const present = cardSource.slice(cardSource.indexOf('id: present'));
   const exited = vm.runInContext('(' + present.match(/onExited: ([^]*?)\n  \}/)[1] + ')', card);
   exited(1, 0);

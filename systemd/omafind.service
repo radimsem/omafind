@@ -9,6 +9,7 @@ ConditionPathExists=%h/.config/omarchy/plugins/radimsem.omafind/manifest.json
 Type=simple
 ExecStart=%h/.local/share/omafind/venv/bin/python -m omafindd
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPYCACHEPREFIX=%C/omafind/pycache
 Restart=on-failure
 RestartSec=1
 NoNewPrivileges=true

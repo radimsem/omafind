@@ -13,6 +13,11 @@ import time
 from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+# The Omarchy shell reloads every plugin, closing the overlay, when a file under the plugins
+# folder changes, so bytecode from this script and its child processes is cached elsewhere.
+os.environ.setdefault("PYTHONPYCACHEPREFIX", str(
+    Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "omafind/pycache"))
+sys.pycache_prefix = os.environ["PYTHONPYCACHEPREFIX"]
 sys.path.insert(0, str(PLUGIN_ROOT / "helper"))
 paths = importlib.import_module("omafindd.paths")
 build = importlib.import_module("omafindd.build")
@@ -460,6 +465,26 @@ def discover(args, env, execve=os.execve):
     return 0
 
 
+def _bind_applied(module, chord, written, env, run):
+    """Whether Hyprland's own reload of bindings.lua already applied the change.
+
+    A second reload resets monitor scales set at runtime, so it runs only when this is False.
+    """
+    for _ in range(10):
+        try:
+            live = run(["hyprctl", "binds", "-j"], env=env, capture_output=True, text=True,
+                       timeout=5)
+        except FileNotFoundError:
+            return False
+        if live.returncode == 0:
+            binds = module.parse_binds(live.stdout or "[]")
+            if (module.check(chord, binds) == "ours" if written
+                    else not any(bind.ours for bind in binds)):
+                return True
+        time.sleep(0.1)
+    return False
+
+
 def bindings(args, env, run=subprocess.run):
     from omafindd import bindings as module
     from omafindd.settings import load
@@ -511,7 +536,7 @@ def bindings(args, env, run=subprocess.run):
         return 0
     changed = (module.write_block(path, chord) if parsed.action == "write"
                else module.remove_block(path))
-    if changed:
+    if changed and not _bind_applied(module, chord, parsed.action == "write", env, run):
         result = run(["hyprctl", "reload"], env=env, capture_output=True, text=True, timeout=5)
         if result.returncode:
             print(result.stderr or "Hyprland reload failed", file=sys.stderr)
