@@ -4,11 +4,14 @@ import vm from 'node:vm';
 import { load } from './load.mjs';
 import { qmlFunctions as functions } from './qmlFunctions.mjs';
 
+const Discovery = load('errors.js', 'discovery.js');
+
 test('Service requests live binds and routes replies and errors', () => {
   const sent = [];
   const { ctx } = functions('Service.qml', {
-    binds: [], bindsReady: true, bindsError: { code: 'unknown', title: 'old', detail: '' }, driveScanning: false,
+    binds: [], bindsReady: true, bindsError: { code: 'unknown', title: 'old', detail: '' },
     Protocol: { decode: JSON.parse }, Errors: load('errors.js'),
+    Discovery, discovery: Discovery.initial(),
     send(message) { sent.push(message); return true; }, setupFailed() {},
   });
   ctx.getBinds();

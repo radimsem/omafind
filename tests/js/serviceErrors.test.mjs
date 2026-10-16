@@ -1,26 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
 import { load } from './load.mjs';
+import { qmlFunctions } from './qmlFunctions.mjs';
 
 const plain = value => JSON.parse(JSON.stringify(value));
+const Discovery = load('errors.js', 'discovery.js');
 
-function service(values = {}) {
+// `discovery` holds fields merged over the initial discovery state.
+function service({ discovery = {}, ...values } = {}) {
   const sent = [];
-  const ctx = vm.createContext({
-    walks: {}, childFolders: {}, childrenAsked: {}, discoverCounts: {}, datasets: {}, repos: {}, worktrees: {},
-    scanning: false, driveScanning: false, driveDiscover: null, discover: null,
+  const { ctx } = qmlFunctions('Service.qml', {
     bindsReady: true, results: null, runtimeProgress: null,
     engineError: null, folderError: null, indexError: null, driveError: null, searchError: null, bindsError: null,
-    Protocol: { decode: JSON.parse }, Errors: load('errors.js'),
-    setupFailed() {}, warmFailed() {}, resultsReceived() {}, childrenReceived() {},
+    Protocol: { decode: JSON.parse }, Errors: load('errors.js'), Discovery,
+    discovery: Object.assign(Discovery.initial(), discovery), online: () => true,
+    send: message => { sent.push(message); return true; },
+    setupFailed() {}, warmFailed() {}, resultsReceived() {}, childrenReceived() {}, ...values,
   });
-  const source = readFileSync(new URL('../../ui/Service.qml', import.meta.url), 'utf8');
-  for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
-  ctx.send = message => { sent.push(message); return true; };
-  Object.assign(ctx, values);
-  ctx.root = ctx;
   ctx.sent = sent;
   return ctx;
 }
@@ -29,7 +25,7 @@ const scanFailed = { code: 'scan-failed', title: 'Pictures could not be scanned.
   detail: 'Permission denied. Press Retry to scan it again.', fix: { kind: 'retry' } };
 
 test('setup errors land on the surface of the request named in for', () => {
-  const ctx = service({ scanning: true });
+  const ctx = service({ discovery: { scanning: true } });
   for (const [kind, surface] of [['runtime_install', 'engineError'], ['runtime_status', 'engineError'],
     ['discover_start', 'folderError'], ['discover_children', 'folderError'], ['fs_list', 'folderError'],
     ['index_start', 'indexError'], ['retry_failed', 'indexError'], ['drive_decision', 'driveError'],
@@ -37,17 +33,17 @@ test('setup errors land on the surface of the request named in for', () => {
     ctx.receive(JSON.stringify({ t: 'error', for: kind, ...scanFailed }));
     assert.deepEqual(plain(ctx[surface]), scanFailed, kind);
   }
-  assert.equal(ctx.scanning, false);
+  assert.equal(ctx.discovery.scanning, false);
   assert.equal(ctx.bindsReady, false);
 });
 
 test('a failed discover_start goes to the drive dialog while a drive scan runs', () => {
-  const ctx = service({ driveScanning: true });
+  const ctx = service({ discovery: { driveScanning: true } });
   ctx.receive(JSON.stringify({ t: 'error', for: 'discover_start', code: 'drive-not-mounted',
     title: 'Photos2024 is not connected.', detail: 'Connect it, then press Retry.', fix: { kind: 'retry' } }));
   assert.equal(ctx.driveError.code, 'drive-not-mounted');
   assert.equal(ctx.folderError, null);
-  assert.equal(ctx.driveScanning, false);
+  assert.equal(ctx.discovery.driveScanning, false);
 });
 
 test('the error object keeps its log and an older reason still shows', () => {
@@ -100,43 +96,32 @@ test('a failed helper install reads the json line, then stderr', () => {
   assert.equal(ctx.helperFailure('{"ok": true}', '').title, 'The omafind helper could not be installed.');
 });
 
-test('walk and child errors keep one fact and give the folder step the object', () => {
-  const ctx = service();
-  ctx.receiveCounts({ root: '/h', counts: {}, done: true, error: scanFailed });
-  assert.equal(ctx.walks['/h'].error, 'Pictures could not be scanned.');
-  assert.equal(ctx.folderError.code, 'scan-failed');
-  ctx.receive(JSON.stringify({ t: 'discover_children', path: '/h/a', dirs: [], error: scanFailed }));
-  assert.equal(ctx.childFolders['/h/a'].error, 'Pictures could not be scanned.');
-  ctx.receive(JSON.stringify({ t: 'discover_children', path: '/h/b', dirs: [], error: 'Permission denied' }));
-  assert.equal(ctx.childFolders['/h/b'].error, 'Permission denied');
-});
-
-test('drive walk errors stay on the walk instead of the folders step', () => {
-  for (const values of [
-    { driveScanning: true },
-    { driveDiscover: { volume: 'usb', roots: [{ path: '/m', volume: 'usb' }] } },
-    { discover: { roots: [{ path: '/h', volume: null }, { path: '/m', volume: 'usb' }] } },
-    { childFolders: { '/m': { dirs: [], volume: 'usb', error: '' } } },
-  ]) {
-    const ctx = service(values);
-    ctx.receiveCounts({ root: '/m', counts: {}, done: true, error: scanFailed });
-    assert.equal(ctx.folderError, null);
-    assert.deepEqual(plain(ctx.walks['/m'].failure), scanFailed);
-    assert.equal(ctx.walks['/m'].error, scanFailed.title);
-  }
-});
-
-test('a home walk error still reaches folders after a drive scan', () => {
-  const ctx = service({ driveDiscover: { volume: 'usb', roots: [{ path: '/m', volume: 'usb' }] } });
-  ctx.receiveCounts({ root: '/h', counts: {}, done: true, error: scanFailed });
+test('discovery replies reach the reducer and its effects reach the socket and the error surfaces', () => {
+  const received = [];
+  const ctx = service({ childrenReceived: path => received.push(path) });
+  ctx.receive(JSON.stringify({ t: 'discover_counts', root: '/h', counts: {}, done: true, error: scanFailed }));
+  assert.equal(ctx.discovery.walks['/h'].error, scanFailed.title);
   assert.deepEqual(plain(ctx.folderError), scanFailed);
+  ctx.requestChildren('/h/a');
+  ctx.receive(JSON.stringify({ t: 'discover_children', path: '/h/a', dirs: [], volume: 'u' }));
+  assert.deepEqual(received, ['/h/a']);
+  ctx.online = () => false;
+  assert.equal(ctx.scan(), false);
+  assert.equal(ctx.folderError, null);
+  assert.deepEqual(plain(ctx.sent), [{ t: 'discover_children', path: '/h/a' }]);
 });
 
-test('a known home root keeps its folder error while a drive scan is pending', () => {
-  const ctx = service({ driveScanning: true,
-    discover: { roots: [{ path: '/h', volume: null }, { path: '/m', volume: 'usb' }] } });
-  ctx.receiveCounts({ root: '/h', counts: {}, done: true, error: scanFailed });
-  assert.deepEqual(plain(ctx.folderError), scanFailed);
+test('drive indexing persists the roots without marking setup done', () => {
+  let saved;
+  let timers = 0;
+  const ctx = service({ persist(changes) { saved = plain(changes); return true; },
+    indexTimer: { restart() { timers++; } } });
+  assert.equal(ctx.startIndexing([{ path: '/m/docs', volume: 'usb', excludes: [] }], 'usb'), true);
+  assert.deepEqual(saved, { roots: [{ path: '/m/docs', volume: 'usb', excludes: [] }] });
+  assert.equal(ctx.indexVolume, 'usb');
+  assert.equal(timers, 1);
+  assert.equal(ctx.startIndexing([{ path: '/h', volume: 'u', excludes: [] }]), true);
+  assert.deepEqual(saved, { roots: [{ path: '/h', volume: 'u', excludes: [] }], setupDone: true });
 });
 
 test('a folder save that fails reports on the surface that asked', () => {

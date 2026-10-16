@@ -24,7 +24,7 @@ FocusScope {
   signal searchRequested()
 
   readonly property var progress: service ? service.progress : null
-  readonly property var rates: service && service.discover ? service.discover.rates : null
+  readonly property var rates: service && service.discovery.discover ? service.discovery.discover.rates : null
   readonly property var head: Setup.indexHead(progress, rates)
   readonly property var problems: progress && progress.problems ? progress.problems : []
   readonly property var indexError: service ? service.indexError : null
@@ -195,7 +195,7 @@ FocusScope {
             required property var modelData
             width: Math.min(implicitWidth, problemColumn.width)
             fontSize: Style.font.bodySmall
-            tokens: Setup.problemTokens(modelData, root.service && root.service.discover ? root.service.discover.home : "")
+            tokens: Setup.problemTokens(modelData, root.service && root.service.discovery.discover ? root.service.discovery.discover.home : "")
           }
         }
       }

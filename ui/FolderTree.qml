@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import "../lib/discovery.js" as Discovery
 import "../lib/setup.js" as Setup
 import "../lib/tree.js" as Tree
 
@@ -29,10 +30,11 @@ FocusScope {
   // Path -> folder row from `folders` or a children reply.
   property var meta: ({})
 
-  readonly property var counts: service ? service.discoverCounts : ({})
-  readonly property var walks: service ? service.walks : ({})
-  readonly property var datasets: service ? service.datasets : ({})
-  readonly property var cached: service ? service.childFolders : ({})
+  readonly property var discovery: service ? service.discovery : Discovery.initial()
+  // Functions read every map through `discovery`: after a discovery change these bindings update
+  // one at a time, so a change handler would see the others still stale.
+  readonly property var walks: discovery.walks
+  readonly property var cached: discovery.childFolders
   readonly property int count: list.count
   readonly property var totals: {
     var out = {files: 0, bytes: 0, seconds: 0}
@@ -66,6 +68,7 @@ FocusScope {
 
   function walkFor(path) {
     var best = ""
+    var walks = discovery.walks
     for (var walkRoot in walks) if (Tree.isInside(path, walkRoot) && walkRoot.length > best.length) best = walkRoot
     return best ? walks[best] : null
   }
@@ -73,7 +76,7 @@ FocusScope {
   // Rolled-up counts, or null while the walk has not reached the folder. A finished walk
   // reports nothing for a folder without indexable files, which is zero.
   function countOf(path) {
-    if (counts[path]) return counts[path]
+    if (discovery.discoverCounts[path]) return discovery.discoverCounts[path]
     var walk = walkFor(path)
     return walk && walk.done ? {text: 0, pdf: 0, image: 0, video: 0, audio: 0} : null
   }
@@ -84,7 +87,7 @@ FocusScope {
 
   // Known worktrees and datasets: a click that turns a folder on leaves them out again.
   function skipDefaults() {
-    return service ? Object.keys(Object.assign({}, service.datasets, service.worktrees)) : []
+    return Object.keys(Object.assign({}, discovery.datasets, discovery.worktrees))
   }
 
   function clickRow(path) {
@@ -92,7 +95,7 @@ FocusScope {
   }
 
   function evidenceOf(path) {
-    return datasets[path] || (meta[path] && meta[path].evidence) || null
+    return discovery.datasets[path] || (meta[path] && meta[path].evidence) || null
   }
 
   function label(row, depth) {
@@ -107,6 +110,7 @@ FocusScope {
   }
 
   function insert(index, path, depth) {
+    var cached = discovery.childFolders
     var reply = cached[path]
     var dirs = Tree.byCount(reply ? reply.dirs : [], countOf)
     remember(dirs)
@@ -123,6 +127,7 @@ FocusScope {
   }
 
   function toggle(index) {
+    var cached = discovery.childFolders
     if (index < 0 || index >= rows.count) return
     var row = rows.get(index)
     var path = row.path
@@ -143,6 +148,7 @@ FocusScope {
   }
 
   function reload() {
+    var cached = discovery.childFolders
     remember(folders)
     var next = {}
     for (var path in expanded) {
@@ -165,6 +171,7 @@ FocusScope {
   // Inserts the children of expanded rows whose reply just arrived, so a reply never rebuilds
   // the list and the focused row survives.
   function fill() {
+    var cached = discovery.childFolders
     for (var i = 0; i < rows.count; i++) {
       var path = rows.get(i).path
       var depth = rows.get(i).depth

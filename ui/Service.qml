@@ -4,6 +4,7 @@ import Quickshell.Io
 import "../lib/Backoff.js" as Backoff
 import "../lib/Protocol.js" as Protocol
 import "../lib/Connection.js" as Connection
+import "../lib/discovery.js" as Discovery
 import "../lib/errors.js" as Errors
 import "../lib/Settings.js" as Settings
 import "../lib/Update.js" as Update
@@ -34,20 +35,9 @@ Item {
   property var settingsEntry: ({})
   readonly property var settings: Settings.normalize(settingsEntry)
   property var runtimeProgress: null
-  property var discover: null
+  // The lib/discovery.js state: scans, walks, counts and cached folder children.
+  property var discovery: Discovery.initial()
   property var folderError: null
-  property bool scanning: false
-  // Absolute folder -> rolled-up counts, merged from every discover_counts batch.
-  property var discoverCounts: ({})
-  // Walk root -> {done, seconds, error} from its latest batch.
-  property var walks: ({})
-  // Dataset folder -> {path, kind, files, named} from each walk's last batch.
-  property var datasets: ({})
-  property var repos: ({})
-  property var worktrees: ({})
-  // Folder -> {dirs, volume, error} from discover_children. `childrenAsked` stops a second request.
-  property var childFolders: ({})
-  property var childrenAsked: ({})
   property var fsList: null
   property var progress: null
   property bool indexPending: false
@@ -68,11 +58,9 @@ Item {
   property string indexVolume: ""
 
   // Drives (issue #6). `volumes` is the lib/volumes.js state; `clock` advances while a toast or the
-  // reconcile footer waits on a deadline. A drive scan lands in driveDiscover, never in discover.
+  // reconcile footer waits on a deadline. A drive scan lands in discovery.driveDiscover.
   property var volumes: Volumes.initial()
   property real clock: Date.now()
-  property var driveDiscover: null
-  property bool driveScanning: false
   property var driveError: null
   readonly property var ignoredVolumes: Array.isArray(settings.ignoredVolumes) ? settings.ignoredVolumes
     : Array.isArray(settingsEntry.ignoredVolumes) ? settingsEntry.ignoredVolumes.filter(uuid => typeof uuid === "string" && uuid !== "")
@@ -99,8 +87,12 @@ Item {
     return send({t: "warm"})
   }
 
+  function online() {
+    return !!socket && socket.connected && ready
+  }
+
   function send(message) {
-    if (!socket || !socket.connected || !ready) return false
+    if (!online()) return false
     socket.write(Protocol.encode(message))
     socket.flush()
     return true
@@ -146,10 +138,14 @@ Item {
   }
 
   function scanDrive(uuid) {
-    driveError = null
-    driveDiscover = null
-    driveScanning = send({t: "discover_start", volume: uuid})
-    return driveScanning
+    reduceDiscovery({type: "scan-drive", uuid: uuid, online: online()})
+    return discovery.driveScanning
+  }
+
+  function reduceDiscovery(event) {
+    var result = Discovery.reduce(discovery, event)
+    discovery = result.state
+    for (var i = 0; i < result.effects.length; i++) runEffect(result.effects[i])
   }
 
   function reduceVolumes(event) {
@@ -172,6 +168,12 @@ Item {
       break
     case "research":
       volumesRefreshed()
+      break
+    case "error":
+      root[effect.surface] = effect.error
+      break
+    case "children":
+      childrenReceived(effect.path)
       break
     }
   }
@@ -216,29 +218,12 @@ Item {
   function retryFailed(code) { return send({t: "retry_failed", code: code}) }
 
   function scan() {
-    folderError = null
-    scanning = send({t: "discover_start"})
-    return scanning
+    reduceDiscovery({type: "scan", online: online()})
+    return discovery.scanning
   }
 
-  function requestChildren(path) {
-    if ((childFolders[path] && !childFolders[path].error) || childrenAsked[path]) return true
-    var asked = Object.assign({}, childrenAsked)
-    asked[path] = true
-    if (!send({t: "discover_children", path: path})) return false
-    childrenAsked = asked
-    return true
-  }
-  function stopDiscovery() {
-    scanning = false
-    driveScanning = false
-    // The daemon answers children requests still in flight with `discover_stop`.
-    childrenAsked = {}
-    var stopped = Object.assign({}, walks)
-    for (var path in stopped) stopped[path] = Object.assign({}, stopped[path], {done: true})
-    walks = stopped
-    return send({t: "discover_stop"})
-  }
+  function requestChildren(path) { reduceDiscovery({type: "children", path: path, online: online()}) }
+  function stopDiscovery() { reduceDiscovery({type: "stop", online: online()}) }
 
   function listDirs(path) { return send({t: "fs_list", path: path}) }
 
@@ -322,14 +307,7 @@ Item {
     if (!attemptOpen) return
     attemptOpen = false
     runtimeAsked = false
-    scanning = false
-    driveScanning = false
-    childrenAsked = {}
-    var stopped = Object.assign({}, walks)
-    var failure = Errors.offline()
-    for (var walkRoot in stopped) if (!stopped[walkRoot].done)
-      stopped[walkRoot] = {done: true, seconds: null, error: failure.title, failure: failure}
-    walks = stopped
+    reduceDiscovery({type: "offline"})
     connection = Connection.reduce(connection, {type: "attempt-failed"})
     closeSocket()
     // A daemon that dies on import never sends `state`; status tells whether its venv is behind.
@@ -392,46 +370,9 @@ Item {
       engineError = message.state === "failed" ? Errors.from(message) : null
       break
     case "discover_result":
-      if (Array.isArray(message.roots)) message.roots.forEach(entry => clearDiscovery(entry.path))
-      if (message.volume) {
-        driveScanning = false
-        driveError = null
-        driveDiscover = message
-        break
-      }
-      scanning = false
-      folderError = null
-      discover = message
-      break
     case "discover_counts":
-      receiveCounts(message)
-      break
     case "discover_children":
-      var nextChildren = Object.assign({}, childFolders)
-      nextChildren[message.path] = {dirs: Array.isArray(message.dirs) ? message.dirs : [],
-        volume: typeof message.volume === "string" ? message.volume : "",
-        error: errorText(message.error)}
-      childFolders = nextChildren
-      var childCounts = Object.assign({}, discoverCounts)
-      nextChildren[message.path].dirs.forEach(dir => { if (dir.counts && !childCounts[dir.path]) childCounts[dir.path] = dir.counts })
-      discoverCounts = childCounts
-      var childSets = Object.assign({}, datasets)
-      nextChildren[message.path].dirs.forEach(dir => {
-        if (dir.evidence) childSets[dir.path] = Object.assign({path: dir.path}, dir.evidence)
-      })
-      datasets = childSets
-      var childRepos = Object.assign({}, repos)
-      var childTrees = Object.assign({}, worktrees)
-      nextChildren[message.path].dirs.forEach(dir => {
-        if (dir.repo) childRepos[dir.path] = {path: dir.path}
-        if (dir.worktree) childTrees[dir.path] = {path: dir.path}
-      })
-      worktrees = childTrees
-      repos = childRepos
-      var pendingChildren = Object.assign({}, childrenAsked)
-      delete pendingChildren[message.path]
-      childrenAsked = pendingChildren
-      childrenReceived(message.path)
+      reduceDiscovery({type: message.t, message: message})
       break
     case "fs_list":
       fsList = message
@@ -459,13 +400,9 @@ Item {
 
   function receiveSetupError(message) {
     var error = Errors.from(message)
-    var surface = errorSurface(message.for, driveScanning)
-    if (message.for === "discover_start") {
-      if (driveScanning) driveScanning = false
-      else scanning = false
-    }
+    var surface = errorSurface(message.for, discovery.driveScanning)
+    reduceDiscovery({type: "failed", for: message.for})
     if (message.for === "binds_get") bindsReady = false
-    if (message.for === "discover_children") childrenAsked = {}
     root[surface] = error
     setupFailed(message.for, error)
   }
@@ -493,12 +430,6 @@ Item {
     }
   }
 
-  // Walks and folder rows show a failure as one fact: the error's title.
-  function errorText(value) {
-    var error = Errors.wrap(value)
-    return error ? error.title : ""
-  }
-
   // `bin/omafind setup --json` ends stdout with {"ok": false, "error": {...}}; stderr is the fallback.
   function helperFailure(stdout, stderr) {
     var reply = null
@@ -514,64 +445,6 @@ Item {
   function lastLine(text) {
     var lines = String(text || "").split("\n").map(line => line.trim()).filter(line => line !== "")
     return lines.length ? lines[lines.length - 1] : ""
-  }
-
-  // Clears counts, datasets and walks under `walkRoot`. Cached children stay: they hold the folder
-  // lists and the volume of folders added outside every root. A drive mounted inside the root has
-  // its own walk, and its snapshot may already have arrived, so its subtree stays.
-  function clearDiscovery(walkRoot) {
-    function under(path, root) { return path === root || path.indexOf(root.replace(/\/$/, "") + "/") === 0 }
-    var nested = Object.keys(walks).filter(root => root !== walkRoot && under(root, walkRoot))
-    function outside(path) { return !under(path, walkRoot) || nested.some(root => under(path, root)) }
-    var counts = Object.assign({}, discoverCounts)
-    var sets = Object.assign({}, datasets)
-    var foundRepos = Object.assign({}, repos)
-    var foundTrees = Object.assign({}, worktrees)
-    for (var path in counts) if (!outside(path)) delete counts[path]
-    for (var path in sets) if (!outside(path)) delete sets[path]
-    for (var path in foundRepos) if (!outside(path)) delete foundRepos[path]
-    for (var path in foundTrees) if (!outside(path)) delete foundTrees[path]
-    // The folders step sorts when a walk finishes, so a rescan must not inherit the old finish.
-    var nextWalks = Object.assign({}, walks)
-    for (var path in nextWalks) if (!outside(path)) delete nextWalks[path]
-    discoverCounts = counts
-    datasets = sets
-    repos = foundRepos
-    worktrees = foundTrees
-    walks = nextWalks
-  }
-
-  function receiveCounts(message) {
-    if (typeof message.root !== "string" || !message.counts) return
-    if (message.reset) clearDiscovery(message.root)
-    var counts = Object.assign({}, discoverCounts)
-    for (var path in message.counts) counts[path] = message.counts[path]
-    discoverCounts = counts
-    var nextWalks = Object.assign({}, walks)
-    // `error` is the title, one fact in folder rows; `failure` keeps the object for the drive dialog.
-    nextWalks[message.root] = {done: !!message.done, seconds: typeof message.seconds === "number" ? message.seconds : null,
-      error: errorText(message.error), failure: Errors.wrap(message.error)}
-    var roots = (driveDiscover && Array.isArray(driveDiscover.roots) ? driveDiscover.roots : [])
-      .concat(discover && Array.isArray(discover.roots) ? discover.roots : [])
-    var scanRoot = roots.find(entry => entry.path === message.root) || childFolders[message.root]
-    var driveWalk = scanRoot ? !!scanRoot.volume : driveScanning
-    if (message.error && !driveWalk) folderError = Errors.wrap(message.error)
-    if (Array.isArray(message.datasets)) {
-      var nextSets = Object.assign({}, datasets)
-      message.datasets.forEach(entry => nextSets[entry.path] = entry)
-      datasets = nextSets
-    }
-    if (Array.isArray(message.worktrees)) {
-      var nextTrees = Object.assign({}, worktrees)
-      message.worktrees.forEach(path => nextTrees[path] = {path: path})
-      worktrees = nextTrees
-    }
-    if (Array.isArray(message.repos)) {
-      var nextRepos = Object.assign({}, repos)
-      message.repos.forEach(path => nextRepos[path] = {path: path})
-      repos = nextRepos
-    }
-    walks = nextWalks
   }
 
   function receiveState(message) {

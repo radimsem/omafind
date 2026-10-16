@@ -25,8 +25,8 @@ FocusScope {
   readonly property real panelWidth: Style.space(size.width)
   readonly property real panelHeight: Style.space(size.height) + (step === 3 ? indexPage.extraHeight : 0)
     + (step === 1 ? enginePage.extraHeight : 0)
-  readonly property string walkError: service ? Setup.walkError(service.walks) : ""
-  readonly property var discover: service ? service.discover : null
+  readonly property string walkError: service ? Setup.walkError(service.discovery.walks) : ""
+  readonly property var discover: service ? service.discovery.discover : null
   readonly property var indexFailure: step === 3 && service ? service.indexError : null
   readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
 
@@ -69,8 +69,8 @@ FocusScope {
   }
 
   function ensureScan(force) {
-    if (!service || service.scanning) return
-    if (force || !service.discover || !!service.folderError || walkError !== "") service.scan()
+    if (!service || service.discovery.scanning) return
+    if (force || !service.discovery.discover || !!service.folderError || walkError !== "") service.scan()
   }
 
   function showFolders() {
@@ -128,10 +128,10 @@ FocusScope {
           subtitle: root.step === 1 ? "Everything runs on this machine. Nothing downloads until you press a button."
             : root.step === 3 ? "You can search already. Results fill in as files finish."
             : ""
-          spinning: root.step === 2 && !!root.service && (root.service.scanning
-            || Object.keys(root.service.walks).some(key => !root.service.walks[key].done))
+          spinning: root.step === 2 && !!root.service && (root.service.discovery.scanning
+            || Object.keys(root.service.discovery.walks).some(key => !root.service.discovery.walks[key].done))
           facts: root.step !== 2 || !root.discover ? []
-            : Setup.scanFacts(foldersPage.folders.length, root.service.walks)
+            : Setup.scanFacts(foldersPage.folders.length, root.service.discovery.walks)
         }
 
         Parts.StepChips {
