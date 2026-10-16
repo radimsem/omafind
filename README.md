@@ -59,13 +59,18 @@ omarchy plugin update radimsem.omafind
 
 omafind then brings its helper and daemon up to date on its own.
 
-To remove it, take out its Hyprland binding and menu row first, then stop the daemon:
+To remove it, run these in order:
 
 ```bash
+# Take out the shortcut and the Find files menu row
 ~/.config/omarchy/plugins/radimsem.omafind/bin/omafind bindings remove
 ~/.config/omarchy/plugins/radimsem.omafind/bin/omafind bindings menu remove
+
+# Stop the daemon and delete its service
 systemctl --user disable --now omafind.service
 rm ~/.config/systemd/user/omafind.service
+
+# Remove the plugin
 omarchy plugin remove radimsem.omafind
 ```
 
