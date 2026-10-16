@@ -12,13 +12,15 @@ FocusScope {
 
   property var service: null
   property bool back: false
+  // Settings' "Change folders" opens a finished setup here; starting the index clears it.
+  property bool pickFolders: false
 
   signal closeRequested()
   signal searchRequested()
 
   readonly property alias folders: foldersPage
   readonly property int step: Setup.step({runtimeProgress: service ? service.runtimeProgress : null,
-    progress: service ? service.progress : null, back: back})
+    progress: service ? service.progress : null, back: back, folders: pickFolders})
   readonly property var size: Setup.panelSize(step)
   readonly property real panelWidth: Style.space(size.width)
   readonly property real panelHeight: Style.space(size.height) + (step === 3 ? indexPage.extraHeight : 0)
@@ -78,6 +80,9 @@ FocusScope {
     target: root.service
     function onReadyChanged() {
       if (root.visible && root.step === 2 && root.service.ready) root.ensureScan(true)
+    }
+    function onIndexPendingChanged() {
+      if (root.service.indexPending) root.pickFolders = false
     }
   }
 

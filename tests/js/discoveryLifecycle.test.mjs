@@ -56,3 +56,37 @@ test('Back then Next retries a failed background walk', () => {
   assert.equal(ctx.back, false);
   assert.equal(scans, 1);
 });
+
+test('Change folders opens setup at the Folders step until indexing starts', () => {
+  let statusAsks = 0;
+  const setupItem = { pickFolders: false, resets: 0, reset() { this.resets++; } };
+  const ctx = functions('Overlay.qml', { opened: true, view: 'settings', setupFolders: false,
+    setup: { item: null }, Qt: { callLater() {} },
+    service: { requestRuntimeStatus() { statusAsks++; } } });
+  ctx.showFolders();
+  assert.equal(ctx.view, 'setup');
+  assert.equal(ctx.setupFolders, true);
+  assert.equal(statusAsks, 1);
+  ctx.setup.item = setupItem;
+  ctx.view = 'search';
+  ctx.showFolders();
+  assert.equal(setupItem.pickFolders, true);
+  assert.equal(setupItem.resets, 1);
+
+  const view = functions('SetupView.qml', { pickFolders: true, service: { indexPending: false } });
+  const source = readFileSync(new URL('../../SetupView.qml', import.meta.url), 'utf8');
+  const handler = source.match(/function onIndexPendingChanged\(\) \{([^]*?)^    \}/m);
+  assert.ok(handler, 'Setup leaves the Folders step when indexing starts');
+  vm.runInContext('function pending() {' + handler[1] + '}', view);
+  view.pending();
+  assert.equal(view.pickFolders, true);
+  view.service.indexPending = true;
+  view.pending();
+  assert.equal(view.pickFolders, false);
+});
+
+test('opening the overlay never lands on the Folders step by itself', () => {
+  const source = readFileSync(new URL('../../Overlay.qml', import.meta.url), 'utf8');
+  const open = source.match(/^  function open\(payload\) \{([^]*?)^  \}/m)[1];
+  assert.match(open, /setupFolders = false/);
+});

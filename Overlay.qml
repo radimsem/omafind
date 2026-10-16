@@ -20,6 +20,8 @@ Item {
   property string view: "search"
   // The volume UUID the drive view shows.
   property string driveVolume: ""
+  // Setup opens at the Folders step even when setup is done (Settings, "Change folders").
+  property bool setupFolders: false
   // The window stays mapped through the 120 ms close animation.
   property bool mapped: false
   property real openedAt: 0
@@ -37,6 +39,7 @@ Item {
     // A dialog already showing this drive starts over; a new one scans when its uuid is set.
     var again = drive && view === "drive" && driveVolume === parsed.volume && !!driveLoader.item
     if (drive) driveVolume = parsed.volume
+    setupFolders = false
     view = drive ? "drive" : Setup.opensSetup(parsed && parsed.view, service ? service.settings.setupDone : true,
       service ? service.runtimeProgress : null) ? "setup" : "search"
     if (again) {
@@ -58,7 +61,10 @@ Item {
     }
     opened = true
     mapped = true
-    if (setup.item) setup.item.reset()
+    if (setup.item) {
+      setup.item.pickFolders = false
+      setup.item.reset()
+    }
     if (service && view === "setup") {
       service.requestRuntimeStatus()
     } else if (service && view !== "drive") {
@@ -78,6 +84,17 @@ Item {
       service.warm()
       service.send({t: "status"})
     }
+    Qt.callLater(focusView)
+  }
+
+  function showFolders() {
+    setupFolders = true
+    view = "setup"
+    if (setup.item) {
+      setup.item.pickFolders = true
+      setup.item.reset()
+    }
+    if (service) service.requestRuntimeStatus()
     Qt.callLater(focusView)
   }
 
@@ -231,7 +248,10 @@ Item {
           anchors.fill: parent
           active: root.view === "setup"
           source: "SetupView.qml"
-          onLoaded: item.service = Qt.binding(() => root.service)
+          onLoaded: {
+            item.pickFolders = root.setupFolders
+            item.service = Qt.binding(() => root.service)
+          }
         }
 
         Connections {

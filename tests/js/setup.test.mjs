@@ -14,6 +14,9 @@ test('step derives from daemon facts and local back', () => {
   assert.equal(s.step({runtimeProgress: {state: 'done'}}), 2);
   assert.equal(s.step({runtimeProgress: {state: 'done'}, progress}), 3);
   assert.equal(s.step({runtimeProgress: {state: 'done'}, progress, back: true}), 1);
+  assert.equal(s.step({runtimeProgress: {state: 'done'}, progress, folders: true}), 2);
+  assert.equal(s.step({runtimeProgress: {state: 'done'}, progress, folders: true, back: true}), 1);
+  assert.equal(s.step({runtimeProgress: runtime, progress, folders: true}), 1);
   assert.equal(s.engineReady(null), false);
 });
 test('the shortcut opens setup until the engine is installed', () => {
