@@ -146,9 +146,14 @@ def test_roots_keep_valid_path_volume_and_excludes(tmp_path):
                                              (71, 140), (True, 140), ("280", 140)])
 def test_media_and_code_settings(tmp_path, budget, expected):
     path = tmp_path / "shell.json"
-    write_settings(path, imageBudget=budget, codeRoots=["/repo", "relative", None, 42])
+    write_settings(path, imageBudget=budget, codeRoots=[
+        "/repo", "relative", None, 42, {"path": "/kept", "excludes": ["docs", "a/b"]},
+        {"path": "rel", "excludes": []}, {"path": "/bad", "excludes": "docs"},
+        {"path": "/odd", "excludes": [1]}, {"path": "/bare"}])
     assert load(path).image_budget == expected
-    assert load(path).code_roots == ("/repo",)
+    assert load(path).code_roots == ({"path": "/repo", "excludes": []},
+                                     {"path": "/kept", "excludes": ["docs", "a/b"]},
+                                     {"path": "/bare", "excludes": []})
 
 
 def test_roots_code_roots_and_setup_done_round_trip(tmp_path):
@@ -158,7 +163,7 @@ def test_roots_code_roots_and_setup_done_round_trip(tmp_path):
     settings = load(path)
     assert settings.setup_done is True
     assert settings.roots == [root]
-    assert settings.code_roots == ('/h/p/omaone',)
+    assert settings.code_roots == ({'path': '/h/p/omaone', 'excludes': []},)
 
 
 @pytest.mark.parametrize('fields', [

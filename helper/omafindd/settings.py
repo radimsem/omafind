@@ -21,7 +21,7 @@ class Settings:
     roots: list[dict] = field(default_factory=list)
     max_results: int = 40
     warm_minutes: int = 5
-    code_roots: tuple[str, ...] = ()
+    code_roots: tuple[dict, ...] = ()
     image_budget: int = 140
     shortcut: str = "SUPER + E"
     ignored_volumes: tuple[str, ...] = ()
@@ -64,6 +64,23 @@ def roots(value) -> list[dict]:
             and all(isinstance(path, str) for path in root["excludes"])]
 
 
+def code_roots(value) -> tuple[dict, ...]:
+    """`{"path", "excludes"}` per repository. A plain path string is the older shape."""
+    if not isinstance(value, list):
+        return ()
+    result = []
+    for root in value:
+        if isinstance(root, str):
+            root = {"path": root, "excludes": []}
+        if not isinstance(root, dict):
+            continue
+        path, excludes = root.get("path"), root.get("excludes", [])
+        if (isinstance(path, str) and Path(path).is_absolute() and isinstance(excludes, list)
+                and all(isinstance(exclude, str) for exclude in excludes)):
+            result.append({"path": path, "excludes": excludes[:]})
+    return tuple(result)
+
+
 def _integer(entry, key, default, minimum, maximum):
     value = entry.get(key, default)
     return max(minimum, min(maximum, value)) if type(value) is int else default
@@ -77,7 +94,6 @@ def _load(path: Path) -> Settings:
     setup_done = entry.get("setupDone", False)
     gpu = entry.get("gpu", "auto")
     audio = entry.get("audio", True)
-    repositories = entry.get("codeRoots", [])
     ignored = entry.get("ignoredVolumes", [])
     budget = entry.get("imageBudget", 140)
     shortcut = entry.get("shortcut", "SUPER + E")
@@ -88,9 +104,7 @@ def _load(path: Path) -> Settings:
         roots=roots(entry.get("roots")),
         max_results=_integer(entry, "maxResults", 40, 10, 200),
         warm_minutes=_integer(entry, "warmMinutes", 5, 0, 60),
-        code_roots=tuple(path for path in repositories
-                         if isinstance(path, str) and Path(path).is_absolute())
-        if isinstance(repositories, list) else (),
+        code_roots=code_roots(entry.get("codeRoots", [])),
         image_budget=budget if type(budget) is int and budget in (70, 140, 280) else 140,
         shortcut=shortcut if valid_shortcut(shortcut) else "SUPER + E",
         ignored_volumes=tuple(uuid for uuid in ignored if isinstance(uuid, str) and uuid)

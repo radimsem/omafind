@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .code import CodeStore, classify_code, read
+from .code import CodeStore, classify_code, code_root, read
 from .lookup import COMMENT_STARTS, definition, has, identifier
 from .rules import SECRET_GLOBS
 from .search_text import snippet_parts
@@ -154,6 +154,8 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
                       legs, limit, seq, begun) -> dict:
     from .search import fused_score, is_lookup, meaning, query_terms
 
+    scopes = tuple(code_root(root) for root in roots)
+    roots = tuple(scope.path for scope in scopes)
     named = identifier(q)
     words = [q.strip().removesuffix("()")] if named else query_terms(q)
     path = directory / "code.sqlite" if directory is not None else None
@@ -169,7 +171,7 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
             store.db.execute("BEGIN")
             files = {str(store.mount / row["path"]): row for row in
                      store.db.execute("SELECT * FROM files WHERE state='done'")
-                     if any((store.mount / row["path"]).is_relative_to(root) for root in roots)}
+                     if any(scope.holds(store.mount / row["path"]) for scope in scopes)}
             async def timed_words():
                 word_begun = time.monotonic()
                 hits, definitions = await asyncio.gather(

@@ -30,9 +30,31 @@ SKIPPED_FOLDERS = set(
 CLOSERS = {"end", "fi", "done", "esac", "@end", "#endif", "end;", "end)"}
 
 
-def configured_roots(settings) -> tuple[Path, ...]:
-    return tuple(Path(root).expanduser().absolute()
-                 for root in settings().code_roots)
+@dataclass(frozen=True)
+class CodeRoot:
+    """A repository whose code is indexed, less the folders in `excludes` (relative paths)."""
+
+    path: Path
+    excludes: tuple[str, ...] = ()
+
+    def holds(self, path: Path) -> bool:
+        return path.is_relative_to(self.path) and not any(
+            path.is_relative_to(self.path / exclude) for exclude in self.excludes)
+
+
+def code_root(value) -> CodeRoot:
+    """A CodeRoot from a CodeRoot, a settings entry `{path, excludes}` or a plain path."""
+    if isinstance(value, CodeRoot):
+        path, excludes = value.path, value.excludes
+    elif isinstance(value, dict):
+        path, excludes = value["path"], tuple(value.get("excludes", ()))
+    else:
+        path, excludes = value, ()
+    return CodeRoot(Path(path).expanduser().absolute(), excludes)
+
+
+def configured_roots(settings) -> tuple[CodeRoot, ...]:
+    return tuple(code_root(root) for root in settings().code_roots)
 
 
 def classify_code(path: Path) -> bool:
@@ -48,9 +70,10 @@ def classify_code(path: Path) -> bool:
             or name in CODE_FILE_NAMES or name.startswith("Dockerfile"))
 
 
-def repository_files(root: Path) -> list[Path]:
+def repository_files(root: Path, excludes: Sequence[str] = ()) -> list[Path]:
     result = subprocess.run(["git", "-C", str(root), "ls-files", "--stage", "-z"],
                             capture_output=True, check=True)
+    scope = CodeRoot(root, tuple(excludes))
     files = set()
     for entry in result.stdout.split(b"\0"):
         if not entry:
@@ -59,6 +82,8 @@ def repository_files(root: Path) -> list[Path]:
         if meta.split()[0] not in (b"100644", b"100755"):
             continue
         path = root / os.fsdecode(name)
+        if not scope.holds(path):
+            continue
         if classify_code(path.relative_to(root)) and path.is_file() and not path.is_symlink():
             files.add(path)
     return sorted(files)
@@ -237,14 +262,15 @@ async def index_code(roots: Sequence[Path], directory: Path, embedder):
     from .embedder import EmbeddingError, document_text
     from .embedding import validated
 
-    roots = tuple(root.expanduser().absolute() for root in roots)
+    roots = tuple(code_root(root) for root in roots)
     store = CodeStore(directory / "code.sqlite")
     seen = set()
     try:
         # Text mode caps a request at 512 tokens; an 1800-character code stretch often needs more.
         await embedder.start("full")
-        for root in roots:
-            for path in repository_files(root):
+        for scope in roots:
+            root = scope.path
+            for path in repository_files(root, scope.excludes):
                 relative = path.relative_to(store.mount).as_posix()
                 stat = path.stat()
                 old = store.db.execute("SELECT * FROM files WHERE path=?", (relative,)).fetchone()
@@ -303,6 +329,6 @@ async def index_code(roots: Sequence[Path], directory: Path, embedder):
                 if row["path"] not in seen:
                     store.db.execute("DELETE FROM files WHERE id=?", (row["id"],))
             store.db.execute("INSERT OR REPLACE INTO meta VALUES('code_roots',?)",
-                             (json.dumps([str(root) for root in roots]),))
+                             (json.dumps([str(root.path) for root in roots]),))
     finally:
         store.close()

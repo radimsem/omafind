@@ -126,7 +126,7 @@ FocusScope {
 
   function startIndexing() {
     if (!ready) return
-    service.startIndexing(roots, chosenCode())
+    service.startIndexing(roots, Tree.toCodeRoots(chosenCode(), choices.skipped))
   }
 
   onDiscoverChanged: seed()

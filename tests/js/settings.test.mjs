@@ -62,7 +62,10 @@ test('roots retain only valid path volume and excludes entries', () => {
 test('media budgets and code roots validate without coercion', () => {
   for (const budget of [70, 140, 280]) assert.equal(normalize({imageBudget: budget}).imageBudget, budget);
   for (const budget of [71, true, '280', null]) assert.equal(normalize({imageBudget: budget}).imageBudget, 140);
-  assert.deepEqual(plain(normalize({codeRoots: ['/repo', 'relative', null, 42]}).codeRoots), ['/repo']);
+  assert.deepEqual(plain(normalize({codeRoots: ['/repo', 'relative', null, 42,
+    {path: '/kept', excludes: ['docs', 'a/b']}, {path: 'rel', excludes: []}, {path: '/bad', excludes: 'docs'},
+    {path: '/odd', excludes: [1]}, {path: '/bare'}]}).codeRoots),
+    [{path: '/repo', excludes: []}, {path: '/kept', excludes: ['docs', 'a/b']}, {path: '/bare', excludes: []}]);
   assert.deepEqual(plain(normalize({codeRoots: '/repo'}).codeRoots), []);
 });
 
@@ -90,7 +93,7 @@ test('findEntry searches bar sections before plugins and tolerates missing layou
 test('setup writes retain nested roots and unrelated settings through JSON', () => {
   const entry = {id: 'radimsem.omafind', enabled: true, future: {mode: 'keep'}};
   const changes = {setupDone: true, roots: [{path: '/home/u/Documents', volume: 'v', excludes: ['tax/2024']}],
-    codeRoots: ['/home/u/personal/projects/omaone']};
+    codeRoots: [{path: '/home/u/personal/projects/omaone', excludes: ['docs']}]};
   const written = JSON.parse(JSON.stringify(merge(entry, changes)));
   assert.equal(written.enabled, true);
   assert.deepEqual(written.future, {mode: 'keep'});

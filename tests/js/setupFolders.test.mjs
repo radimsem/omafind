@@ -104,15 +104,16 @@ test('start indexing waits for discovery and saves the automatic Code choices', 
   ctx.offerDatasets(); ctx.offerRepos();
   assert.equal(ctx.ready, true);
   ctx.startIndexing();
-  assert.deepEqual(saved, [{ roots: [{ path: '/h/p', volume: 'u' }], code: ['/h/p/main'] }]);
+  assert.deepEqual(saved, [{ roots: [{ path: '/h/p', volume: 'u' }], code: [{ path: '/h/p/main', excludes: [] }] }]);
 });
 
 test('start indexing saves code only for searched repos', () => {
   const saved = [];
   const ctx = folders({ discover: {}, roots: [{ path: '/h/p', volume: 'u' }],
-    choices: { chosen: ['/h/p'], skipped: ['/h/p/off'], code: ['/h/p/main', '/h/p/off/repo', '/h/x'] },
+    choices: { chosen: ['/h/p'], skipped: ['/h/p/off', '/h/p/main/docs'],
+      code: ['/h/p/main', '/h/p/off/repo', '/h/x'] },
     service: { scanning: false, datasets: {}, worktrees: {}, walks: { '/h': { done: true } }, repos: {},
       startIndexing(roots, code) { saved.push(plain(code)); } } });
   ctx.startIndexing();
-  assert.deepEqual(saved, [['/h/p/main']]);
+  assert.deepEqual(saved, [[{ path: '/h/p/main', excludes: ['docs'] }]]);
 });

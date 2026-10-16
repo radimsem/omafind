@@ -194,7 +194,7 @@ The CLI sends seq 1 with both legs and prints the complete results object for
 
 Settings in the plugin's shell.json entry now include `roots` (default `[]`),
 `maxResults` (10..200, default 40), `warmMinutes` (0..60, default 5),
-`codeRoots` (absolute repository paths, default `[]`), and `imageBudget`
+`codeRoots` (`[{path, excludes}]`, default `[]`: an absolute repository path and folders relative to it whose code is left out; an older plain path string loads as `{path, excludes: []}`), and `imageBudget`
 (70, 140 or 280, default 140). Invalid paths are dropped; budgets are not coerced.
 `audio` (bool, default true) controls audio files and video soundtracks.
 With audio off, audio files have state `skipped` and code `audio-off`.

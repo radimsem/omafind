@@ -63,7 +63,7 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
 | `gpu` | `"auto"` or `"never"` | `"auto"` |
 | `audio` | bool | `true` |
 | `roots` | `[{path, volume, excludes: [path]}]` | `[]` |
-| `codeRoots` | list of absolute repository paths | `[]` |
+| `codeRoots` | `[{path, excludes: [path]}]`; a plain repository path still loads | `[]` |
 | `ignoredVolumes` | list of filesystem UUIDs the new-drive toast skips | `[]` |
 | `imageBudget` | 70, 140 or 280 | `140` |
 | `maxResults` | int, clamped to 10..200 | `40` |
@@ -162,8 +162,8 @@ roots it exits 2. `--volume UUID` limits reindexing to selected roots on that vo
 A `--root` matching a configured root keeps that root's excludes and volume.
 Search accepts `img:`, `pdf:`, `vid:`, `aud:`, `doc:` and `code:`. Text, PDFs, images,
 video frames and audio windows are indexed. `codeRoots` selects git repositories
-indexed through `git ls-files`, searched only by `code:` queries, with `rg` reading
-the files live.
+indexed through `git ls-files`, less the folders in each one's `excludes`, searched
+only by `code:` queries, with `rg` reading the files live.
 Results are a flat list in score order, with page, source-line or second locations
 and a `weak` flag. Missing
 models degrade to keyword results. CLI search exits 0 for a reply (even empty),

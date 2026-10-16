@@ -107,7 +107,8 @@ FocusScope {
     var fresh = Tree.toRoots(choices.chosen, choices.skipped, () => root.uuid)
     var paths = fresh.map(r => r.path)
     var roots = service.settings.roots.filter(r => paths.indexOf(r.path) < 0).concat(fresh)
-    var code = service.settings.codeRoots.filter(path => !Tree.isInside(path, mount)).concat(choices.code.filter(path => Tree.searched(path, choices)))
+    var code = service.settings.codeRoots.filter(entry => !Tree.isInside(entry.path, mount))
+      .concat(Tree.toCodeRoots(choices.code.filter(path => Tree.searched(path, choices)), choices.skipped))
     if (!service.startIndexing(roots, code, uuid)) return
     sawProgress = false
     phase = "run"

@@ -161,3 +161,8 @@ test('value counts code files only under searched repos whose code is on', () =>
   assert.deepEqual(plain(t.value('/h/p', skipped, countOf, [], repos)), cc(9, 25));
   assert.deepEqual(plain(t.value('/h/p', state([], [], ['/h/p/a']), countOf, [], repos)), cc(0, 0));
 });
+
+test('code roots carry the skipped folders below each repo as relative excludes', () => {
+  assert.deepEqual(plain(t.toCodeRoots(['/h/p/a', '/h/p/b'], ['/h/p/a/docs', '/h/p/a/x/y', '/h/p/c', '/h/p/a'])), [
+    { path: '/h/p/a', excludes: ['docs', 'x/y'] }, { path: '/h/p/b', excludes: [] }]);
+});

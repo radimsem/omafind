@@ -1,5 +1,6 @@
 import json
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 from fakes.embedder import FakeEmbedder
@@ -553,3 +554,34 @@ async def test_code_search_before_the_first_code_index_says_it_is_pending(tmp_pa
                               legs=["words", "meaning"], limit=10, seq=4, begun=0.0)
     assert reply["notice"] == "code-index-pending" and reply["degraded"] is None
     assert reply["items"] == []
+
+
+async def test_code_root_excludes_leave_folders_out_of_index_and_search(repo, tmp_path):
+    import sqlite3
+
+    from omafindd.code import CodeRoot, configured_roots, index_code
+    from omafindd.search import Searcher
+
+    kept = tracked(repo, "src/retry.py", "def retry_with_backoff(): pass")
+    tracked(repo, "docs/retry.py", "def retry_with_backoff(): pass")
+    tracked(repo, "docs2/retry.py", "def retry_with_backoff(): pass")
+    await index_code([repo], tmp_path / "index", FakeEmbedder())
+    root = CodeRoot(repo, ("docs",))
+    searcher = Searcher([], None, code_directory=tmp_path / "index", code_roots=[root])
+    result = await searcher.search("code: retry_with_backoff", legs=["words"])
+    assert sorted(item["path"] for item in result["items"]) == [
+        str(repo / "docs2/retry.py"), str(kept)]
+    await index_code(configured_roots(lambda: SimpleNamespace(
+        code_roots=({"path": str(repo), "excludes": ["docs"]},))), tmp_path / "index",
+        FakeEmbedder())
+    with sqlite3.connect(tmp_path / "index/code.sqlite") as db:
+        assert sorted(row[0] for row in db.execute("SELECT path FROM files")) == [
+            str(repo / "docs2/retry.py").lstrip("/"), str(kept).lstrip("/")]
+
+
+def test_configured_roots_read_both_shapes(repo):
+    from omafindd.code import CodeRoot, configured_roots
+
+    assert configured_roots(lambda: SimpleNamespace(code_roots=(
+        str(repo), {"path": str(repo), "excludes": ["a/b"]}))) == (
+        CodeRoot(repo, ()), CodeRoot(repo, ("a/b",)))
