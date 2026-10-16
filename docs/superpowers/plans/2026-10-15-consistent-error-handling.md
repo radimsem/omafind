@@ -667,13 +667,13 @@ index 4d4d950..c498b77 100644
 +++ b/tests/helper/test_discovery.py
 @@ -3,7 +3,8 @@ import os
  from pathlib import Path
- 
+
  import pytest
 -from omafindd import discovery
 +from omafindd import discovery, errors
 +from omafindd.errors import UserFailure
- 
- 
+
+
  class Process:
 @@ -46,8 +47,10 @@ def test_list_dirs_hides_dot_and_heavy_and_reports_missing(tmp_path):
      (tmp_path / 'file').touch()
@@ -685,18 +685,18 @@ index 4d4d950..c498b77 100644
 +        str(tmp_path / 'missing'), 'No such file or directory').to_dict()
 +    assert discovery.list_dirs('~/file', home=tmp_path)['error'] == errors.scan_failed(
 +        str(tmp_path / 'file'), 'Not a directory').to_dict()
- 
- 
+
+
  def test_list_dirs_reports_an_unreadable_directory(tmp_path, monkeypatch):
 @@ -56,7 +59,8 @@ def test_list_dirs_reports_an_unreadable_directory(tmp_path, monkeypatch):
- 
+
      monkeypatch.setattr(discovery.os, 'scandir', denied)
      assert discovery.list_dirs('/root', home=tmp_path) == {
 -        'path': '/root', 'abs': '/root', 'dirs': [], 'error': 'denied'}
 +        'path': '/root', 'abs': '/root', 'dirs': [],
 +        'error': errors.scan_failed('/root', 'Permission denied').to_dict()}
- 
- 
+
+
  def test_xdg_dirs_reads_home_and_omits_home_itself(tmp_path):
 @@ -132,8 +136,25 @@ def test_top_for_a_volume_lists_the_mount(tmp_path):
      assert body["roots"] == [{"path": str(drive), "volume": "usb"}]
@@ -722,8 +722,8 @@ index 4d4d950..c498b77 100644
 +                      volume_of=lambda path: ("root", path))
 +    assert raised.value.error == errors.scan_failed(str(tmp_path / "gone"),
 +                                                    "No such file or directory")
- 
- 
+
+
  def test_top_caps_rows_at_limit(tmp_path, monkeypatch):
 @@ -191,7 +212,9 @@ def test_walk_of_a_missing_root_ends_with_error(tmp_path):
      walk = discovery.Walk(tmp_path / "gone")
@@ -734,8 +734,8 @@ index 4d4d950..c498b77 100644
 +    assert batches[-1]["error"] == errors.scan_failed(
 +        str(tmp_path / "gone"), "No such file or directory").to_dict()
      assert walk.snapshot()["error"] == batches[-1]["error"]
- 
- 
+
+
 @@ -223,7 +246,8 @@ def test_children_mark_datasets_with_evidence(tmp_path):
  def test_children_of_unreadable_folder_report_error(tmp_path):
      body = discovery.children(tmp_path / "missing")
@@ -743,8 +743,8 @@ index 4d4d950..c498b77 100644
 -                    "error": "No such file or directory"}
 +                    "error": errors.scan_failed(str(tmp_path / "missing"),
 +                                                "No such file or directory").to_dict()}
- 
- 
+
+
  def test_stop_terminates_and_reaps_the_fd_process(tmp_path):
 ```
 
@@ -757,10 +757,10 @@ index caa0bc5..8511b89 100644
 +++ b/tests/helper/test_diskguard.py
 @@ -1,5 +1,7 @@
  from types import SimpleNamespace
- 
+
 +from omafindd import errors
 +
- 
+
  def guard_at(free):
      from omafindd.diskguard import DiskGuard
 @@ -10,7 +12,8 @@ def guard_at(free):
@@ -771,8 +771,8 @@ index caa0bc5..8511b89 100644
 +    assert guard.check() == {'t': 'paused', 'error': errors.disk_low().to_dict(),
 +                             'free_gb': 1.9, 'need_gb': 2}
      assert guard.check() is None
- 
- 
+
+
 ```
 
 `tests/helper/test_ipc_setup.py`: codes follow the cause, unexpected failures are `internal` whatever the request, the index exit carries `index-exited` with the `reindex.log` path, and binds failures keep their cause.
@@ -784,7 +784,7 @@ index 065ae4c..9199600 100644
 +++ b/tests/helper/test_ipc_setup.py
 @@ -5,7 +5,7 @@ from pathlib import Path
  from types import SimpleNamespace
- 
+
  import pytest
 -from omafindd import discovery
 +from omafindd import discovery, errors
@@ -800,7 +800,7 @@ index 065ae4c..9199600 100644
 -                                       "done": True, "seconds": None,
 -                                       "error": "fd failed: boom"}
 +                                       "done": True, "seconds": None, "error": failure}
- 
+
      service.test_pushes.clear()
      await service.handle({"t": "discover_start"})
      await asyncio.gather(*service._discovery)
@@ -809,10 +809,10 @@ index 065ae4c..9199600 100644
 +    assert service.test_pushes[-1]["error"] == failure
      assert attempts == [Path("/h"), Path("/h")]
      assert "/h" not in service._walked
- 
+
 @@ -272,13 +272,14 @@ async def test_fs_list(service):
- 
- 
+
+
  async def test_fs_list_missing(service):
 +    failure = errors.scan_failed("/missing", "No such file or directory").to_dict()
      service.list_dirs = lambda path, **kw: {
@@ -824,11 +824,11 @@ index 065ae4c..9199600 100644
      }
 -    assert (await service.handle({"t": "fs_list", "path": "/missing"}))["error"] == "missing"
 +    assert (await service.handle({"t": "fs_list", "path": "/missing"}))["error"] == failure
- 
- 
+
+
  async def test_index_start_spawns_once(service):
 @@ -294,12 +295,8 @@ async def test_index_start_spawns_once(service):
- 
+
  async def test_index_start_no_roots(service):
      service.settings = lambda: Settings()
 -    assert await service.handle({"t": "index_start"}) == {
@@ -840,8 +840,8 @@ index 065ae4c..9199600 100644
 +    assert await service.handle({"t": "index_start"}) == errors.reply(
 +        "index_start", errors.no_roots())
      assert not service.test_calls
- 
- 
+
+
 @@ -333,26 +330,33 @@ async def test_failed_index_exit_broadcasts_progress_and_error(service, exit_cod
      final, error = service.test_pushes[-2:]
      assert final["running"] is False
@@ -856,15 +856,15 @@ index 065ae4c..9199600 100644
 +    log = service.data_dir / "index/reindex.log"
 +    assert error == errors.reply("index_start", errors.index_exited(exit_code, log))
 +    assert error["log"] == str(log)
- 
- 
+
+
  async def test_errors_carry_for_and_no_seq(service, tmp_path):
 +    failure = errors.scan_failed("/h", "Permission denied")
 +
      def failed(**kw):
 -        raise OSError("scan broke")
 +        raise errors.UserFailure(failure)
- 
+
      service.top = failed
      server = IpcServer(tmp_path / "ui.sock", State(), setup=service)
      writer = Writer()
@@ -884,8 +884,8 @@ index 065ae4c..9199600 100644
 +    service.runtime.status = broken
 +    reply = await service.handle({"t": kind})
 +    assert reply == errors.reply(kind, errors.internal("shell.json is not valid JSON"))
- 
- 
+
+
  @pytest.mark.parametrize("kind", sorted(SetupService.TYPES))
 @@ -467,7 +471,7 @@ async def test_ipc_dispatch_exception_uses_for_without_search_sequence(service,
      server = IpcServer(tmp_path / "ui.sock", State(), setup=service)
@@ -893,8 +893,8 @@ index 065ae4c..9199600 100644
      await server.dispatch(writer, {"t": "runtime_status", "seq": 9, "id": "search"})
 -    assert writer.messages == [{"t": "error", "for": "runtime_status", "reason": "bad service"}]
 +    assert writer.messages == [errors.reply("runtime_status", errors.internal("bad service"))]
- 
- 
+
+
  async def test_setup_requests_after_hello_are_dispatched(service, tmp_path):
 @@ -730,7 +734,8 @@ async def test_initial_count_broadcast_failure_finishes_without_starting_a_worke
      await service.handle({'t': 'discover_start'})
@@ -905,17 +905,17 @@ index 065ae4c..9199600 100644
 +                       'error': errors.scan_failed('/h', 'Cannot send counts').to_dict()}]
      assert service.test_walks[0].done and service.test_walks[0].stopped
      assert '/h' not in service._walked
- 
+
 @@ -757,9 +762,7 @@ async def test_binds_get_failure_names_the_request(service):
- 
+
      service.run = run
      reply = await service.handle({"t": "binds_get"})
 -    assert reply["t"] == "error" and reply["for"] == "binds_get"
 -    assert reply["code"] == "binds-failed"
 -    assert reply["reason"].startswith("Could not read your Hyprland bindings")
 +    assert reply == errors.reply("binds_get", errors.binds_failed("hyprctl"))
- 
- 
+
+
  @pytest.mark.parametrize("output,code", [("", 1), ("not JSON", 0), ("[broken", 0),
 @@ -770,17 +773,18 @@ async def test_binds_get_rejects_failed_or_malformed_output(service, output, cod
      service.run = lambda argv, **kw: subprocess.CompletedProcess(argv, code, output, "failed")
@@ -923,8 +923,8 @@ index 065ae4c..9199600 100644
      assert reply["t"] == "error" and reply["code"] == "binds-failed"
 -    assert reply["reason"].startswith("Could not read your Hyprland bindings")
 +    assert reply["fix"] == {"kind": "retry"}
- 
- 
+
+
 -@pytest.mark.parametrize("error", [
 -    FileNotFoundError(2, "No such file or directory", "hyprctl"),
 -    OSError("Cannot read bindings."),
@@ -937,7 +937,7 @@ index 065ae4c..9199600 100644
 +async def test_binds_get_failure_keeps_the_cause(service, error, detail):
      def run(argv, **kw):
          raise error
- 
+
      service.run = run
      reply = await service.handle({"t": "binds_get"})
 -    assert reply["reason"] == "Could not read your Hyprland bindings."
@@ -952,7 +952,7 @@ index 0c40cc5..2ab807c 100644
 --- a/tests/helper/test_ipc_search.py
 +++ b/tests/helper/test_ipc_search.py
 @@ -6,6 +6,7 @@ from pathlib import Path
- 
+
  import pytest
  from fakes.embedder import FakeEmbedder
 +from omafindd import errors
@@ -961,15 +961,15 @@ index 0c40cc5..2ab807c 100644
  from omafindd.ipc import IpcServer
 @@ -91,7 +92,7 @@ async def test_item_shape_and_same_seq_later_reply(store, tmp_path):
      await service.stop()
- 
- 
+
+
 -async def test_warm_failed_reports_reason(tmp_path):
 +async def test_warm_failed_reports_the_error(tmp_path):
      from omafindd.embedder import EmbeddingError
      from omafindd.service import SearchService
- 
+
 @@ -101,11 +102,36 @@ async def test_warm_failed_reports_reason(tmp_path):
- 
+
      service = SearchService(tmp_path, lambda: Settings(), Failed(), State())
      reply = await service.handle({"t": "warm"})
 -    assert reply["t"] == "warm_failed"
@@ -977,8 +977,8 @@ index 0c40cc5..2ab807c 100644
 +    assert reply == {"t": "warm_failed",
 +                     "error": errors.embedding_unavailable("Vulkan device lost").to_dict()}
      await service.stop()
- 
- 
+
+
 +async def test_start_failure_keeps_its_error_object(store, tmp_path):
 +    from omafindd.embedder import EmbeddingError
 +    from omafindd.service import SearchService
@@ -1006,7 +1006,7 @@ index 0c40cc5..2ab807c 100644
 +
  async def test_warm_server_stops_after_idle_timeout(tmp_path):
      from omafindd.service import SearchService
- 
+
 @@ -130,7 +156,7 @@ async def test_daemon_sees_db_added_by_cli(tmp_path):
          volume_resolver=lambda path, **kwargs: ("v", tmp_path),
      )
@@ -1031,8 +1031,8 @@ index 0c40cc5..2ab807c 100644
      elif code == 1:
 -        assert "omafind reindex" in output.err
 +        assert output.err == "Nothing is indexed yet. Open setup and start the first index.\n"
- 
- 
+
+
  @pytest.mark.parametrize(
 @@ -575,7 +601,7 @@ async def test_query_while_server_starting_returns_words_without_waiting(
                      await service.yield_to_indexer()
@@ -1082,17 +1082,17 @@ index 0c40cc5..2ab807c 100644
 @@ -923,21 +950,21 @@ async def test_waiting_reindex_stops_warm_server_and_holds_intent(tmp_path, monk
              release.wait(2)
              await super().stop()
- 
+
 -    errors = []
 +    raised = []
- 
+
      def index():
          try:
              asyncio.run(reindex([], directory=tmp_path, embedder=Indexer()))
          except BaseException as error:
 -            errors.append(error)
 +            raised.append(error)
- 
+
      async def wait(event):
          for _ in range(100):
 -            if event.is_set() or errors:
@@ -1104,7 +1104,7 @@ index 0c40cc5..2ab807c 100644
 +        if raised:
 +            raise raised[0]
          assert event.is_set()
- 
+
      monkeypatch.setattr(fcntl, "flock", observe)
 @@ -951,11 +978,11 @@ async def test_waiting_reindex_stops_warm_server_and_holds_intent(tmp_path, monk
          await wait(acquired)
@@ -1127,8 +1127,8 @@ index 0c40cc5..2ab807c 100644
 -    assert replies[1] == {"t": "error", "seq": 7, "reason": str(error)}
 +    assert replies[1] == {"t": "error", "seq": 7, **errors.internal(str(error)).to_dict()}
      assert replies[2] == {"t": "results", "seq": 8, "items": []}
- 
- 
+
+
 -def test_cli_service_error_prints_reason_and_exits_one(cli, env, capsys):
 -    reply = {"t": "error", "seq": 1, "reason": "no such table: meta"}
 +def test_cli_service_error_prints_title_and_detail_and_exits_one(cli, env, capsys):
@@ -1137,8 +1137,8 @@ index 0c40cc5..2ab807c 100644
 -    assert capsys.readouterr().err == "no such table: meta\n"
 +    assert capsys.readouterr().err == (
 +        "Something failed inside the omafind service. No such table: meta.\n")
- 
- 
+
+
  @pytest.mark.parametrize("kinds", [None, "image", ["img"], [1], [{}]])
 @@ -1069,7 +1097,8 @@ async def test_service_rejects_invalid_kinds(tmp_path, kinds):
      service = SearchService(tmp_path / "index", lambda: Settings(), FakeEmbedder(), State())
@@ -1149,7 +1149,7 @@ index 0c40cc5..2ab807c 100644
 +                         **errors.bad_request("Invalid search arguments").to_dict()}
      finally:
          await service.stop()
- 
+
 ```
 
 `tests/helper/test_ipc_overlay.py`: preview and open errors become objects, a renderer crash is `internal` with the item id, and a launch failure is `open_failed` with `open-failed`.
@@ -1161,7 +1161,7 @@ index b995a7b..8295326 100644
 +++ b/tests/helper/test_ipc_overlay.py
 @@ -3,7 +3,7 @@ import sqlite3
  from types import SimpleNamespace
- 
+
  import pytest
 -from omafindd import opener, preview
 +from omafindd import errors, opener, preview
@@ -1190,13 +1190,13 @@ index b995a7b..8295326 100644
 +    await server.dispatch(writer, {"t": "preview", "id": "hit"})
 +    assert writer.messages[-1] == {"t": "error", "id": "hit",
 +                                   **errors.internal("pdftoppm crashed").to_dict()}
- 
- 
+
+
  async def test_open_reveal_and_preview_jump(server, tmp_path, monkeypatch):
 @@ -80,20 +96,39 @@ async def test_open_reveal_and_preview_jump(server, tmp_path, monkeypatch):
      assert calls[-1][1]["how"] == "reveal"
- 
- 
+
+
 -@pytest.mark.parametrize("offline,exists,reason", [(True, True, "offline"),
 -                                                  (False, False, "missing")])
 +@pytest.mark.parametrize("offline,exists,error", [
@@ -1236,8 +1236,8 @@ index b995a7b..8295326 100644
 +    assert writer.messages[-1] == {
 +        "t": "open_failed", "id": "hit",
 +        "error": errors.open_failed("clip.mp4", "mpv: No such file or directory").to_dict()}
- 
- 
+
+
  async def test_status_reply_and_time_gated_push(server, tmp_path):
 @@ -325,8 +360,9 @@ async def test_open_prefers_client_line_and_rejects_bad_lines(server, tmp_path,
      assert calls[-1]["loc"] == 212
@@ -1249,8 +1249,8 @@ index b995a7b..8295326 100644
 +            "t": "error", "id": "hit", "for": "open",
 +            **errors.bad_request("Invalid open arguments").to_dict()}
      assert len(calls) == 2
- 
- 
+
+
 ```
 
 `tests/helper/test_ipc_volumes.py` and `tests/helper/test_permissions.py`:
@@ -1262,7 +1262,7 @@ index e352905..c9e0bbb 100644
 +++ b/tests/helper/test_ipc_volumes.py
 @@ -3,6 +3,7 @@ from pathlib import Path
  from types import SimpleNamespace
- 
+
  import pytest
 +from omafindd import errors
  from omafindd.ipc import IpcServer
@@ -1303,13 +1303,13 @@ index d6171b7..895f431 100644
 --- a/tests/helper/test_permissions.py
 +++ b/tests/helper/test_permissions.py
 @@ -82,7 +82,7 @@ def test_fix_dirs_is_shallow_and_does_not_follow_symlinks(tmp_path):
- 
- 
+
+
  def test_bad_model_digest_makes_search_words_only(tmp_path, monkeypatch):
 -    from omafindd import models, paths
 +    from omafindd import errors, models, paths
      from omafindd.state import State
- 
+
      monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path))
 @@ -118,7 +118,8 @@ def test_bad_model_digest_makes_search_words_only(tmp_path, monkeypatch):
          try:
@@ -1332,15 +1332,15 @@ index b00f8f2..5a6e9b0 100644
 +++ b/tests/helper/test_install.py
 @@ -3,7 +3,7 @@ import os
  from types import SimpleNamespace
- 
+
  import pytest
 -from omafindd import models
 +from omafindd import errors, models
  from omafindd.install import RuntimeJob, gpu_name
- 
- 
+
+
 @@ -152,23 +152,55 @@ async def test_pause_during_download_stops_at_next_chunk_and_resume_continues(jo
- 
+
  async def test_build_failure_reports_last_stderr_line(job_factory):
      job, _, _ = job_factory(process=Process(1, b"first\nlast error\n"))
 +    assert job.snapshot()["error"] is None and "reason" not in job.snapshot()
@@ -1352,8 +1352,8 @@ index b00f8f2..5a6e9b0 100644
 -        "Run bin/omafind build-runtime in a terminal for the full log."
 -    )
 +    assert job.snapshot()["error"] == errors.build_failed("last error").to_dict()
- 
- 
+
+
 -async def test_digest_mismatch_fails_with_resume_hint(job_factory):
 +async def test_digest_mismatch_fails_with_model_verify_failed(job_factory):
      job, _, _ = job_factory(valid=lambda directory: {f.name: False for f in models.FILES})
@@ -1400,8 +1400,8 @@ index b00f8f2..5a6e9b0 100644
 +    assert job.snapshot()["error"]["code"] == "build-failed"
 +    assert (await job.start())["error"] is None
 +    await finish(job)
- 
- 
+
+
  async def test_existing_runtime_reports_installed_without_seconds(job_factory, tmp_path):
 @@ -239,7 +271,7 @@ async def test_build_refuses_unavailable_memory_scope(job_factory, monkeypatch):
      await job.start()
@@ -1410,8 +1410,8 @@ index b00f8f2..5a6e9b0 100644
 -    assert "memory" in job.snapshot()["reason"]
 +    assert job.snapshot()["error"] == errors.build_no_scope().to_dict()
      assert not calls
- 
- 
+
+
 ```
 
 `tests/helper/test_cli.py`: `omafind discover --json` prints a `UserFailure` as title and detail.
@@ -1423,8 +1423,8 @@ index b9f0dda..67224fa 100644
 +++ b/tests/helper/test_cli.py
 @@ -363,6 +363,21 @@ def test_discover_failure_exits_1_with_one_stderr_line(cli, env, monkeypatch, ca
      assert capsys.readouterr().err.splitlines() == ['scan failed more details']
- 
- 
+
+
 +def test_discover_user_failure_prints_title_and_detail(cli, env, monkeypatch, capsys):
 +    from omafindd import discovery, errors
 +
@@ -1472,8 +1472,8 @@ index 8f561d1..553458a 100644
 +++ b/helper/omafindd/errors.py
 @@ -171,6 +171,12 @@ def disk_low() -> UserError:
      )
- 
- 
+
+
 +def index_running() -> UserError:
 +    return UserError(
 +        "index-running", "Indexing is running.", "Showing keyword matches until it finishes."
@@ -1493,8 +1493,8 @@ index fb54f35..de62610 100644
 --- a/helper/omafindd/embedder.py
 +++ b/helper/omafindd/embedder.py
 @@ -39,7 +39,11 @@ def loopback_url(url):
- 
- 
+
+
  class EmbeddingError(Exception):
 -    pass
 +    user_error = None
@@ -1502,8 +1502,8 @@ index fb54f35..de62610 100644
 +    def __init__(self, *args, user_error=None):
 +        super().__init__(*args)
 +        self.user_error = user_error
- 
- 
+
+
  class EmbeddingRejected(EmbeddingError):
 ```
 
@@ -1519,16 +1519,16 @@ index 7e59ae1..4c90a4d 100644
 @@ -6,7 +6,7 @@ import threading
  import time
  from pathlib import Path
- 
+
 -from . import rules
 +from . import errors, rules
- 
+
  KINDS = ('text', 'pdf', 'image', 'video', 'audio')
  RATES = {
 @@ -110,6 +110,24 @@ def folders(path) -> list[dict]:
      return rows
- 
- 
+
+
 +def _scanned(path) -> list[dict]:
 +    try:
 +        return folders(path)
@@ -1612,12 +1612,12 @@ index cb432e9..6e7f669 100644
 @@ -1,6 +1,8 @@
  import asyncio
  import os
- 
+
 +from . import errors
 +
  NEED_BYTES = 2_000_000_000
- 
- 
+
+
 @@ -23,7 +25,8 @@ class DiskGuard:
              return None
          self.paused = low
@@ -1626,8 +1626,8 @@ index cb432e9..6e7f669 100644
 +            return {'t': 'paused', 'error': errors.disk_low().to_dict(),
 +                    'free_gb': round(free / 1e9, 1), 'need_gb': 2}
          return {'t': 'resumed'}
- 
- 
+
+
 ```
 
 - [ ] **Step 5: `SetupService` takes the code from the cause**
@@ -1642,16 +1642,16 @@ index 7a61bc3..178f858 100644
 @@ -10,7 +10,7 @@ import time
  from contextlib import closing
  from pathlib import Path
- 
+
 -from . import bindings, discovery
 +from . import bindings, discovery, errors
  from .install import RuntimeJob
- 
- 
+
+
 @@ -89,10 +89,6 @@ class SetupService:
          self._final = True
          self._mounts = {}
- 
+
 -    @staticmethod
 -    def _error(kind, code, reason):
 -        return {"t": "error", "for": kind, "code": code, "reason": reason}
@@ -1724,7 +1724,7 @@ index 7a61bc3..178f858 100644
 -            )
 -            return self._error(kind, code, str(error))
 +            return errors.reply(kind, errors.internal(str(error) or type(error).__name__))
- 
+
      def _binds(self):
          try:
 @@ -204,7 +197,10 @@ class SetupService:
@@ -1736,7 +1736,7 @@ index 7a61bc3..178f858 100644
 +                      if isinstance(error, OSError) and error.filename and error.strerror
 +                      else str(error) or type(error).__name__)
 +            raise errors.UserFailure(errors.binds_failed(reason)) from error
- 
+
      def _track(self, coroutine):
          task = asyncio.create_task(coroutine)
 @@ -245,7 +241,7 @@ class SetupService:
@@ -1747,7 +1747,7 @@ index 7a61bc3..178f858 100644
 +                walk.error = errors.scan_failed(root, str(error) or type(error).__name__).to_dict()
                  emit({"root": root, "counts": {}, "done": True, "seconds": None,
                        "error": walk.error})
- 
+
 @@ -266,7 +262,7 @@ class SetupService:
              if worker is not None:
                  await asyncio.gather(worker, return_exceptions=True)
@@ -1784,7 +1784,7 @@ index 7a61bc3..178f858 100644
 -                        )
 +                        errors.reply("index_start", errors.index_exited(body["exit"], log))
                      )
- 
+
                  if self._deferred:
 ```
 
@@ -1798,9 +1798,9 @@ index 1195ae9..c59d767 100644
 --- a/helper/omafindd/search.py
 +++ b/helper/omafindd/search.py
 @@ -7,6 +7,7 @@ from pathlib import Path
- 
+
  import numpy as np
- 
+
 +from . import errors
  from .embedder import EmbeddingError
  from .embedding import Embedder, validated
@@ -1820,7 +1820,7 @@ index 1195ae9..c59d767 100644
 +            failure = getattr(error, "user_error", None) or errors.embedding_unavailable(
 +                str(error) or type(error).__name__)
 +            return None, failure.to_dict(), (time.monotonic() - begun) * 1000
- 
+
      async def search(self, q: str, *, legs=("words", "meaning"), limit=40, seq=1,
                       kinds=None) -> dict:
 ```
@@ -1835,15 +1835,15 @@ index 6384f4f..bab5234 100644
 @@ -4,6 +4,7 @@ import os
  import sqlite3
  from pathlib import Path
- 
+
 +from . import errors
  from .code import configured_roots
- 
- 
+
+
 @@ -17,6 +18,11 @@ def volume_for(path, **kwargs):
      return resolve(path, **kwargs)
- 
- 
+
+
 +def _unavailable(error) -> errors.UserError:
 +    return getattr(error, "user_error", None) or errors.embedding_unavailable(
 +        str(error) or "the embedding server did not start")
@@ -1879,7 +1879,7 @@ index 6384f4f..bab5234 100644
              self._arm_idle()
 @@ -216,18 +223,19 @@ class SearchService:
          from .embedder import EmbeddingError
- 
+
          if self._warm_task is not None and self._warm_task.done():
 -            if reason := self._warm_task.result():
 +            if failure := self._warm_task.result():
@@ -1899,7 +1899,7 @@ index 6384f4f..bab5234 100644
 +                                 user_error=errors.server_starting())
 +        if failure := task.result():
 +            raise EmbeddingError(failure.title, user_error=failure)
- 
+
      async def _stop_locked(self):
          stopping = asyncio.create_task(self.embedder.stop())
 @@ -320,16 +328,13 @@ class SearchService:
@@ -1969,7 +1969,7 @@ index 6384f4f..bab5234 100644
 +        except FileNotFoundError:
 +            return {"t": "error", "seq": seq, **errors.no_index().to_dict()}
          return reply
- 
+
      async def stop(self):
 ```
 
@@ -1985,16 +1985,16 @@ index b9d3dbb..d1825ce 100644
 @@ -11,7 +11,7 @@ from contextlib import closing
  from pathlib import Path
  from threading import Lock
- 
+
 -from . import opener
 +from . import errors, opener
  from .state import State
- 
+
  PROTOCOL_VERSION = 1
 @@ -28,6 +28,16 @@ class AlreadyRunning(Exception):
      pass
- 
- 
+
+
 +def _failure(error) -> errors.UserError:
 +    if isinstance(error, errors.UserFailure):
 +        return error.error
@@ -2037,7 +2037,7 @@ index b9d3dbb..d1825ce 100644
          if reply["t"] == "results":
 @@ -233,11 +243,11 @@ class IpcServer:
              from . import preview
- 
+
              if item is None or (not item.get("offline") and not Path(item["path"]).is_file()):
 -                return {"t": "error", "id": item_id, "code": "missing", "reason": "File is missing"}
 +                return {"t": "error", "id": item_id, **errors.file_missing(_name(item)).to_dict()}
@@ -2099,7 +2099,7 @@ index b9d3dbb..d1825ce 100644
 +            return {"t": "open_failed", "id": item_id,
 +                    "error": errors.open_failed(_name(item), reason).to_dict()}
          return {"t": "opened", "id": item_id, **opener.description(target, how=how)}
- 
+
      def status_message(self):
 ```
 
@@ -2115,11 +2115,11 @@ index 5a71a02..fb06372 100644
 @@ -8,7 +8,7 @@ import time
  from collections import deque
  from pathlib import Path
- 
+
 -from . import models
 +from . import errors, models
- 
- 
+
+
  class Paused(Exception):
 @@ -57,7 +57,7 @@ class RuntimeJob:
              "total": round(sum(f.size for f in models.FILES) / 1e6),
@@ -2174,7 +2174,7 @@ index 5a71a02..fb06372 100644
 +            raise errors.UserFailure(errors.build_failed(last))
          self._message["build"].update(state="ok", seconds=round(self.clock() - started))
          await self._push(changed=True)
- 
+
 @@ -262,15 +257,24 @@ class RuntimeJob:
                  raise Paused
              self._message.update(step="download", file=None)
@@ -2218,7 +2218,7 @@ index 5a71a02..fb06372 100644
 +            failure = errors.internal(str(error) or type(error).__name__)
 +            self._message.update(state="failed", error=failure.to_dict(), left_seconds=None)
          await self._push(changed=True)
- 
+
      def _terminate(self):
 ```
 
@@ -2245,7 +2245,7 @@ index 0677dad..acb3e4b 100755
                                    "discover", *args], env)
      from omafindd.discovery import snapshot
 +    from omafindd.errors import UserFailure
- 
+
      try:
          body = snapshot(home=Path(env["HOME"]), volume=parsed.volume)
 +    except UserFailure as failure:
@@ -2361,14 +2361,14 @@ index 82016e9..7ee15d5 100644
 @@ -1,5 +1,8 @@
 +import shutil
  import subprocess
- 
+
 +import pytest
 +
  pytest_plugins = ("test_cli",)
- 
- 
+
+
 @@ -45,3 +48,126 @@ def test_status_json_reports_tools(cli, env, venv, capsys):
- 
+
      assert cli.main(["status", "--json"], env, run=FakeRun(), probe=lambda *args: True) == 0
      assert json.loads(capsys.readouterr().out)["tools"] == {"missing": []}
 +
@@ -2504,7 +2504,7 @@ index 67224fa..fe6ba9d 100644
 --- a/tests/helper/test_cli.py
 +++ b/tests/helper/test_cli.py
 @@ -25,6 +25,10 @@ def cli():
- 
+
  @pytest.fixture
  def env(tmp_path, monkeypatch):
 +    from omafindd import tools
@@ -2516,8 +2516,8 @@ index 67224fa..fe6ba9d 100644
      for key, value in values.items():
 @@ -296,6 +300,51 @@ def test_setup_socket_timeout_reports_journal(cli, env, capsys):
      assert "socket silent" in capsys.readouterr().err
- 
- 
+
+
 +def test_setup_json_ends_with_ok(cli, env, capsys):
 +    assert cli.main(["setup", "--json"], env, run=FakeRun(active="inactive"),
 +                    probe=lambda path, timeout: True) == 0
@@ -2582,25 +2582,25 @@ index 5a6e9b0..fbcb99c 100644
  import os
 +from pathlib import Path
  from types import SimpleNamespace
- 
+
  import pytest
  from omafindd import errors, models
  from omafindd.install import RuntimeJob, gpu_name
- 
+
 +BUILD_LOGS = Path(__file__).resolve().parents[1] / "fixtures/build"
 +
- 
+
  class Process:
      def __init__(self, code=0, stderr=b"", waiting=False):
 @@ -44,7 +47,8 @@ def job_factory(tmp_path, monkeypatch):
      monkeypatch.setattr("omafindd.install.shutil.which", lambda name: "/usr/bin/" + name)
      jobs = []
- 
+
 -    def make(*, process=None, valid=None, download=None, clock=lambda: 10.0):
 +    def make(*, process=None, valid=None, download=None, clock=lambda: 10.0,
 +             missing_build=lambda: []):
          messages, calls = [], []
- 
+
          async def broadcast(message):
 @@ -68,6 +72,7 @@ def job_factory(tmp_path, monkeypatch):
              valid=valid or (lambda directory: {f.name: True for f in models.FILES}),
@@ -2612,8 +2612,8 @@ index 5a6e9b0..fbcb99c 100644
          return job, messages, calls
 @@ -150,13 +155,79 @@ async def test_pause_during_download_stops_at_next_chunk_and_resume_continues(jo
      assert job.snapshot()["state"] == "done"
- 
- 
+
+
 -async def test_build_failure_reports_last_stderr_line(job_factory):
 -    job, _, _ = job_factory(process=Process(1, b"first\nlast error\n"))
 +async def test_silent_build_failure_reports_its_exit_code_and_log(job_factory, tmp_path):
@@ -2691,8 +2691,8 @@ index 5a6e9b0..fbcb99c 100644
 +    assert result["error"]["code"] == "build-missing-packages"
 +    assert result["error"]["fix"] == {"kind": "install", "packages": ["vulkan-headers"]}
 +    assert result["error"]["log"] == str(log)
- 
- 
+
+
  async def test_digest_mismatch_fails_with_model_verify_failed(job_factory):
 ```
 
@@ -2715,8 +2715,8 @@ index 0497d70..0e4a263 100644
 +    assert log.read_text().endswith(
 +        " omafindd cannot import inotify_simple. Run bin/omafind setup.\n")
 +    assert log.stat().st_mode & 0o777 == 0o600
- 
- 
+
+
  def test_fingerprint_rejects_manifest_without_version(plugin):
 @@ -96,3 +100,61 @@ async def test_daemon_reports_empty_build_when_fingerprint_fails(tmp_path, monke
          await main._serve(manifest)
@@ -2806,8 +2806,8 @@ index a284840..0684a9b 100644
 +++ b/helper/omafindd/paths.py
 @@ -34,6 +34,14 @@ def data_dir() -> Path:
      return path
- 
- 
+
+
 +def logs_dir(data: Path | None = None) -> Path:
 +    """`<data>/cache/logs`, created 0700 on demand. `data` defaults to the user's data directory."""
 +    cache = (data_dir() if data is None else data) / "cache"
@@ -2818,7 +2818,7 @@ index a284840..0684a9b 100644
 +
  def runtime_bin() -> Path:
      return data_dir_path() / "runtime/bin/llama-server"
- 
+
 ```
 
 `permissions.check` expects every directory under the data directory to be 0700. `build-runtime.sh` creates `cache` with `mkdir -p` (0755), and `fix_dirs` corrects it at the next daemon start, as it already does today.
@@ -2838,7 +2838,7 @@ index 4212ae6..1313023 100644
 @@ -16,16 +17,35 @@ TOOLS = {
      "tesseract": "tesseract",
  }
- 
+
 +# cmake, ninja and spirv-headers stay out: scripts/build-runtime.sh falls back to private copies.
 +BUILD_NEEDS = [
 +    ("header", "/usr/include/vulkan/vulkan_core.h", "vulkan-headers"),
@@ -2848,11 +2848,11 @@ index 4212ae6..1313023 100644
 +    ("command", "uv", "uv"),
 +]
 +
- 
+
  def missing_tools(which=shutil.which) -> list[str]:
      return list(dict.fromkeys(package for tool, package in TOOLS.items() if not which(tool)))
- 
- 
+
+
 -def check(*, which=shutil.which, run=subprocess.run) -> list[str]:
 +def missing_build(*, which=shutil.which, exists=os.path.exists) -> list[str]:
 +    found = {"header": exists, "command": which}
@@ -2886,11 +2886,11 @@ index fb06372..b5235b8 100644
 @@ -8,7 +8,7 @@ import time
  from collections import deque
  from pathlib import Path
- 
+
 -from . import errors, models
 +from . import errors, models, paths, tools
- 
- 
+
+
  class Paused(Exception):
 @@ -44,8 +44,10 @@ class RuntimeJob:
          valid=models.verify,
@@ -2965,7 +2965,7 @@ index fb06372..b5235b8 100644
 +            raise errors.UserFailure(await asyncio.to_thread(errors.build_failure, log, code))
          self._message["build"].update(state="ok", seconds=round(self.clock() - started))
          await self._push(changed=True)
- 
+
 ```
 
 The child keeps its own copy of the descriptor, so closing it right after the spawn is safe, and the parent holds no file open for the whole build. `deque` is still used by `self._samples`, so its import stays.
@@ -3015,7 +3015,7 @@ index da2195a..f05692f 100644
 +import traceback
 +
 +from . import startlog
- 
+
  try:
      from .main import run
 @@ -8,6 +11,11 @@ except ModuleNotFoundError as error:
@@ -3043,7 +3043,7 @@ index 5433ef7..4931b4e 100644
 @@ -9,7 +9,7 @@ import time
  from contextlib import closing
  from pathlib import Path
- 
+
 -from . import build, health, paths, permissions, recovery
 +from . import build, health, paths, permissions, recovery, startlog
  from .diskguard import DiskGuard
@@ -3077,8 +3077,8 @@ index acb3e4b..8ee8837 100755
 --- a/bin/omafind
 +++ b/bin/omafind
 @@ -166,29 +166,37 @@ def _print_presence(details):
- 
- 
+
+
  def _command(command, env, run):
 +    """Run one setup step. Returns its failure output, or None when it succeeded."""
      result = run(command, env=env, capture_output=True, text=True)
@@ -3089,15 +3089,15 @@ index acb3e4b..8ee8837 100755
 +        print(reason, file=sys.stderr)
 +        return reason
 +    return None
- 
- 
+
+
 -def setup(env, run=subprocess.run, probe=read_hello, clock=time.monotonic, sleep=time.sleep,
 -          which=shutil.which):
 -    from omafindd.tools import check
 +def _setup(env, run, probe, clock, sleep, which):
 +    """Returns (error, build packages still missing). Only runtime tools stop setup."""
 +    from omafindd import errors, tools
- 
+
 -    missing = check(which=which, run=run)
 +    missing = tools.check(which=which, run=run)
      if missing:
@@ -3180,11 +3180,11 @@ index acb3e4b..8ee8837 100755
 +                else {"ok": False, "error": failure.to_dict()})
 +        print(json.dumps(body, separators=(",", ":")))
 +    return 0 if failure is None else 1
- 
- 
+
+
  def status(env, run=subprocess.run, probe=read_hello, as_json=False):
      from omafindd.tools import check
- 
+
 -    missing = check(run=run)
 +    presence = _presence(env)
 +    missing = check(run=run, build=not presence["runtime"]["present"])
@@ -3201,8 +3201,8 @@ index acb3e4b..8ee8837 100755
      details["model"]["verified"] = index.pop("verified")
      details.update(index)
 @@ -275,6 +304,11 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
- 
- 
+
+
  def build_runtime(env, run=subprocess.run, execve=os.execve):
 +    from omafindd import tools
 +
@@ -4892,7 +4892,7 @@ The vm harnesses that evaluate `Service.qml` now need `Errors`, and the fakes sw
 -  assert.match(ctx.bindsError, /not running/);
 +  assert.match(ctx.bindsError.title, /not running/);
  });
- 
+
 @@ -82,5 +87,5 @@ function index(values = {}) {
    const { ctx, source } = functions('ui/SetupIndex.qml', {
      chosen: 'F9', saving: false, Keycombo: load('keycombo.js'),
@@ -5003,7 +5003,7 @@ function offline(logPath) {
  var DATASET_KINDS = {image: "images", video: "videos", audio: "audio"}
 +// The step 1 hint's build estimate, from the board's "Built in 3 min 12 s".
 +var BUILD_MINUTES = 3
- 
+
  function count(n) {
 @@ -66,5 +68,5 @@ function stepLabel(current) {
  function engineButton(rp, helperReady) {
@@ -5014,7 +5014,7 @@ function offline(logPath) {
  }
 @@ -77,11 +79,17 @@ function helperTask(connection) {
  }
- 
+
 +// A run that failed before the server was built; the model was never asked for.
 +function buildFailed(rp) {
 +  return !!rp && rp.state === "failed" && !(rp.build && rp.build.state === "ok")
@@ -5053,7 +5053,7 @@ function offline(logPath) {
      tokens: [token("repo", "ggml-org/embeddinggemma-2-GGUF"), token("quant", "Q8_0"), token("license", "Apache 2.0"), token("verify", "sha256")], got: got}
  }
 @@ -108,4 +118,5 @@ function fraction(done, total) {
- 
+
  function fileLines(rp) {
 +  var waiting = rp && (rp.state === "running" || rp.state === "paused") ? "queued" : "not downloaded"
    return ["model", "mmproj"].filter(function(key) { return rp && rp.files && rp.files[key] }).map(function(key) {
@@ -5067,7 +5067,7 @@ function offline(logPath) {
    })
 @@ -123,7 +134,13 @@ function totalFraction(rp) {
  }
- 
+
 +// Failures show in the error card instead of the hint.
  function engineHint(rp) {
 -  return rp && rp.reason ? rp.reason : engineReady(rp) ? "Everything is installed. Folders are next."
@@ -5080,7 +5080,7 @@ function offline(logPath) {
 +  if (rp && rp.build && rp.build.state === "ok") return "Install downloads " + model + "."
 +  return "Install builds the server (about " + BUILD_MINUTES + " min) and downloads " + model + "."
  }
- 
+
 ```
 
 - [ ] **Step 5: Per-surface errors in `Service.qml`**
@@ -5105,7 +5105,7 @@ index 409ec77..c3b8238 100644
 -  property string warmFailure: ""
 +  // Each surface's latest failure: an error object (docs/ipc.md "Errors") or null.
 +  property var searchError: null
- 
+
    // Setup (issue #5). The shell entry, parsed from shell.json, and the latest daemon facts.
    property var settingsEntry: ({})
    readonly property var settings: Settings.normalize(settingsEntry)
@@ -5134,7 +5134,7 @@ index 409ec77..c3b8238 100644
 -  property string updateLine: ""
    property bool runtimeAsked: false
    property string indexVolume: ""
- 
+
 @@ -69,7 +71,7 @@ Item {
    property real clock: Date.now()
    property var driveDiscover: null
@@ -5157,13 +5157,13 @@ index 409ec77..c3b8238 100644
 +  signal setupFailed(string forType, var error)
    // A reconciled drive changed what a search can find.
    signal volumesRefreshed()
- 
+
    function warm() {
 -    warmFailure = ""
 +    searchError = null
      return send({t: "warm"})
    }
- 
+
 @@ -116,13 +118,16 @@ Item {
    // off-thread write to land in shell.json (or 2 s, whichever comes first). A drive passes its
    // volume UUID and saves only the roots, so setup state stays as it was.
@@ -5186,7 +5186,7 @@ index 409ec77..c3b8238 100644
      indexVolume = volume || ""
 @@ -140,7 +145,7 @@ Item {
    }
- 
+
    function scanDrive(uuid) {
 -    driveError = ""
 +    driveError = null
@@ -5201,7 +5201,7 @@ index 409ec77..c3b8238 100644
      helperRunning = true
      helperSetup.running = true
    }
- 
+
 -  function runtimeInstall() { return send({t: "runtime_install"}) }
 +  function runtimeInstall() {
 +    engineError = null
@@ -5211,7 +5211,7 @@ index 409ec77..c3b8238 100644
    function requestRuntimeStatus() { return send({t: "runtime_status"}) }
    function requestProgress() { return send({t: "index_progress"}) }
 +  function retryFailed(code) { return send({t: "retry_failed", code: code}) }
- 
+
    function scan() {
 -    discoverError = ""
 +    folderError = null
@@ -5227,7 +5227,7 @@ index 409ec77..c3b8238 100644
      helperRunning = true
      helperSetup.running = true
    }
- 
+
    function getBinds() {
      bindsReady = false
 -    bindsError = ""
@@ -5235,7 +5235,7 @@ index 409ec77..c3b8238 100644
 +    bindsError = null
 +    if (!send({t: "binds_get"})) bindsError = Errors.offline()
    }
- 
+
    function saveShortcut(chord, menuRow, done) {
 @@ -329,6 +337,7 @@ Item {
        receiveState(message)
@@ -5293,7 +5293,7 @@ index 409ec77..c3b8238 100644
        nextChildren[message.path].dirs.forEach(dir => { if (dir.counts && !childCounts[dir.path]) childCounts[dir.path] = dir.counts })
 @@ -438,22 +448,62 @@ Item {
    }
- 
+
    function receiveSetupError(message) {
 -    var reason = typeof message.reason === "string" ? message.reason : ""
 -    // Errors carry no volume, so a failed discover_start is the drive scan's while one runs.
@@ -5366,7 +5366,7 @@ index 409ec77..c3b8238 100644
 +    var lines = String(text || "").split("\n").map(line => line.trim()).filter(line => line !== "")
 +    return lines.length ? lines[lines.length - 1] : ""
    }
- 
+
    // Clears counts, datasets and walks under `walkRoot`. Cached children stay: they hold the folder
 @@ -489,7 +539,8 @@ Item {
      discoverCounts = counts
@@ -5388,7 +5388,7 @@ index 409ec77..c3b8238 100644
      if (ready && !runtimeProgress && !runtimeAsked) runtimeAsked = requestRuntimeStatus()
    }
 @@ -561,23 +612,18 @@ Item {
- 
+
    Process {
      id: helperSetup
 -    command: [root.pluginDir + "/bin/omafind", "setup"]
@@ -5702,16 +5702,16 @@ index 77fd9cd..db0f97a 100644
 +  readonly property string indexFailure: step === 3 && service ? Setup.indexFailure(service.progress,
 +    service.indexError ? (service.indexError.title + " " + service.indexError.detail).trim() : "") : ""
    readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
- 
- 
+
+
 @@ -64,7 +66,7 @@ FocusScope {
- 
+
    function ensureScan(force) {
      if (!service || service.scanning) return
 -    if (force || !service.discover || service.discoverError !== "" || walkError !== "") service.scan()
 +    if (force || !service.discover || !!service.folderError || walkError !== "") service.scan()
    }
- 
+
    function showFolders() {
 @@ -118,7 +120,8 @@ FocusScope {
            stepText: Setup.stepLabel(root.step)
@@ -5735,13 +5735,13 @@ index cdb4e6d..33fd3f1 100644
 +  readonly property string hint: Setup.engineHint(rp)
 +  // SetupView grows the panel by this much while the error card shows.
 +  readonly property real extraHeight: errorCard.visible ? errorCard.height + column.spacing : 0
- 
+
    function focusFirst() {
      // With no ready control the scope takes focus, so no ring shows until Tab.
 @@ -29,6 +33,16 @@ FocusScope {
      else root.forceActiveFocus()
    }
- 
+
 +  // The footer button and the card's Retry run the same step. Before the helper runs, the card
 +  // retries the helper install.
 +  function runEngine() {
@@ -5767,7 +5767,7 @@ index cdb4e6d..33fd3f1 100644
 @@ -134,6 +148,15 @@ FocusScope {
        }
      }
- 
+
 +    ErrorCard {
 +      id: errorCard
 +      objectName: "omafindEngineError"
@@ -5778,7 +5778,7 @@ index cdb4e6d..33fd3f1 100644
 +    }
 +
      Rectangle { width: parent.width; height: 1; color: Plugin.Tokens.sep }
- 
+
      SetupFacts {
 @@ -157,10 +180,13 @@ FocusScope {
        anchors.right: buttons.left
@@ -5807,7 +5807,7 @@ index cdb4e6d..33fd3f1 100644
 -        }
 +        onClicked: root.runEngine()
        }
- 
+
        ActionButton {
 ```
 
@@ -5821,7 +5821,7 @@ These are one-expression adapters (title and detail joined as text, or `.title` 
 --- a/ui/SetupFolders.qml
 +++ b/ui/SetupFolders.qml
 @@ -198,8 +198,9 @@ FocusScope {
- 
+
      Label {
 -      visible: !!root.service && root.service.setupError !== ""
 +      visible: !!root.service && !!root.service.indexError
@@ -5856,7 +5856,7 @@ These are one-expression adapters (title and detail joined as text, or `.title` 
 -  readonly property string errorText: service ? service.setupError || service.driveError || (walk ? walk.error : "") : ""
 +  readonly property var failure: service ? service.driveError || service.indexError : null
 +  readonly property string errorText: failure ? (failure.title + " " + failure.detail).trim() : walk ? walk.error : ""
- 
+
    readonly property real panelWidth: Style.space(1120)
 --- a/ui/PathField.qml
 +++ b/ui/PathField.qml
@@ -5864,14 +5864,14 @@ These are one-expression adapters (title and detail joined as text, or `.title` 
  import qs.Commons
  import ".." as Plugin
 +import "../lib/errors.js" as Errors
- 
+
  // The "Add folder" picker inside the overlay (plan D11): a path field completed from `fs_list`.
 @@ -28,5 +29,5 @@ Item {
      return listing.dirs.filter(name => name.toLowerCase().indexOf(low) === 0).slice(0, 6)
    }
 -  readonly property string error: listing && listing.path === parentPath && listing.error ? listing.error : ""
 +  readonly property string error: listing && listing.path === parentPath && listing.error ? Errors.wrap(listing.error).title : ""
- 
+
    function focusField() {
 --- a/SearchView.qml
 +++ b/SearchView.qml
@@ -5890,7 +5890,7 @@ These are one-expression adapters (title and detail joined as text, or `.title` 
 +  // Service.qml turns `degraded` and a failed warm-up into error objects.
 +  readonly property var degradedError: reply && reply.degraded ? reply.degraded
 +    : service && service.searchError ? service.searchError : null
- 
+
    signal closeRequested()
 @@ -433,14 +427,15 @@ Item {
      anchors.left: parent.left
@@ -6272,7 +6272,7 @@ index 5e3b16f..232866a 100644
  import vm from 'node:vm';
  import { load } from './load.mjs';
 +import { plain } from './fixtures.mjs';
- 
+
  function view(values = {}) {
    const context = vm.createContext({
 @@ -87,3 +88,39 @@ test('an early timer tick re-arms the timer for the remaining time', () => {
@@ -6332,7 +6332,7 @@ index 546e53d..a84b96f 100644
 +    title: 'The embedding server is starting.', detail: 'Showing keyword matches until it is ready.' } },
 +  phase: 'degraded' }), '2 results · keyword matches only');
  });
- 
+
  test('idle footer uses offline labels and only shows incomplete indexing progress', () => {
 @@ -146,3 +149,24 @@ test('a code search before the first code index says the index is pending', () =
      reply: { total: 0, items: [], notice: 'code-index-pending' } }),
@@ -6371,7 +6371,7 @@ index 5fe2ae8..cc8a781 100644
 @@ -119,12 +119,18 @@ test('a ready or unknown venv, or no local build, runs nothing', () => {
    assert.deepEqual(run([{ type: 'venv', state: 'stale' }]).effects, []);
  });
- 
+
 -test('the banner names the update phase', () => {
 +test('the banner is an error object for each update phase', () => {
    const { banner } = load('Update.js');
@@ -6402,7 +6402,7 @@ index c27ec14..d24a699 100644
 --- a/tests/js/volumes.test.mjs
 +++ b/tests/js/volumes.test.mjs
 @@ -148,13 +148,14 @@ test('settings replace ignored UUIDs and suppress pending prompts for those driv
- 
+
  test('paused shows the disk banner and resumed clears it', () => {
    const v = volumes();
 +  const diskLow = {code: 'disk-low', title: 'Indexing is paused.',
@@ -6433,7 +6433,7 @@ index f8c7ede..c62c763 100644
 @@ -98,11 +98,12 @@ test('estimates and problem facts tolerate data that has not arrived', () => {
    assert.deepEqual(plain(s.problemFacts(null)), []);
  });
- 
+
 -test('index failure prefers the daemon sentence, then a failed exit code',()=>{
 -  assert.equal(s.indexFailure({running:false,exit:2},'Indexing stopped. See ~/.local/state/omafind/index.log.'),'Indexing stopped. See ~/.local/state/omafind/index.log.');
 -  assert.equal(s.indexFailure({running:false,exit:2},''),'exit 2');
@@ -6446,7 +6446,7 @@ index f8c7ede..c62c763 100644
 +  assert.deepEqual(values(s.indexHead({...stopped, exit: 2, running: true}, discover.rates).side), []);
 +  assert.equal(s.indexFailure, undefined);
  });
- 
+
  test('step 3 title follows the run outcome', () => {
 @@ -110,7 +111,7 @@ test('step 3 title follows the run outcome', () => {
    assert.equal(s.indexTitle({...progress, running: true}, ''), 'Indexing your files');
@@ -6455,12 +6455,12 @@ index f8c7ede..c62c763 100644
 -  assert.equal(s.indexTitle({...progress, running: true}, 'No folders are selected.'), 'Indexing stopped');
 +  assert.equal(s.indexTitle({...progress, running: true}, {code: 'no-roots', title: 'No folders are selected.', detail: 'Pick at least one folder to index.'}), 'Indexing stopped');
  });
- 
- 
+
+
 @@ -149,11 +150,15 @@ test('failed walks show no scan time', () => {
      [['folders', '12']]);
  });
- 
+
 -test('folder errors trim tool prefixes and trailing punctuation and give a next step', () => {
 -  assert.equal(s.folderError('fd failed: Permission denied.\n'),
 -    'Could not list your folders: Permission denied. Press Back and try again.');
@@ -6476,7 +6476,7 @@ index f8c7ede..c62c763 100644
 +  assert.deepEqual(values(s.problemTokens({path: '/home/u/b.pdf', reason: 'timeout'}, '/home/u')),
 +    [['timeout', ''], ['path', '~/b.pdf']]);
  });
- 
+
  const idle = freeze({ ...plain(runtime), state: 'idle', step: null, file: null, done: 0, left_seconds: null,
 ```
 
@@ -6566,7 +6566,7 @@ index 21a93a2..c838831 100644
 +    failure: { code: 'unknown', title: 'fd failed', detail: '' } });
    assert.equal(ctx.datasets['/h/a/data'].kind, 'image');
  });
- 
+
 ```
 
 ```diff
@@ -6655,11 +6655,11 @@ index 808556a..2f3be9d 100644
  .pragma library
  .import "format.js" as Format
 +.import "errors.js" as Errors
- 
+
  // QML supplies import namespaces; the Node loader shares one global context.
  var F = typeof Format !== "undefined" ? Format : this
 +var E = typeof Errors !== "undefined" ? Errors : this
- 
+
  function sectionTitle(kind) {
    return {image: "Images", video: "Video", audio: "Audio", pdf: "PDFs", text: "Documents", code: "Code"}[kind]
 @@ -130,3 +132,18 @@ function footerIdle(status) {
@@ -6693,7 +6693,7 @@ index 8c5cf83..1c72ce0 100644
 @@ -49,13 +49,14 @@ function reduce(state, event) {
    return {state: next, effects: effects}
  }
- 
+
 -// The search banner for an update, or null when there is none.
 +// The search banner for an update as an error object, or null. No daemon is there to write the
 +// copy while omafindd restarts, so the codes are the plugin's own.
@@ -6729,7 +6729,7 @@ index 8d3d36a..2149271 100644
 @@ -91,11 +91,11 @@ function footer(state, now) {
      fraction: rec.done_at !== null ? 1 : rec.total ? rec.done / rec.total : 0}
  }
- 
+
 +// The daemon's disk-low error, with the free and needed space as fact tokens.
  function diskBanner(state) {
    if (!state.disk) return null
@@ -6739,7 +6739,7 @@ index 8d3d36a..2149271 100644
 +  return {error: state.disk.error,
 +    tokens: [{k: "free", v: state.disk.free_gb + " GB"}, {k: "needed", v: state.disk.need_gb + " GB"}]}
  }
- 
+
  function indexedToken(files) {
 ```
 
@@ -6757,7 +6757,7 @@ index b140f11..a9e28b2 100644
 +  if (!p.running && p.exit != null && p.exit !== 0) side.push(token("exit", p.exit, "warn"))
    return {count: count(p.done), facts: facts, side: side, spinning: !!p.running, fraction: fraction(p.done, total)}
  }
- 
+
 -// Step 3 failure line: the daemon's error sentence, else `exit N` from a finished run that failed.
 -// "" while the run is fine.
 -function indexFailure(progress, error) {
@@ -6772,7 +6772,7 @@ index b140f11..a9e28b2 100644
 @@ -236,9 +229,10 @@ function walkError(walks) {
    return ""
  }
- 
+
 -function folderError(error) {
 -  var reason = String(error).trim().replace(/^fd failed:\s*/, "").replace(/[.!?;:]+$/, "")
 -  return "Could not list your folders: " + reason + ". Press Back and try again."
@@ -6781,7 +6781,7 @@ index b140f11..a9e28b2 100644
 +  return [token(problem.code || problem.reason || "failed", problem.detail || ""),
 +    token("path", displayPath(problem.path, home))]
  }
- 
+
  function datasetFacts(evidence) {
 ```
 
@@ -6821,7 +6821,7 @@ index 8e82224..aa61424 100644
  import "lib/Update.js" as Update
  import "lib/volumes.js" as Volumes
 +import "lib/errors.js" as Errors
- 
+
  // The search overlay body: query row, banner, result list, preview and footer.
  Item {
 @@ -45,14 +46,40 @@ Item {
@@ -6861,13 +6861,13 @@ index 8e82224..aa61424 100644
 +    if (message.for !== undefined || !selectedItem || message.id !== selectedItem.id) return
 +    preview = {id: message.id, error: Errors.from(message)}
 +  }
- 
+
    signal closeRequested()
    signal toastRequested(string title, var tokens, bool error)
 -  signal openStarted(var item, string how)
 +  // `message` is the open request, kept so the failure toast can send it again.
 +  signal openStarted(var item, string how, var message)
- 
+
    function reset() {
      previewTimer.stop()
 @@ -256,7 +283,7 @@ Item {
@@ -6877,14 +6877,14 @@ index 8e82224..aa61424 100644
 -    openStarted(item, how)
 +    openStarted(item, how, message)
    }
- 
+
    function toggleProgress() {
 @@ -340,6 +367,7 @@ Item {
      if (previewKey) previewTimer.restart()
      else previewTimer.stop()
    }
 +  onDaemonDownChanged: if (daemonDown) startLog.reload()
- 
+
    Connections {
      target: root.service
 @@ -351,6 +379,7 @@ Item {
@@ -6898,7 +6898,7 @@ index 8e82224..aa61424 100644
 @@ -376,6 +405,16 @@ Item {
      }
    }
- 
+
 +  // The daemon's startup log. The offline card links it once it exists.
 +  FileView {
 +    id: startLog
@@ -6915,7 +6915,7 @@ index 8e82224..aa61424 100644
 @@ -421,51 +460,32 @@ Item {
      onKeyPressed: event => root.handleKey(event)
    }
- 
+
 -  Parts.Banner {
 +  Parts.ErrorCard {
      id: banner
@@ -6954,7 +6954,7 @@ index 8e82224..aa61424 100644
 +    retryHere: true
 +    onRetry: root.retryBanner()
    }
- 
+
    // Spec 6.5: indexing waits for disk space. The banner has no action; it clears on `resumed`.
    Parts.Banner {
      id: diskBanner
@@ -6972,7 +6972,7 @@ index 8e82224..aa61424 100644
 +    text: info && info.error ? info.error.detail : ""
      action: ""
    }
- 
+
 ```
 
 - [ ] **Step 7: Preview pane card in `ui/PreviewLayer.qml`**
@@ -6992,7 +6992,7 @@ index ab2e6d3..e99f096 100644
    property bool fullFailed: false
    onPreviewChanged: fullFailed = false
 @@ -68,6 +70,7 @@ Item {
- 
+
    Item {
      id: media
 +    visible: !root.failure
@@ -7002,7 +7002,7 @@ index ab2e6d3..e99f096 100644
 @@ -544,6 +547,15 @@ Item {
      }
    }
- 
+
 +  ErrorCard {
 +    objectName: "omafindPreviewError"
 +    anchors.centerIn: media
@@ -7036,7 +7036,7 @@ index 37436d7..4f01544 100644
 +  readonly property bool sticky: !!failure && !!failure.fix
 +
 +  signal retryRequested()
- 
+
    function show(nextTitle, nextTokens, isError) {
 +    failure = null
      title = nextTitle
@@ -7045,7 +7045,7 @@ index 37436d7..4f01544 100644
 @@ -24,6 +31,24 @@ PanelWindow {
      hold.restart()
    }
- 
+
 +  function showError(next) {
 +    if (!next) return
 +    failure = next
@@ -7075,20 +7075,20 @@ index 37436d7..4f01544 100644
 -  mask: Region {}
 +  // Clicks pass through to the windows below, except on a toast that waits for its fix.
 +  mask: Region { item: root.sticky ? card : null }
- 
+
    Timer {
      id: hold
 @@ -87,6 +112,7 @@ PanelWindow {
        spacing: Style.space(10)
- 
+
        Row {
 +        visible: !root.failure
          spacing: Style.space(8)
- 
+
          Icon {
 @@ -110,11 +136,30 @@ PanelWindow {
        }
- 
+
        Facts {
 -        visible: root.tokens.length > 0
 +        visible: !root.failure && root.tokens.length > 0
@@ -7130,7 +7130,7 @@ index 5fdaffa..f6f1265 100644
  import "." as Plugin
  import "ui" as Parts
 +import "lib/errors.js" as Errors
- 
+
  // The search overlay. The shell calls only open(payload) and close(), and reads `opened` to toggle.
  Item {
 @@ -207,8 +208,8 @@ Item {
@@ -7146,17 +7146,17 @@ index 5fdaffa..f6f1265 100644
          }
 @@ -271,6 +272,8 @@ Item {
    }
- 
+
    property var pendingOpen: null
 +  // The last open that failed, so the toast's Retry can send it again.
 +  property var failedOpen: null
- 
+
    function announce() {
      var pending = pendingOpen
 @@ -286,13 +289,26 @@ Item {
      pendingOpen = null
    }
- 
+
 -  function failOpen(reason) {
 -    var name = pendingOpen.item.name
 +  function failOpen(error) {
@@ -7181,7 +7181,7 @@ index 5fdaffa..f6f1265 100644
 +    openTimeout.restart()
 +    if (opened) closeTimer.restart()
    }
- 
+
    Connections {
 @@ -304,10 +320,11 @@ Item {
        if (root.pendingOpen.closed) root.announce()
@@ -7196,9 +7196,9 @@ index 5fdaffa..f6f1265 100644
 +        root.failOpen(Errors.from(message))
      }
    }
- 
+
 @@ -328,5 +345,6 @@ Item {
- 
+
    Parts.Toast {
      id: toast
 +    onRetryRequested: root.retryOpen()
@@ -7245,8 +7245,8 @@ index db0f97a..71794a8 100644
 -    service.indexError ? (service.indexError.title + " " + service.indexError.detail).trim() : "") : ""
 +  readonly property var indexFailure: step === 3 && service ? service.indexError : null
    readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
- 
- 
+
+
 @@ -119,12 +118,8 @@ FocusScope {
              : Setup.indexTitle(root.service ? root.service.progress : null, root.indexFailure)
            stepText: Setup.stepLabel(root.step)
@@ -7282,7 +7282,7 @@ index c055c60..31a138f 100644
 @@ -110,6 +112,12 @@ FocusScope {
      if (service) service.requestChildren(absolute)
    }
- 
+
 +  function retry() {
 +    if (!service) return
 +    if (service.folderError) service.scan()
@@ -7293,9 +7293,9 @@ index c055c60..31a138f 100644
      if (!ready) return
      service.startIndexing(roots, choices.code)
 @@ -196,13 +204,13 @@ FocusScope {
- 
+
      Rectangle { width: parent.width; height: 1; color: Plugin.Tokens.sep }
- 
+
 -    Label {
 -      visible: !!root.service && !!root.service.indexError
 +    ErrorCard {
@@ -7310,7 +7310,7 @@ index c055c60..31a138f 100644
 +      retryHere: true
 +      onRetry: root.retry()
      }
- 
+
      Item {
 ```
 
@@ -7327,7 +7327,7 @@ index a810ec5..d6f11c7 100644
  import "../lib/setup.js" as Setup
 +import "../lib/errors.js" as Errors
  import "../lib/keycombo.js" as Keycombo
- 
+
  // Step 3 (board Indexing, M3 step 5): first index progress, skips and the global shortcut.
 @@ -22,8 +23,13 @@ FocusScope {
    readonly property var rates: service && service.discover ? service.discover.rates : null
@@ -7348,7 +7348,7 @@ index a810ec5..d6f11c7 100644
 @@ -58,6 +64,11 @@ FocusScope {
      })
    }
- 
+
 +  // Retry on the index card starts the saved roots again.
 +  function retryIndex() {
 +    if (service) service.startIndexing(service.settings.roots, service.settings.codeRoots)
@@ -7369,7 +7369,7 @@ index a810ec5..d6f11c7 100644
          }
        }
      }
- 
+
 +    Column {
 +      id: cards
 +      visible: !!root.indexError || root.toolErrors.length > 0
@@ -7400,7 +7400,7 @@ index a810ec5..d6f11c7 100644
 +    }
 +
      Rectangle { width: parent.width; height: 1; color: Plugin.Tokens.sep }
- 
+
      Column {
 @@ -212,7 +250,6 @@ FocusScope {
          || (recorder.lost ? "Hyprland left recording mode, so omafind stopped recording. Press Change to try again." : "")
@@ -7413,7 +7413,7 @@ index a810ec5..d6f11c7 100644
 @@ -222,6 +259,16 @@ FocusScope {
        onCaptured: (key, modifiers) => recorder.capture(key, modifiers)
      }
- 
+
 +    ErrorCard {
 +      id: bindsCard
 +      objectName: "omafindBindsError"
@@ -7430,7 +7430,7 @@ index a810ec5..d6f11c7 100644
 @@ -266,15 +313,12 @@ FocusScope {
      width: parent.width
      spacing: Plugin.Tokens.setupGap
- 
+
 -    Label {
 -      visible: root.saveError !== ""
 +    ErrorCard {
@@ -7446,7 +7446,7 @@ index a810ec5..d6f11c7 100644
 +      error: Errors.wrap(root.saveError)
 +      visible: !!error
      }
- 
+
      Rectangle { width: parent.width; height: 1; color: Plugin.Tokens.sep }
 ```
 
@@ -7466,13 +7466,13 @@ index f3bede1..5015146 100644
 -  readonly property var failure: service ? service.driveError || service.indexError : null
 -  readonly property string errorText: failure ? (failure.title + " " + failure.detail).trim() : walk ? walk.error : ""
 +  readonly property var failure: driveFailure()
- 
+
    readonly property real panelWidth: Style.space(1120)
    // The 4 covers the card border on both edges.
 @@ -58,6 +57,18 @@ FocusScope {
      if (service && uuid) service.scanDrive(uuid)
    }
- 
+
 +  // The dialog's one error: its own request's, the drive walk's, then the drive's index run.
 +  function driveFailure() {
 +    if (!service) return null
@@ -7491,7 +7491,7 @@ index f3bede1..5015146 100644
 @@ -231,15 +242,13 @@ FocusScope {
          tokens: [{k: "watch", v: "off · removable", tone: "plain"}, {k: "reconcile", v: "on mount", tone: "plain"}]
        }
- 
+
 -      Label {
 -        visible: root.errorText !== ""
 +      ErrorCard {
@@ -7508,7 +7508,7 @@ index f3bede1..5015146 100644
 +        retryHere: true
 +        onRetry: root.retry()
        }
- 
+
        // `.fx-bot`: the totals and buttons cross-fade to the drive's progress over 180 ms.
 ```
 
@@ -7622,9 +7622,9 @@ index 901c798..216bc61 100644
 --- a/docs/ipc.md
 +++ b/docs/ipc.md
 @@ -27,7 +27,77 @@ The scaffold implements the proposed state shape and push-on-change behavior. `r
- 
+
  `build` is the fingerprint of the plugin code the daemon started from: the manifest version, `+`, then the first 12 hex digits of a sha256 over `helper/uv.lock`, `helper/pyproject.toml` and every `helper/omafindd/**/*.py`. It does not change while the daemon runs. `bin/omafind fingerprint` prints the same value for a plugin checkout.
- 
+
 -`Service.qml` runs `bin/omafind fingerprint` once when the plugin loads. When a `state` carries a different `build`, or none (a daemon older than this field), it runs `bin/omafind setup` once for that plugin build. A daemon that exits on a missing dependency sends no `state`, so after the third failed connect `Service.qml` runs `bin/omafind status --json` and treats a `stale` or `missing` venv the same way. A daemon that cannot fingerprint its own code reports `build:""`. Setup syncs the venv to the lock file and restarts the unit, and the plugin reconnects. While setup runs, the search view shows "Updating omafindd to match the installed plugin. Search returns when it restarts." If setup fails, it shows the last stderr line once, as "omafindd did not update: <line>. Press Retry to run bin/omafind setup again." It runs setup again only on Retry or for a newer plugin build. A `state` with the plugin's build clears the failure.
 +`Service.qml` runs `bin/omafind fingerprint` once when the plugin loads. When a `state` carries a different `build`, or none (a daemon older than this field), it runs `bin/omafind setup` once for that plugin build. A daemon that exits on a missing dependency sends no `state`, so after the third failed connect `Service.qml` runs `bin/omafind status --json` and treats a `stale` or `missing` venv the same way. A daemon that cannot fingerprint its own code reports `build:""`. Setup syncs the venv to the lock file and restarts the unit, and the plugin reconnects. While setup runs, the search view shows an `update-running` card ("omafindd is updating to match the installed plugin."). Setup runs as `bin/omafind setup --json`, whose last stdout line is `{"ok":true}` or `{"ok":false,"error":{...}}` (see Errors). If setup fails, the search view shows that error once, with Retry. It runs setup again only on Retry or for a newer plugin build. A `state` with the plugin's build clears the failure.
 +
@@ -7697,18 +7697,18 @@ index 901c798..216bc61 100644
 +- `unknown`: a daemon older than this section. During an update a new plugin can briefly talk to a daemon that still sends a bare string (`reason`, or a string `degraded` or `error`). The plugin wraps it as `{"code":"unknown","title":"<string>","detail":""}`. The daemon restarts with the plugin update, so this lasts until then.
 +
 +`bin/omafind setup --json` prints `{"ok":true,"build_missing":[...]}` or `{"ok":false,"error":{...}}` as its last stdout line. Setup fails only with `tools-missing` (a runtime tool is missing) or `helper-install-failed` (a setup step failed, or the socket stayed silent). Missing build packages never fail setup: while the runtime binary is missing, `build_missing` lists them and stderr says so, and the engine step reports `build-missing-packages` before it builds.
- 
+
  ## Search and warm-up (issue #2)
- 
+
 @@ -39,15 +109,15 @@ These shapes are proposed. After `hello`, a connection may send:
  ```
- 
+
  `warm` starts the text-mode embedder and replies with the current `state`, or
 -`{"t":"warm_failed","reason":"Vulkan device lost"}`.
 +`{"t":"warm_failed","error":{"code":"server-start-failed","title":"The embedding server did not start.","detail":"It did not answer within 60 s. Showing keyword matches until it starts.","fix":{"kind":"retry"},"log":"/home/u/.local/share/omafind/cache/logs/llama-server.log"}}`.
  After `warmMinutes` without a query the embedder stops. Each query resets this
  timeout. `warmMinutes:0` stops it immediately after the reply.
- 
+
  The CLI holds an exclusive lock on `~/.local/share/omafind/index.lock` during
  reindex. The daemon probes it with a non-blocking shared flock before starting
  a server. While reindex holds the lock, all searches use `legs:["words"]` and
@@ -7736,7 +7736,7 @@ index 901c798..216bc61 100644
 +`warm_failed.error` for `warm` or in `results.degraded` for a query.
  After the `hello` reply, requests on one connection run concurrently. Search
  replies may arrive in any order; clients use `seq` to match them to requests.
- 
+
 @@ -103,18 +174,20 @@ Extracted HTML/docx/odt set `info.extracted:true`. `part` is `text`, `image`
  `speech` (a video soundtrack) or `audio`. `z` is null for words-only
  results. `weak` means score below half the top score. `total` counts qualified
@@ -7749,7 +7749,7 @@ index 901c798..216bc61 100644
  Code turned on, or `notice:"code-index-pending"` when one has but the index is not built yet;
  `degraded` stays null.
  Timing fields are milliseconds.
- 
+
 -Proposed error replies are `{"t":"error","seq":7,"code":"no-index","reason":"No index exists. Run omafind reindex --root PATH."}` or
 -`{"t":"error","seq":7,"code":"bad-request","reason":"Invalid search arguments"}`.
 -An exception while handling a request replies
@@ -7777,14 +7777,14 @@ index 901c798..216bc61 100644
  `info.thumb` and `thumb` contain a cached JPEG path in `thumbs/<volume-uuid>/`.
  There is no editor setting; openers read the Omarchy default editor.
 @@ -141,7 +214,7 @@ After `hello`, the plugin may send:
- 
+
  | t | Fields | Behavior |
  |---|---|---|
 -| `preview` | `id`, `q` (string, default `""`) | Render the selected result on demand. Unknown IDs or missing online files reply with `error`, `code:"missing"`, `id` and `reason:"File is missing"`. |
 +| `preview` | `id`, `q` (string, default `""`) | Render the selected result on demand. Unknown IDs or missing online files reply `error` with `id` and a `file-missing` error. |
  | `open` | `id`, `how:"open"\|"reveal"` (default `"open"`), optional `line` (int ≥ 1) | Open text and code at `line`, else at the preview jump, else at the chunk start; other kinds ignore `line`. `how:"reveal"` selects the file with detached `nautilus --select`. Offline and missing files run nothing. A bad `how` or `line` replies `error` with `for:"open"`, `code:"bad-request"`. |
  | `status` | none | Reply with current indexed-file and queue counts. |
- 
+
 @@ -149,8 +222,8 @@ After `hello`, the plugin may send:
  |---|---|---|
  | `preview` | `id`, `mode:"lines"\|"image"\|"bars"`, `lines:[{no,text,hit}]`, `jump`, `range:[first,last]\|null`, `image:path\|null`, `bars:[int]`, `opener`, `editor` (text/code only) | Text/code use a clamped ±8-line window. PDF/video render the selected page/second; online images use the source file, or a cached `magick` still at 1200 x 840 when Qt cannot decode the format (HEIC, AVIF, RAW); PDF pages render 1200 px on the long side. Audio has 64 RMS bars in 0..100. Unused arrays are empty. Offline items use mode `image` with their cached thumbnail or null. |
@@ -7794,7 +7794,7 @@ index 901c798..216bc61 100644
 +| `open_failed` | `id`, `error` | The file cannot be opened: `drive-not-mounted` for a file on an unplugged drive, `file-missing` for a missing file or an unknown ID, `open-failed` with the cause when the opener fails to start. |
 +| `error` | `id`, `for:"open"`, error fields | `bad-request` for invalid open arguments, `internal` for an unexpected exception. A failed preview replies `error` with `id` and no `for`. |
  | `status` | `files`, `roots`, `offline:[]`, `done`, `total` | Counts from all index stores, including code. Also pushed when changed, at most once every 0.5 seconds. |
- 
+
  IDs resolve only against that connection's latest `results`; a `results` reply with a new `seq` clears
 @@ -181,7 +254,7 @@ mtimes stay unchanged; the root count still follows current settings.
  {"t":"open","id":"b81e:812","how":"open"}
@@ -7810,12 +7810,12 @@ index 901c798..216bc61 100644
  | `index_start` | `progress` | none; rereads current settings |
  | `index_progress` | `progress` | none; reads the stores and returns the latest snapshot without starting a run |
 +| `retry_failed` | `retry_failed` | `code` a per-file failure code; the plugin sends `tool-missing` |
- 
+
 -All paths on the wire are absolute, except `excludes`, which are POSIX paths relative to their root. Requests may pass `"~"` or `"~/x"`; the daemon expands them and echoes the request string in `root`/`path` and the absolute path in `abs`. Every discovery `counts` object carries `text, pdf, image, video, audio, dirs` (zeros included). Every request below gets exactly one reply; failures reply `{"t":"error","for":"<request t>","code":"<code>","reason":"<sentence>"}` and never carry `seq` or `id` (Service.qml routes errors on `for` first).
 +All paths on the wire are absolute, except `excludes`, which are POSIX paths relative to their root. Requests may pass `"~"` or `"~/x"`; the daemon expands them and echoes the request string in `root`/`path` and the absolute path in `abs`. Every discovery `counts` object carries `text, pdf, image, video, audio, dirs` (zeros included). Every request below gets exactly one reply; failures reply `{"t":"error","for":"<request t>",...}` with the error fields (see Errors) and never carry `seq` or `id` (Service.qml routes errors on `for` first).
- 
+
  New messages are accepted only after `hello`, like `search`.
- 
+
 @@ -210,7 +284,7 @@ plugin: {"t":"runtime_install"}
  plugin: {"t":"runtime_pause"}
  daemon: {"t":"runtime_progress","state":"idle|running|paused|failed|done",
@@ -7830,7 +7830,7 @@ index 901c798..216bc61 100644
  - `state:"done"` means the runtime is built and both digests verified. `files.*.state:"ok"` means sha256 verified (cached by size and mtime, so `runtime_status` hashes at most once per daemon start, in a thread). `build.seconds` is null when the runtime existed before this daemon started.
  - `runtime_install` while `running` is a no-op snapshot. While `paused` or `failed` it resumes.
 +- `error` is null unless `state` is `failed`. Its code is `build-missing-packages`, `build-failed`, `build-no-scope`, `model-download-failed`, `model-verify-failed` or `internal`. Before it spawns the build, the daemon checks the build packages (`tools.BUILD_NEEDS`: `vulkan-headers`, `shaderc`, `gcc`, `git`, `uv`) and fails with `build-missing-packages` without starting it. The build writes its stdout and stderr to `<data>/cache/logs/build-runtime.log`, replaced at each run, and a build error carries that `log`. A failed build leaves `files.*.state` as it was.
- 
+
  ```
  plugin: {"t":"discover_start"}                      // $HOME plus every non-system volume
 @@ -246,7 +321,7 @@ daemon: {"t":"discover_counts","root":"/home/u","done":true,"seconds":1.4,"count
@@ -7839,7 +7839,7 @@ index 901c798..216bc61 100644
  - Sent about every 250 ms with the folders whose counts changed since the last batch. `counts` are rolled up: a folder counts every indexable file below it. `dirs` counts the rolled-up directories containing those files, including the folder itself; it never contributes to file totals. A folder the walk never reached has no entry; once `done` is true a missing folder has zero files.
 -- The last batch has `done:true`, `seconds` rounded to 0.1, and `datasets`: media folders with 300 or more files of one kind (image, video or audio) of which at least 70% are machine-named; `named` is that share in percent. `repos` and `worktrees` are sorted lists of the absolute paths of the git repositories and linked worktrees the walk found. A done snapshot of a reused walk carries `datasets`, `repos` and `worktrees` too. A failed walk still ends with `done:true` and adds `error` (the last error line from fd or the OS reason). Failed walks are never cached, so the next discovery request retries. Folder and file names that cannot be encoded as UTF-8 are skipped.
 +- The last batch has `done:true`, `seconds` rounded to 0.1, and `datasets`: media folders with 300 or more files of one kind (image, video or audio) of which at least 70% are machine-named; `named` is that share in percent. `repos` and `worktrees` are sorted lists of the absolute paths of the git repositories and linked worktrees the walk found. A done snapshot of a reused walk carries `datasets`, `repos` and `worktrees` too. A failed walk still ends with `done:true` and adds `error`, a `scan-failed` error whose cause is the last error line from fd or the OS reason. Failed walks are never cached, so the next discovery request retries. Folder and file names that cannot be encoded as UTF-8 are skipped.
- 
+
  ```
  plugin: {"t":"discover_children","path":"/home/u/Pictures"}
 @@ -257,14 +332,14 @@ daemon: {"t":"discover_children","path":"/home/u/Pictures","volume":"<uuid>","er
@@ -7848,15 +7848,15 @@ index 901c798..216bc61 100644
  ```
 -- One level, same filters as `folders`, sorted by indexable files (descending), then by name. `counts` is null until the walk reaches the folder; the counts arrive later in `discover_counts`. Paths under a known root reuse its walk and volume UUID without probing the mount again, even after that walk is older than 300 s; only `discover_start` walks a root again. A path outside every known root starts a walk scoped to that path, even when its volume mount is higher up. `/`, `/proc`, `/sys`, `/dev`, `/run`, and paths below these pseudo-filesystem roots are refused with `bad-request`; a known mounted volume below `/run` can still be expanded. `volume` is the UUID of the volume holding `path`, or null. An unreadable folder replies `dirs:[]` with `error` set to the OS reason. A request still running when its connection sends `discover_stop` replies `{"t":"discover_stop"}` instead, and the plugin forgets every children request in flight when it stops discovery.
 +- One level, same filters as `folders`, sorted by indexable files (descending), then by name. `counts` is null until the walk reaches the folder; the counts arrive later in `discover_counts`. Paths under a known root reuse its walk and volume UUID without probing the mount again, even after that walk is older than 300 s; only `discover_start` walks a root again. A path outside every known root starts a walk scoped to that path, even when its volume mount is higher up. `/`, `/proc`, `/sys`, `/dev`, `/run`, and paths below these pseudo-filesystem roots are refused with `bad-request`; a known mounted volume below `/run` can still be expanded. `volume` is the UUID of the volume holding `path`, or null. An unreadable folder replies `dirs:[]` with `error` set to a `scan-failed` error naming the OS reason. A request still running when its connection sends `discover_stop` replies `{"t":"discover_stop"}` instead, and the plugin forgets every children request in flight when it stops discovery.
- 
- 
+
+
  ```
  plugin: {"t":"fs_list","path":"~"}
  daemon: {"t":"fs_list","path":"~","abs":"/home/u","dirs":["Documents","Pictures"],"error":null}
  ```
 -- Sorted case-insensitively, dot dirs and `rules.HEAVY_GLOBS` names left out, at most 500 names. `error` is `"missing"`, `"not-a-directory"` or `"denied"` (with `dirs:[]`) instead of an `error` reply.
 +- Sorted case-insensitively, dot dirs and `rules.HEAVY_GLOBS` names left out, at most 500 names. A path that is missing, is not a folder or cannot be read gets `dirs:[]` and `error`, a `scan-failed` error naming that cause, instead of an `error` reply.
- 
+
  ```
  plugin: {"t":"binds_get"}
 @@ -277,16 +352,27 @@ plugin: {"t":"index_start"}
@@ -7889,7 +7889,7 @@ index 901c798..216bc61 100644
 +daemon: {"t":"retry_failed","code":"tool-missing","count":12}
 +```
 +- Marks every file whose last failure has `code` as stale, so the running pass or the next one indexes it again. `count` is the number of files marked. The plugin sends it when an install fix on a `tool-missing` error succeeds.
- 
+
  The daemon owns the runtime job: closing a view or disconnecting a client does
  not pause it. Build pause terminates the build process group; resume reruns the
 @@ -314,7 +400,7 @@ name from lsblk. Offline mounts are null.
@@ -7900,7 +7900,7 @@ index 901c798..216bc61 100644
 +{"t":"paused","error":{"code":"disk-low","title":"Indexing is paused.","detail":"Free some disk space and indexing resumes by itself."},"free_gb":1.4,"need_gb":2}
  {"t":"resumed"}
  ```
- 
+
 @@ -340,7 +426,7 @@ while a child runs are deferred and processed after it exits.
  {"t":"discover_start","volume":"6BFF-B220"}
  {"t":"discover_result","volume":"6BFF-B220","roots":[{"path":"/run/media/u/Photos2024","volume":"6BFF-B220"}],"folders":[]}
@@ -7909,11 +7909,11 @@ index 901c798..216bc61 100644
 +{"t":"progress","running":true,"done":612,"queued":597,"volume":"6BFF-B220","volumes":{"6BFF-B220":{"label":"Photos2024","done":612,"total":1209}},"device":null,"vram_gb":null,"kinds":{"text":{"done":612,"total":1209},"pdf":{"done":0,"total":0,"pages":0},"image":{"done":0,"total":0,"ocr":0},"video":{"done":0,"total":0},"audio":{"done":0,"total":0}},"skipped":{},"failed":{},"problems":[],"tool_errors":[]}
  {"t":"status","files":3880,"roots":4,"offline":["Photos2024"],"done":1204,"total":1209}
  ```
- 
+
 @@ -367,9 +453,9 @@ and keep the same relative `dir`. Internal-volume `dir` stays absolute.
  Mount aliases in health.json rebase configured roots and absolute excludes at
  read time before DB mount metadata advances, including child settings reads.
- 
+
 -If `state.model` is not `ready`, every search uses `legs:["words"]` and
 -`degraded:"embedding model failed verification"`, including meaning-only
 -requests. Startup verifies
@@ -7935,7 +7935,7 @@ index df7e446..76ce9fa 100644
 --- a/docs/DESIGN.md
 +++ b/docs/DESIGN.md
 @@ -35,7 +35,7 @@ The Folders step follows `docs/superpowers/specs/2026-10-14-setup-and-search-ref
- 
+
  - omafind looks like the Omarchy shell. It reads the current theme, follows the user's font and corner rounding, and adds no palette of its own. The canvas is rendered in Catppuccin, which is one Omarchy theme.
  - Flat surfaces. A 2 px border, no shadow, no blur. Tone and borders separate parts.
 -- The accent means "this is the selection or the match". Yellow means a hit word, an offline drive or a dataset proposal. Red means a failure. Green means done, kept or protected.
@@ -7973,12 +7973,12 @@ index df7e446..76ce9fa 100644
 @@ -291,7 +293,7 @@ Setup:
  | `Space` | Folder checkbox | Toggle the folder. |
  | `Esc` | Empty state | Close. |
- 
+
 -Setup buttons, by step: "Pause" and "Next: pick folders"; "Back" and "Start indexing"; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The boards define no other setup key (see Open questions).
 +Setup buttons, by step: "Install", "Pause" while it runs, "Retry" after a failure or "Resume" when paused, then "Next: pick folders"; "Back" and "Start indexing"; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The Setup board shows only "Pause"; the other step 1 labels come from the error handling spec. The boards define no other setup key (see Open questions).
- 
+
  ## Copy
- 
+
 @@ -301,7 +303,7 @@ Every string comes verbatim from the boards. A string the canvas lacks follows t
  - No em or en dashes in prose. Use a comma, a colon, a period or parentheses. A dash used as a placeholder glyph, a range inside a fact token (`L1–47`, `7:55–8:25`) or the separator inside a composed label is typography and stays. The middle dot in `Photos2024 · /2019/lisbon` and in meta lines is the separator.
  - Terse and technical. A label or subtitle can be a fragment. A banner, toast or error is a full sentence.
@@ -7986,11 +7986,11 @@ index df7e446..76ce9fa 100644
 -- An error says what happened, why, and what to do next, in that order. Example: "Semantic search unavailable: the embedding server did not start (Vulkan device lost). Showing keyword matches." with a "Retry" button.
 +- An error says what happened, why, and what to do next, in that order. The title says what happened. The detail says why, then what to do next, and names a control ("press Retry"), never a CLI command. Example: title "The embedding server did not start.", detail "It did not answer within 60 s. Showing keyword matches until it starts.", with a "Retry" button. The daemon writes error copy in `helper/omafindd/errors.py`; the plugin writes only `daemon-offline` and `unknown` in `lib/errors.js`, and `update-running` and `update-failed` in `lib/Update.js` (see `docs/ipc.md`, Errors).
  - Avoid seamless, leverage, robust, comprehensive, delve, showcase, vibrant, crucial, pivotal, streamline, empower, foster, testament, landscape, tapestry, journey, unlock and elevate.
- 
+
  ### Facts, not prose
 @@ -319,8 +321,8 @@ Keys the boards use that spec 7.4 does not list: `dataset`, `searchable`, `mount
  What stays a sentence:
- 
+
  - Titles: "Set up omafind", "Pick the folders to search", "Indexing your files", "New drive found".
 -- Instructions: "Type a description in any language. Start with a prefix to search one kind only." and "You can close this. The download keeps going."
 -- Errors with a fix: "Photos2024 is not connected. Connect it to open this file."
@@ -8013,12 +8013,12 @@ index 287f482..ebd90f1 100644
 @@ -17,7 +17,7 @@ bin/omafind setup
  bin/omafind build-runtime
  ```
- 
+
 -Setup creates `~/.local/share/omafind/venv`, copies the user unit into `~/.config/systemd/user/omafind.service`, enables it and waits for `hello`. Repeat setup to apply unit changes. Runtime building and model downloads start through `build-runtime` or the setup view’s Download button. The daemon owns setup jobs, so closing the overlay leaves them running; Pause stops a job and Resume continues it.
 +Setup creates `~/.local/share/omafind/venv`, copies the user unit into `~/.config/systemd/user/omafind.service`, enables it and waits for `hello`. Repeat setup to apply unit changes. Runtime building and model downloads start through `build-runtime` or the setup view’s Install button. The daemon owns setup jobs, so closing the overlay leaves them running; Pause stops a job and Resume continues it.
- 
+
  The Vulkan build needs `vulkan-headers` and `shaderc`. Prefer installing the remaining build tools with `sudo pacman -S cmake ninja spirv-headers`. The script can bootstrap private copies when those are missing. It runs in a memory-capped systemd user scope (12 GiB, no swap) when the user manager is available. It builds the pinned llama.cpp runtime, then downloads and verifies both pinned model files.
- 
+
 @@ -26,7 +26,7 @@ Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON.
  | Exit | Meaning |
  |---|---|
@@ -8040,16 +8040,16 @@ index 287f482..ebd90f1 100644
 @@ -53,7 +53,7 @@ and `problem <uuid> integrity rebuilt` when applicable.
  Unreadable or corrupt indexes retain a volume entry with zero counts until recovery rebuilds them.
  See [docs/ipc.md](docs/ipc.md) for the handshake.
- 
+
 -When the plugin code changes (a `git pull` in a dev checkout or a marketplace update), the plugin compares `bin/omafind fingerprint` with the `build` the daemon reports and reruns `bin/omafind setup` once, which syncs the venv and restarts the unit. A daemon that starts on a venv missing a dependency logs `omafindd cannot import <module>. Run bin/omafind setup.` to the unit journal and exits 1.
 +When the plugin code changes (a `git pull` in a dev checkout or a marketplace update), the plugin compares `bin/omafind fingerprint` with the `build` the daemon reports and reruns `bin/omafind setup` once, which syncs the venv and restarts the unit. A daemon that starts on a venv missing a dependency logs `omafindd cannot import <module>. Run bin/omafind setup.` to the unit journal and to `~/.local/share/omafind/cache/logs/omafindd-start.log`, and exits 1. A socket bind failure is logged the same way.
- 
+
  Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell.json`. The plugin writes them through `updateEntryInline`; the daemon only reads them. Later issues add keys.
- 
+
 @@ -70,6 +70,25 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
  | `warmMinutes` | int, clamped to 0..60 | `5` |
  | `shortcut` | uppercase `MODS + KEY` (mods: SUPER, SHIFT, CTRL, ALT) or a lone `F1` to `F35` | `"SUPER + E"` |
- 
+
 +## Troubleshooting
 +
 +Setup and search show every failure as a card: what happened, why, and what to do next. A card with a log offers Open log. [docs/ipc.md](docs/ipc.md#errors) lists every code. The logs live under `~/.local/share/omafind`:
@@ -8070,7 +8070,7 @@ index 287f482..ebd90f1 100644
 +Then press Retry or run `bin/omafind build-runtime`. Any other build error is `build-failed`, with the first error line as the cause; `build-runtime.log` has the full output.
 +
  ## Threat model
- 
+
  The index, snippets, OCR text and thumbnails are stored unencrypted inside the user's home.
 @@ -117,7 +136,10 @@ The reference inputs `photo.jpg`, `screen.png` and `speech.wav` in `tests/fixtur
  Required tools: fd 10+, rg, magick, pdfinfo, pdftotext, pdftoppm, git, findmnt,
@@ -8081,12 +8081,12 @@ index 287f482..ebd90f1 100644
 +setup: while the runtime is missing, setup names them on stderr. With `--json`,
 +setup prints `{"ok":true,"build_missing":[...]}` or `{"ok":false,"error":{...}}`
 +as its last stdout line instead (see [Errors](docs/ipc.md#errors)).
- 
+
  ```bash
  systemd-run --user --scope --quiet --collect -p MemoryMax=8G -p MemorySwapMax=0 -- bin/omafind reindex --root "$HOME/Documents"
 @@ -172,8 +194,8 @@ OCR text is searchable without a vector. JPEG thumbnails live in `thumbs/<uuid>/
  Video and audio results open through `mpv --start=<seconds>`.
- 
+
  Audio uses 30 s windows with a 25 s hop, skips RMS at or below 0.003, and keeps
 -tails with at least 2 s of new audio. `audio:false` skips audio files with detail
 -`audio search is off` and indexes videos as frames only. Silent files are skipped.
@@ -8147,4 +8147,3 @@ git commit -S -m "docs: describe the error object, codes and logs"
 ```
 
 Stage only these three files. Never stage `.superpowers/` or `.pytest_cache`.
-
