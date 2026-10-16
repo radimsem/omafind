@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-QML = sorted([*ROOT.glob("*.qml"), *(ROOT / "ui").glob("*.qml")])
+QML = sorted((ROOT / "ui").rglob("*.qml"))
 TEXT = re.compile(r"^\s*(?:delegate:\s*|component \w+:\s*)?Text\s*\{", re.MULTILINE)
 
 
@@ -25,3 +25,12 @@ def test_letter_spacing_is_whole_pixels():
              if "letterSpacing" in line]
     assert lines
     assert all("Math.round(" in line for line in lines)
+
+
+def test_loader_sources_resolve_next_to_their_file():
+    source = re.compile(r'^\s*source:\s*"([^"]+\.qml)"', re.MULTILINE)
+    sources = [(path, name) for path in QML for name in source.findall(path.read_text())]
+    assert sources
+    missing = [f"{path.name}: {name}" for path, name in sources
+               if not (path.parent / name).is_file()]
+    assert missing == []

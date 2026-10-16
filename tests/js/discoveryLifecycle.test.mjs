@@ -1,15 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { qmlFunctions, qmlSource } from './qmlFunctions.mjs';
 
-function functions(file, values) {
-  const ctx = vm.createContext(values);
-  ctx.root = ctx;
-  const source = readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8');
-  for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
-  return ctx;
-}
+const functions = (file, values) => qmlFunctions(file, values).ctx;
 
 test('closing a picker stops its discovery without touching playback in another window', () => {
   let stops = 0;
@@ -23,7 +17,7 @@ test('closing a picker stops its discovery without touching playback in another 
 test('reopening setup reuses or restarts discovery despite a cached first level', () => {
   let scans = 0;
   const ctx = functions('SetupView.qml', { back: false, step: 2, walkError: '', pickFolders: false, indexPage: {},
-    service: { discover: { folders: [] }, folderError: null, scanning: false,
+    service: { discovery: { discover: { folders: [] }, scanning: false }, folderError: null,
       scan() { scans++; } } });
   ctx.reset();
   assert.equal(scans, 1);
@@ -33,9 +27,9 @@ test('reopening setup reuses or restarts discovery despite a cached first level'
 test('a reconnected Folders step requests a fresh discovery snapshot', () => {
   let scans = 0;
   const ctx = functions('SetupView.qml', { visible: true, step: 2, walkError: '',
-    service: { ready: true, discover: { folders: [] }, folderError: null, scanning: false,
+    service: { ready: true, discovery: { discover: { folders: [] }, scanning: false }, folderError: null,
       scan() { scans++; } } });
-  const source = readFileSync(new URL('../../SetupView.qml', import.meta.url), 'utf8');
+  const source = qmlSource('SetupView.qml');
   const handler = source.match(/function onReadyChanged\(\) \{([^]*?)^    \}/m);
   assert.ok(handler, 'Folders step listens for reconnection');
   vm.runInContext('function reconnected() {' + handler[1] + '}', ctx);
@@ -50,7 +44,7 @@ test('a reconnected Folders step requests a fresh discovery snapshot', () => {
 test('Back then Next retries a failed background walk', () => {
   let scans = 0;
   const ctx = functions('SetupView.qml', { back: true, walkError: 'fd failed: Permission denied',
-    service: { discover: { folders: [] }, folderError: null, scanning: false,
+    service: { discovery: { discover: { folders: [] }, scanning: false }, folderError: null,
       scan() { scans++; } } });
   ctx.showFolders();
   assert.equal(ctx.back, false);
@@ -74,7 +68,7 @@ test('Change folders opens setup at the Folders step until indexing starts', () 
   assert.equal(setupItem.resets, 1);
 
   const view = functions('SetupView.qml', { pickFolders: true, service: { indexPending: false } });
-  const source = readFileSync(new URL('../../SetupView.qml', import.meta.url), 'utf8');
+  const source = qmlSource('SetupView.qml');
   const handler = source.match(/function onIndexPendingChanged\(\) \{([^]*?)^    \}/m);
   assert.ok(handler, 'Setup leaves the Folders step when indexing starts');
   vm.runInContext('function pending() {' + handler[1] + '}', view);
@@ -86,7 +80,7 @@ test('Change folders opens setup at the Folders step until indexing starts', () 
 });
 
 test('opening the overlay never lands on the Folders step by itself', () => {
-  const source = readFileSync(new URL('../../Overlay.qml', import.meta.url), 'utf8');
+  const source = qmlSource('Overlay.qml');
   const open = source.match(/^  function open\(payload\) \{([^]*?)^  \}/m)[1];
   assert.match(open, /setupFolders = false/);
 });

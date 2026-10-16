@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 Rectangle {
   id: cap

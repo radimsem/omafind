@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.sp-q`: search icon, the query with its prefix in accent, and the status slot.
 Item {

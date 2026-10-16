@@ -25,7 +25,7 @@ The scaffold implements the proposed state shape and push-on-change behavior. `r
 {"t":"state","v":1,"runtime":"missing","model":"missing","embedder":"stopped","build":"0.1.0+3f9a1c0d2b7e"}
 ```
 
-`build` is the fingerprint of the plugin code the daemon started from: the manifest version, `+`, then the first 12 hex digits of a sha256 over `helper/uv.lock`, `helper/pyproject.toml` and every `helper/omafindd/**/*.py`. It does not change while the daemon runs. `bin/omafind fingerprint` prints the same value for a plugin checkout.
+`build` is the fingerprint of the plugin code the daemon started from: the manifest version, `+`, then the first 12 hex digits of a sha256 over `helper/uv.lock`, `helper/pyproject.toml`, `settings.example.json` and every `helper/omafindd/**/*.py`. It does not change while the daemon runs. `bin/omafind fingerprint` prints the same value for a plugin checkout.
 
 `Service.qml` runs `bin/omafind fingerprint` once when the plugin loads. When a `state` carries a different `build`, or none (a daemon older than this field), it runs `bin/omafind setup` once for that plugin build. A daemon that exits on a missing dependency sends no `state`, so after the third failed connect `Service.qml` runs `bin/omafind status --json` and treats a `stale` or `missing` venv the same way. A daemon that cannot fingerprint its own code reports `build:""`. Setup syncs the venv to the lock file and restarts the unit, and the plugin reconnects. While setup runs, the search view shows an `update-running` card ("omafindd is updating to match the installed plugin."). Setup runs as `bin/omafind setup --json`, whose last stdout line is `{"ok":true,"build_missing":[...]}` or `{"ok":false,"error":{...}}` (see Errors). If setup fails, the search view shows the error's title and detail in an `update-failed` card, with Retry and any Install packages or Open log action. It runs setup again only on Retry or for a newer plugin build. A `state` with the plugin's build clears the failure.
 
@@ -190,9 +190,11 @@ The CLI sends seq 1 with both legs and prints the complete results object for
 `--json`. It exits 0 for any result, 1 for no index or a service error, 2 for bad arguments, and
 3 for a silent socket.
 
-Settings in the plugin's shell.json entry now include `roots` (default `[]`),
-`maxResults` (10..200, default 40), `warmMinutes` (0..60, default 5),
-and `imageBudget` (70, 140 or 280, default 140). Invalid paths are dropped;
+Settings in the plugin's shell.json entry are `setupDone` (bool, default false),
+`gpu` (`"auto"` or `"never"`, default `"auto"`), `audio`, `roots` (default `[]`),
+`ignoredVolumes` (default `[]`, see Volumes), `maxResults` (10..200, default 40),
+`warmMinutes` (0..60, default 5), `imageBudget` (70, 140 or 280, default 140)
+and `shortcut`. [settings.md](settings.md) has the full table. Invalid paths are dropped;
 budgets are not coerced. A `codeRoots` key left by an older plugin is ignored.
 `audio` (bool, default true) controls audio files and video soundtracks.
 With audio off, audio files have state `skipped` and code `audio-off`.

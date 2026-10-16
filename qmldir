@@ -1,7 +1,0 @@
-singleton Palette 1.0 Palette.qml
-singleton Tokens 1.0 Tokens.qml
-Service Service.qml
-Overlay Overlay.qml
-SearchView SearchView.qml
-SetupView SetupView.qml
-SettingsView SettingsView.qml

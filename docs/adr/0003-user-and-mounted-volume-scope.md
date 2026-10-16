@@ -12,7 +12,7 @@ Removable drives can disappear or return at a different mount point.
 
 Limit indexing to selected folders in `$HOME` and mounted volumes that the user can read.
 Run the daemon as the user. Use no root daemon and no fanotify.
-Use watchdog inotify watches for internal roots and reconcile removable roots on mount.
+Use inotify watches for internal roots (one instance, see ADR-6) and reconcile removable roots on mount.
 Identify a volume by its filesystem UUID and files by their relative paths.
 Store each drive's index and thumbnails on the internal disk.
 

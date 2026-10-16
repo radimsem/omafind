@@ -1,17 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { load } from './load.mjs';
 import { plain } from './fixtures.mjs';
-
-function functions(path, values) {
-  const ctx = vm.createContext({ ...values });
-  ctx.root = ctx;
-  const source = readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
-  for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
-  return { ctx, source };
-}
+import { qmlFunctions as functions } from './qmlFunctions.mjs';
 
 function settings(values = {}) {
   const calls = [];

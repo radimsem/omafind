@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.kbd` at a size of the caller's choosing: 26 high and 12 px for the shortcut, 16 high and 9 px in a tree row.
 Rectangle {

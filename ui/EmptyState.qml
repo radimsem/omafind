@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // Board Empty: what omafind searches, and the six prefixes. A chip inserts its prefix.
 Item {

@@ -8,7 +8,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
 function folders(values = {}) {
   const ctx = vm.createContext({ Tree: load('tree.js'), seeded: true, fromSaved: false, proposed: [], discover: null,
     choices: { chosen: [], skipped: [] },
-    service: { worktrees: {}, datasets: { '/h/Photos/data': { path: '/h/Photos/data' } } }, ...values });
+    service: { discovery: { worktrees: {}, datasets: { '/h/Photos/data': { path: '/h/Photos/data' } } } }, ...values });
   ctx.root = ctx;
   const source = readFileSync(new URL('../../ui/SetupFolders.qml', import.meta.url), 'utf8');
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
@@ -46,8 +46,8 @@ test('explicit dataset choices are never replaced by a proposal', () => {
 test('worktrees under a searched folder start unchecked', () => {
   const ctx = folders({
     choices: { chosen: ['/h/p'], skipped: [] },
-    service: { datasets: {}, walks: { '/h': { done: true } },
-      worktrees: { '/h/p/wt': { path: '/h/p/wt' } } },
+    service: { discovery: { datasets: {}, walks: { '/h': { done: true } },
+      worktrees: { '/h/p/wt': { path: '/h/p/wt' } } } },
   });
   ctx.offerDatasets();
   assert.deepEqual(plain(ctx.choices.skipped), ['/h/p/wt']);
@@ -57,12 +57,12 @@ test('start indexing waits for discovery and the walks, then saves the roots', (
   const saved = [];
   const ctx = folders({ discover: {}, roots: [{ path: '/h/p', volume: 'u' }],
     choices: { chosen: ['/h/p'], skipped: [] },
-    service: { scanning: false, datasets: {}, worktrees: {}, walks: { '/h': { done: false } },
+    service: { discovery: { scanning: false, datasets: {}, worktrees: {}, walks: { '/h': { done: false } } },
       startIndexing(...args) { saved.push(plain(args)); } } });
   ctx.startIndexing();
   assert.deepEqual(saved, []);
   assert.equal(ctx.ready, false);
-  ctx.service.walks = { '/h': { done: true } };
+  ctx.service.discovery.walks = { '/h': { done: true } };
   assert.equal(ctx.ready, true);
   ctx.startIndexing();
   assert.deepEqual(saved, [[[{ path: '/h/p', volume: 'u' }]]]);
@@ -72,11 +72,11 @@ test('a finished setup reopens on the saved folders and keeps its worktree choic
   const ctx = folders({ seeded: false, discover: { folders: [{ path: '/h/Docs', xdg: true }] },
     service: { settings: { setupDone: true,
       roots: [{ path: '/h/p', volume: 'u', excludes: ['skip'] }] },
-    datasets: {}, walks: { '/h': { done: true } },
-    worktrees: { '/h/p/wt': { path: '/h/p/wt' } } } });
+    discovery: { datasets: {}, walks: { '/h': { done: true } },
+      worktrees: { '/h/p/wt': { path: '/h/p/wt' } } } } });
   ctx.seed();
   assert.deepEqual(plain(ctx.choices), { chosen: ['/h/p'], skipped: ['/h/p/skip'] });
-  ctx.service.worktrees['/h/p/later'] = { path: '/h/p/later' };
+  ctx.service.discovery.worktrees['/h/p/later'] = { path: '/h/p/later' };
   ctx.offerDatasets();
   assert.deepEqual(plain(ctx.choices.skipped), ['/h/p/skip']);
 });
@@ -84,7 +84,7 @@ test('a finished setup reopens on the saved folders and keeps its worktree choic
 test('a setup that is not finished starts from the XDG folders', () => {
   const ctx = folders({ seeded: false, discover: { folders: [{ path: '/h/Docs', xdg: true }] },
     service: { settings: { setupDone: false, roots: [{ path: '/h/p', volume: 'u', excludes: [] }] },
-      datasets: {}, worktrees: {}, walks: {} } });
+      discovery: { datasets: {}, worktrees: {}, walks: {} } } });
   ctx.seed();
   assert.deepEqual(plain(ctx.choices), { chosen: ['/h/Docs'], skipped: [] });
 });

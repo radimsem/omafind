@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/setup.js" as Setup
 import "../lib/tree.js" as Tree
 
@@ -22,7 +22,7 @@ FocusScope {
 
   signal backRequested()
 
-  readonly property var discover: service ? service.discover : null
+  readonly property var discover: service ? service.discovery.discover : null
   readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
   readonly property var rates: discover ? discover.rates : null
   // Step 2 shows its own error, else a failed start of the first index.
@@ -33,7 +33,10 @@ FocusScope {
   readonly property var mounts: (discover && Array.isArray(discover.roots) ? discover.roots : [])
     .map(row => row.path).filter((path, index, all) => all.some(other => other !== path && Tree.isInside(path, other)))
   readonly property var roots: Tree.toRoots(choices.chosen, choices.skipped, volumeOf, mounts)
-  readonly property bool ready: !!discover && !!service && !service.scanning
+  // Change triggers for offerDatasets, which reads both through service.discovery.
+  readonly property var datasets: service ? service.discovery.datasets : ({})
+  readonly property var worktrees: service ? service.discovery.worktrees : ({})
+  readonly property bool ready: !!discover && !!service && !service.discovery.scanning
     && roots.length > 0 && roots.every(r => r.volume !== "" && walkDone(r.path))
 
   function focusFirst() {
@@ -54,7 +57,7 @@ FocusScope {
 
   function offerDatasets() {
     if (!service || !seeded) return
-    var found = Object.assign({}, service.datasets, service.worktrees)
+    var found = Object.assign({}, service.discovery.datasets, service.discovery.worktrees)
     var list = Object.keys(found).filter(path => {
       if (proposed.indexOf(path) >= 0) return false
       var owner = Tree.owner(path, choices)
@@ -76,9 +79,10 @@ FocusScope {
       if (Tree.isInside(path, root.path) && root.path.length > boundary.length) boundary = root.path
     })
     var found = false
-    for (var folder in (service && service.walks || {})) {
+    var walks = service ? service.discovery.walks : {}
+    for (var folder in walks) {
       if (!Tree.isInside(path, folder) || !Tree.isInside(folder, boundary)) continue
-      if (!service.walks[folder].done) return false
+      if (!walks[folder].done) return false
       found = true
     }
     return found
@@ -88,7 +92,8 @@ FocusScope {
     var best = null
     var rows = folders.concat(discover && Array.isArray(discover.roots) ? discover.roots : [])
     rows.forEach(row => {
-      var volume = row.volume || (service && service.childFolders[row.path] ? service.childFolders[row.path].volume : "")
+      var cached = service ? service.discovery.childFolders[row.path] : null
+      var volume = row.volume || (cached ? cached.volume : "")
       if (volume && Tree.isInside(path, row.path) && (!best || row.path.length > best.path.length))
         best = {path: row.path, volume: volume}
     })
@@ -102,7 +107,7 @@ FocusScope {
       added = added.concat([{path: absolute, name: absolute, xdg: false, repo: false, hasChildren: true, volume: ""}])
     }
     if (!Tree.searched(absolute, choices))
-      choices = Tree.click(choices, absolute, service ? Object.keys(Object.assign({}, service.datasets, service.worktrees)) : [])
+      choices = Tree.click(choices, absolute, service ? Object.keys(Object.assign({}, service.discovery.datasets, service.discovery.worktrees)) : [])
     // The volume lookup must finish before the root can be saved.
     if (service) service.requestChildren(absolute)
   }
@@ -119,15 +124,10 @@ FocusScope {
   }
 
   onDiscoverChanged: seed()
+  onDatasetsChanged: offerDatasets()
+  onWorktreesChanged: offerDatasets()
   onChoicesChanged: offerDatasets()
   Component.onCompleted: seed()
-
-  Connections {
-    target: root.service
-    ignoreUnknownSignals: true
-    function onDatasetsChanged() { root.offerDatasets() }
-    function onWorktreesChanged() { root.offerDatasets() }
-  }
 
   FolderTable {
     id: header

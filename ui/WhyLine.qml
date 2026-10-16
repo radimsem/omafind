@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/format.js" as Format
 
 // `.pv-why`: the computed facts behind a result. A words-leg hit shows the `Aa` glyph and its snippet.

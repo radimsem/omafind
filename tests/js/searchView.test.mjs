@@ -16,7 +16,7 @@ function view(values = {}) {
     progressOpen: false,
     ...values,
   });
-  const source = readFileSync(new URL('../../SearchView.qml', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/SearchView.qml', import.meta.url), 'utf8');
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) {
     vm.runInContext(match[0], context);
   }
@@ -133,7 +133,7 @@ test('the offline banner shows a helper setup failure and keeps its install fix'
   const ctx = view({ service: { engineError: failure }, daemonDown: true, updateError: null,
     startLog: { loaded: false, path: '/d/start.log' }, reply: null,
     Results: load('format.js', 'errors.js', 'results.js'), Errors: load('errors.js') });
-  const source = readFileSync(new URL('../../SearchView.qml', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/SearchView.qml', import.meta.url), 'utf8');
   const binding = source.match(/readonly property var bannerView: ([^]*?\}\))/)[1];
   assert.deepEqual(plain(vm.runInContext(binding, ctx)), { error: failure, retry: 'connect' });
   ctx.service.engineError = { code: 'build-failed', title: 'The runtime build failed.', detail: '' };
@@ -161,7 +161,7 @@ test('an update install card offers Retry and auto-retries the update after pack
   let retries = 0;
   const context = view({ bannerView, service: { retryUpdate() { retries++; } } });
   context.root = context;
-  const source = readFileSync(new URL('../../SearchView.qml', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/SearchView.qml', import.meta.url), 'utf8');
   const banner = source.slice(source.indexOf('id: banner'));
   const retryHere = banner.match(/retryHere: ([^\n]+)/)[1];
   const onRetry = banner.match(/onRetry: ([^\n]+)/)[1];

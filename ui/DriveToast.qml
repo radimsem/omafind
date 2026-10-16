@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.ntf` drive toasts (boards NewDrive, MotionFresh): "New drive found" with its two buttons, and
 // the disconnected and connected notices. Cards stack 8 px apart at the top right. The window only

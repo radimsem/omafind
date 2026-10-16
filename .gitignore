@@ -4,3 +4,13 @@ __pycache__/
 .venv/
 node_modules/
 evals/photos/
+*.pyc
+*.qmlc
+*.jsc
+.qmlls.ini
+*.log
+.claude/
+.superpowers/
+# Personal eval sets name the owner's files.
+evals/personal.json
+evals/media.json

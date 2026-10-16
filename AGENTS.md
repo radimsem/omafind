@@ -1,10 +1,14 @@
 # omafind
 
-omafind is an Omarchy 4 plugin (QML on Quickshell) with a Python daemon, `omafindd`, that searches local files by content through one embedding model run by a stock `llama-server`. Work arrives as GitHub issues #1 to #6. Each issue carries its plan, its verification list and its blockers.
+omafind is an Omarchy 4 plugin (QML on Quickshell) with a Python daemon, `omafindd`, that searches local files by content through one embedding model run by a stock `llama-server`. Work arrives as GitHub issues. Each issue carries its plan, its verification list and its blockers.
 
-- Read the issue in full before writing code. The spec is `docs/superpowers/specs/2026-10-11-omafind-design.md`; ADR-4 (`docs/adr/0004-stock-llama-server.md`) holds the Phase 0 numbers.
-- `docs/ipc.md` owns the socket messages. When your issue adds a message or a settings key, update it, `settings.example.json`, `settings.py`, `lib/Settings.js` and the README table in the same pull request.
-- Read `docs/DESIGN.md` before touching any QML surface.
+- Read the issue in full before writing code.
+- `docs/spec.md` is the original design. Where it disagrees with `docs/ipc.md` or the code, those win.
+- `docs/ipc.md` owns the socket messages. A change to a message updates it in the same pull request.
+- `docs/DESIGN.md` holds the UI rules. Read it before touching any QML surface. The QML lives in `ui/`, and the pure JS it uses lives in `lib/`.
+- `docs/adr/` holds the decisions with lasting consequences. ADR-4 (`docs/adr/0004-stock-llama-server.md`) holds the Phase 0 numbers.
+- `docs/development.md` lists the checks, the CLI and the eval commands. Run the checks before you commit.
+- When your issue adds or changes a settings key, add it to `settings.example.json` (the defaults source), a case to `tests/fixtures/settings-cases.json`, and a row to `docs/settings.md`; the tests fail until `settings.py`, `lib/Settings.js`, `docs/settings.md` and `docs/ipc.md` agree.
 
 ## The machine you run on
 
@@ -19,7 +23,7 @@ That happened on 2026-10-12. `scripts/build-runtime.sh` ran `cmake --build -j $(
   Heavy means a runtime build, `llama-server`, `scripts/probe.py`, the manual parity test, torch or sentence-transformers, and model downloads with verification. `scripts/build-runtime.sh` caps itself at 12 GiB (`OMAFIND_BUILD_MEMORY_MAX`), generates shaders one generator at a time and sizes `-j` to the cap.
 - Run one heavy job at a time. Never start a build, a server and a torch job in parallel, and never fan out parallel agents that each start one.
 - Stop every `llama-server` you start. `pgrep -x llama-server` must be empty when you finish.
-- The unit tests are light (`uv run --project helper pytest`, under 2 s) and need no cap. The manual suite and the probe do; the commands in the README already carry it.
+- The unit tests are light (`uv run --project helper pytest`, about 20 s) and need no cap. The manual suite and the probe do; the commands in `docs/development.md` already carry it.
 - While a heavy job runs, watch its scope (`systemctl --user show <scope> -p MemoryPeak`) rather than waiting blind.
 - `/tmp` is tmpfs. Anything you keep there, such as reference vectors or logs, is lost on a reboot, so copy results into the repo or `~/.local/share/omafind/cache` as soon as they exist.
 - The dev venv at `helper/.venv` holds a symlink, so `omarchy plugin validate .` fails in a dev checkout. Validate a clean clone.

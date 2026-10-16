@@ -9,30 +9,38 @@ from . import health, paths
 logger = logging.getLogger(__name__)
 
 
+# The plugin root holds settings.example.json in a checkout and in an install alike.
+DEFAULTS = json.loads(
+    (Path(__file__).resolve().parents[2] / "settings.example.json").read_text())
+
+
 class _MissingEntry(ValueError):
     pass
 
 
 @dataclass(frozen=True)
 class Settings:
-    setup_done: bool = False
-    gpu: str = "auto"
-    audio: bool = True
-    roots: list[dict] = field(default_factory=list)
-    max_results: int = 40
-    warm_minutes: int = 5
-    image_budget: int = 140
-    shortcut: str = "SUPER + E"
-    ignored_volumes: tuple[str, ...] = ()
+    setup_done: bool = DEFAULTS["setupDone"]
+    gpu: str = DEFAULTS["gpu"]
+    audio: bool = DEFAULTS["audio"]
+    roots: list[dict] = field(default_factory=lambda: list(DEFAULTS["roots"]))
+    max_results: int = DEFAULTS["maxResults"]
+    warm_minutes: int = DEFAULTS["warmMinutes"]
+    image_budget: int = DEFAULTS["imageBudget"]
+    shortcut: str = DEFAULTS["shortcut"]
+    ignored_volumes: tuple[str, ...] = tuple(DEFAULTS["ignoredVolumes"])
 
 
 _MODS = r"(?:SUPER|SHIFT|CTRL|ALT)"
+# ASCII whitespace only, the same set in lib/Settings.js.
+_SPACE = r"[ \t\n\r\f\v]*"
 
 
 def valid_shortcut(value) -> bool:
     """`MODS + KEY` in uppercase, or a lone function key F1 to F35."""
     if not isinstance(value, str) or not re.fullmatch(
-        rf"{_MODS}(?:\s*\+\s*{_MODS})*\s*\+\s*[A-Z0-9_]+|F(?:[1-9]|[12][0-9]|3[0-5])", value
+        rf"{_MODS}(?:{_SPACE}\+{_SPACE}{_MODS})*{_SPACE}\+{_SPACE}[A-Z0-9_]+"
+        r"|F(?:[1-9]|[12][0-9]|3[0-5])", value
     ):
         return False
     parts = [part.strip() for part in value.split("+")]
@@ -63,9 +71,38 @@ def roots(value) -> list[dict]:
             and all(isinstance(path, str) for path in root["excludes"])]
 
 
-def _integer(entry, key, default, minimum, maximum):
-    value = entry.get(key, default)
-    return max(minimum, min(maximum, value)) if type(value) is int else default
+def _whole(value):
+    # JavaScript cannot tell 50.0 from 50, so the plugin reads both as 50.
+    return int(value) if type(value) is float and value.is_integer() else value
+
+
+def _integer(entry, key, minimum, maximum):
+    value = _whole(entry.get(key))
+    return max(minimum, min(maximum, value)) if type(value) is int else DEFAULTS[key]
+
+
+def normalize(entry: dict) -> Settings:
+    """Settings from a raw shell.json entry; each invalid value falls back to its default."""
+    defaults = Settings()
+    setup_done = entry.get("setupDone")
+    gpu = entry.get("gpu")
+    audio = entry.get("audio")
+    ignored = entry.get("ignoredVolumes")
+    budget = _whole(entry.get("imageBudget"))
+    shortcut = entry.get("shortcut")
+    return Settings(
+        setup_done=setup_done if type(setup_done) is bool else defaults.setup_done,
+        gpu=gpu if gpu in ("auto", "never") else defaults.gpu,
+        audio=audio if type(audio) is bool else defaults.audio,
+        roots=roots(entry["roots"]) if "roots" in entry else defaults.roots,
+        max_results=_integer(entry, "maxResults", 10, 200),
+        warm_minutes=_integer(entry, "warmMinutes", 0, 60),
+        image_budget=budget if type(budget) is int and budget in (70, 140, 280)
+        else defaults.image_budget,
+        shortcut=shortcut if valid_shortcut(shortcut) else defaults.shortcut,
+        ignored_volumes=tuple(uuid for uuid in ignored if isinstance(uuid, str) and uuid)
+        if isinstance(ignored, list) else defaults.ignored_volumes,
+    )
 
 
 def _load(path: Path) -> Settings:
@@ -73,24 +110,7 @@ def _load(path: Path) -> Settings:
     entry = find_entry(config, "radimsem.omafind") if isinstance(config, dict) else None
     if entry is None:
         raise _MissingEntry("No omafind settings entry")
-    setup_done = entry.get("setupDone", False)
-    gpu = entry.get("gpu", "auto")
-    audio = entry.get("audio", True)
-    ignored = entry.get("ignoredVolumes", [])
-    budget = entry.get("imageBudget", 140)
-    shortcut = entry.get("shortcut", "SUPER + E")
-    return Settings(
-        setup_done=setup_done if type(setup_done) is bool else False,
-        gpu=gpu if gpu in ("auto", "never") else "auto",
-        audio=audio if type(audio) is bool else True,
-        roots=roots(entry.get("roots")),
-        max_results=_integer(entry, "maxResults", 40, 10, 200),
-        warm_minutes=_integer(entry, "warmMinutes", 5, 0, 60),
-        image_budget=budget if type(budget) is int and budget in (70, 140, 280) else 140,
-        shortcut=shortcut if valid_shortcut(shortcut) else "SUPER + E",
-        ignored_volumes=tuple(uuid for uuid in ignored if isinstance(uuid, str) and uuid)
-        if isinstance(ignored, list) else (),
-    )
+    return normalize(entry)
 
 
 def _remap(settings, mounts=None):

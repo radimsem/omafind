@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.task`: a 22 px marker, the title over its fact line, and a value or fact tokens on the right.
 // `mark` is ok, run, wait or failed; `valueTone` is ok, plain or fail.

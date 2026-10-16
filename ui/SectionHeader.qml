@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.sec-h`: uppercase section name with its count, 30 high in the moving list.
 Item {

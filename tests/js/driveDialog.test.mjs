@@ -16,7 +16,7 @@ function dialog(values = {}) {
 
 test('drive folders start checked and dataset proposals preserve user edits', () => {
   const ctx = dialog({ folders: [{ path: '/m/Photos' }],
-    service: { datasets: { '/m/Photos/frames': { path: '/m/Photos/frames' } } } });
+    service: { discovery: { datasets: { '/m/Photos/frames': { path: '/m/Photos/frames' } }, worktrees: {} } } });
   ctx.seed();
   assert.deepEqual(plain(ctx.choices), { chosen: ['/m/Photos'], skipped: ['/m/Photos/frames'] });
   ctx.choices = ctx.Tree.click(ctx.choices, '/m/Photos/frames');

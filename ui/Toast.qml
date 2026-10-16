@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.ntf` at the top right. Its own window, so it stays after the overlay closes.
 PanelWindow {

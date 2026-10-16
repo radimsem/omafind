@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // One flat, keyed model. A new result set moves existing rows to their new place instead of
 // rebuilding them, so words-then-meaning re-ranks slide and the selection follows its row.

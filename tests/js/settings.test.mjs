@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { load } from './load.mjs';
 
 const { normalize, merge } = load('Settings.js');
 const plain = value => JSON.parse(JSON.stringify(value));
+const cases = JSON.parse(readFileSync(new URL('../fixtures/settings-cases.json', import.meta.url), 'utf8'));
+
+for (const { name, input, expected } of cases) {
+  test(`shared case: ${name}`, () => {
+    assert.deepEqual(plain(normalize(input)), expected);
+  });
+}
 
 test('settings default to unfinished setup, automatic GPU and audio', () => {
   for (const entry of [undefined, null, [], 'bad', {}]) {

@@ -10,7 +10,7 @@
   "kinds": ["service", "overlay"],
   "keepLoaded": true,
   "entryPoints": {
-    "service": "Service.qml",
-    "overlay": "Overlay.qml"
+    "service": "ui/Service.qml",
+    "overlay": "ui/Overlay.qml"
   }
 }

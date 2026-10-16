@@ -12,9 +12,12 @@ function tree(values = {}) {
     remove: (i, n) => items.splice(i, n), clear: () => items.splice(0),
   };
   const ctx = vm.createContext({ Tree: load('tree.js'), Setup: load('setup.js'),
-    finished: {}, folders: [], mounts: [], meta: {}, expanded: {}, counts: {}, walks: {}, datasets: {}, cached: {},
-    rows: model, service: null, home: '/h', mount: '', ...values });
+    finished: {}, folders: [], mounts: [], meta: {}, expanded: {}, counts: {}, walks: {}, datasets: {}, worktrees: {},
+    cached: {}, rows: model, service: null, home: '/h', mount: '', ...values });
   ctx.root = ctx;
+  ctx.discovery = { get discoverCounts() { return ctx.counts; }, get walks() { return ctx.walks; },
+    get datasets() { return ctx.datasets; }, get worktrees() { return ctx.worktrees; },
+    get childFolders() { return ctx.cached; } };
   const file = new URL('../../ui/FolderTree.qml', import.meta.url);
   const source = existsSync(file) ? readFileSync(file, 'utf8') : '';
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
@@ -189,8 +192,7 @@ test('a rescan that drops the walk sorts again when the root finishes', () => {
 test('a row click leaves the known worktrees and datasets below it out', () => {
   const edits = [];
   const ctx = tree({ choices: { chosen: [], skipped: [] },
-    service: { worktrees: { '/h/p/wt': { path: '/h/p/wt' } },
-      datasets: { '/h/p/frames': { path: '/h/p/frames' } } },
+    worktrees: { '/h/p/wt': { path: '/h/p/wt' } }, datasets: { '/h/p/frames': { path: '/h/p/frames' } },
     choicesEdited: next => edits.push(JSON.parse(JSON.stringify(next))) });
   ctx.clickRow('/h/p');
   assert.deepEqual(edits, [{ chosen: ['/h/p'], skipped: ['/h/p/wt', '/h/p/frames'] }]);

@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/setup.js" as Setup
 import "../lib/tree.js" as Tree
 import "../lib/volumes.js" as Volumes
@@ -25,14 +25,17 @@ FocusScope {
 
   readonly property var volume: service && service.volumes.drives[uuid] ? service.volumes.drives[uuid]
     : ({uuid: uuid, label: "", fs: "", size: 0, mount: null})
-  readonly property var discover: service && service.driveDiscover && service.driveDiscover.volume === uuid
-    ? service.driveDiscover : null
+  readonly property var discover: service && service.discovery.driveDiscover
+    && service.discovery.driveDiscover.volume === uuid ? service.discovery.driveDiscover : null
   readonly property string mount: volume.mount || (discover && discover.roots && discover.roots.length
     ? discover.roots[0].path : "")
   readonly property string label: Volumes.driveLabel({uuid: uuid, label: volume.label, mount: mount})
-  readonly property bool scanning: !!service && service.driveScanning
+  readonly property bool scanning: !!service && service.discovery.driveScanning
   readonly property var folders: discover && Array.isArray(discover.folders) ? discover.folders : []
-  readonly property var walk: service && mount && service.walks[mount] ? service.walks[mount] : null
+  readonly property var walk: service && mount && service.discovery.walks[mount] ? service.discovery.walks[mount] : null
+  // Change triggers for offerDatasets, which reads both through service.discovery.
+  readonly property var datasets: service ? service.discovery.datasets : ({})
+  readonly property var worktrees: service ? service.discovery.worktrees : ({})
   readonly property var rates: discover ? discover.rates : null
   readonly property string device: discover && discover.device ? discover.device : "gpu"
   readonly property bool anyChecked: choices.chosen.length > 0
@@ -92,7 +95,7 @@ FocusScope {
 
   function offerDatasets() {
     if (!service || !seeded) return
-    var found = Object.assign({}, service.datasets, service.worktrees)
+    var found = Object.assign({}, service.discovery.datasets, service.discovery.worktrees)
     var list = Object.keys(found).map(path => found[path])
     choices = Tree.addDatasets(choices, list, proposed)
     proposed = proposed.concat(list.map(entry => entry.path).filter(path => proposed.indexOf(path) < 0))
@@ -113,6 +116,8 @@ FocusScope {
   }
 
   onFoldersChanged: seed()
+  onDatasetsChanged: offerDatasets()
+  onWorktreesChanged: offerDatasets()
 
   // sawProgress is set only while indexing, so a finished run from before the click does not count.
   readonly property bool finished: {
@@ -135,8 +140,6 @@ FocusScope {
   Connections {
     target: root.service
     ignoreUnknownSignals: true
-    function onDatasetsChanged() { root.offerDatasets() }
-    function onWorktreesChanged() { root.offerDatasets() }
     function onProgressChanged() { if (root.phase === "run") root.sawProgress = true }
   }
 

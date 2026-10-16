@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.dt-r`: one folder table row, laid out on a FolderTable's columns.
 Item {

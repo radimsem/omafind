@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/format.js" as Format
 
 // `.sp-f`: the count on the left and the keys for the selection on the right.

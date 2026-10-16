@@ -1,7 +1,9 @@
 # omafind design
 
 Date: 2026-10-11. Status: approved in brainstorming, awaiting spec review.
-Source research: [docs/research/2026-10-11-digup-embeddinggemma2-omarchy-content-search-strategy.md](../../research/2026-10-11-digup-embeddinggemma2-omarchy-content-search-strategy.md). Where this spec and the research note disagree, this spec wins. Section 10 lists the corrections.
+
+Note: code search and `codeRoots` were removed in #21, so the `code:` prefix, the code index and the repository rules below are history. Where this spec disagrees with `docs/ipc.md` and the code, those win.
+Source research: [docs/research/2026-10-11-digup-embeddinggemma2-omarchy-content-search-strategy.md](research/2026-10-11-digup-embeddinggemma2-omarchy-content-search-strategy.md). Where this spec and the research note disagree, this spec wins. Section 10 lists the corrections.
 
 ## 1. Intent
 
@@ -82,7 +84,7 @@ bin/omafind
 systemd/omafind.service
 scripts/build-runtime.sh scripts/qmllint.sh
 tests/{helper,js,fixtures,fakes}
-docs/{contracts.md,ipc.md,DESIGN.md,adr/,research/,superpowers/specs/}
+docs/{spec.md,ipc.md,DESIGN.md,adr/,research/}
 evals/
 ```
 

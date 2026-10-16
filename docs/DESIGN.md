@@ -6,7 +6,7 @@ This is the approved design for omafind in one place. The canvas is the source o
 - Board sources: `docs/design/canvas/<Board>.dc.html` for markup, copy and `renderVals()` logic
 - Styles and tokens: `docs/design/canvas/omafind.css` (omafind parts) on top of `docs/design/canvas/omaone.css` (shared shell tokens)
 - Board order and titles: `docs/design/canvas/canvas.json`
-- Behavior spec: `docs/superpowers/specs/2026-10-11-omafind-design.md`, section 7 for the overlay, keys and jump map
+- Behavior spec: `docs/spec.md`, section 7 for the overlay, keys and jump map
 
 Canvas title: "omafind desktop designs". Boards in canvas order, as `File: title`:
 
@@ -29,7 +29,7 @@ Canvas title: "omafind desktop designs". Boards in canvas order, as `File: title
 - MotionSetup: "M3 · Motion: first run"
 - MotionFresh: "M4 · Motion: new files and drives"
 
-The Folders step follows `docs/superpowers/specs/2026-10-14-setup-and-search-refinements-design.md`. Its lazy tree replaces the Discover and Exclusions boards' older ledger and toolbar.
+The Folders step is the lazy folder tree under Components. It replaces the Discover and Exclusions boards' older ledger and toolbar.
 
 ## Principles
 
@@ -262,12 +262,15 @@ In the overlay:
 |---|---|---|
 | Typing | Query | The words leg answers after 50 ms. The meaning leg re-ranks after 200 ms without typing. |
 | `img:` `pdf:` `doc:` `vid:` `aud:` | Start of query | Limit the search to one kind. The prefix stays in the row in accent. |
-| `↑` `↓` or `Ctrl J` `Ctrl K` | Any | Move across sections. |
+| `↑` `↓`, `Ctrl J` `Ctrl K` or `Ctrl N` `Ctrl P` | Any | Move across sections. |
+| `PageUp` `PageDown` | Any | Move by one visible page. |
+| `Ctrl Home` `Ctrl End` | Any | Select the first or last result. |
+| `Ctrl I` | Footer shows progress | Open or close the indexing progress popover above the footer. A click on the footer progress does the same. `Esc` closes it. |
 | `Enter` | Result | Open at the match. |
 | `Enter` | Weaker-matches row | Expand the folded hits. |
 | `Ctrl Enter` | Result | Show in folder. |
 | `Ctrl Space` | Audio or video | Play or pause the preview from the matched second. Other kinds show no hint. |
-| `Ctrl C` | Result | Copy the path. |
+| `Ctrl C` | Result | Copy the selected query text when the query has a selection, otherwise the result path. |
 | `Ctrl ,` | Any | Open Settings: the shortcut, the Find files menu row and Change folders. `Esc` or Back returns to search. The idle footer shows the hint. |
 | `Esc` | Any | Clear the query, then close. |
 | Click a row | Any | Select it. |
@@ -293,7 +296,7 @@ Setup:
 | `Space` | Folder checkbox | Toggle the folder. |
 | `Esc` | Empty state | Close. |
 
-Setup buttons, by step: "Install", "Pause" while it runs, "Retry" after a failure or "Resume" when paused, then "Next: pick folders"; "Back" and "Start indexing"; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The Setup board shows only "Pause"; the other step 1 labels come from the error handling spec. The boards define no other setup key (see Open questions).
+Setup buttons, by step: "Install", "Pause" while it runs, "Retry" after a failure or "Resume" when paused, then "Next: pick folders"; "Back" and "Start indexing"; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The Setup board shows only "Pause"; the other step 1 labels live in `lib/setup.js`. The boards define no other setup key (see Open questions).
 
 ## Copy
 
@@ -336,6 +339,7 @@ Name things as the spec does: result, section, weaker matches, volume, drive, ro
 - Corner radius, gaps, font and spacing come from `Style`. Do not copy the pixel values in this file into code when a token covers them. The overlay size, the 470 px list pane and the row heights have no token and live as named constants.
 - Result grouping, the fact-token formatter, the jump target badge and the reducer for the two legs live in `.pragma library` JS files under `lib/` and run under `node --test`.
 - The list is one flat model moved by transform, not rebuilt, so the re-rank animates (M1). Responses carry a sequence id and older ones are dropped.
+- Preview media swap without a flash. Image layers set `retainWhileLoading` so a new source keeps the old frame until it is decoded, the fallback icon shows only for an error or an empty source, and `mipmap` stays off because previews never draw below their decode size. The cross-fade starts when the incoming layer is ready, or after 150 ms at the latest.
 - Check each surface by screenshot (`grim`) beside its board before calling it done.
 
 ## Open questions
