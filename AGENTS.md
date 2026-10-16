@@ -2,7 +2,7 @@
 
 omafind is an Omarchy 4 plugin (QML on Quickshell) with a Python daemon, `omafindd`, that searches local files by content through one embedding model run by a stock `llama-server`. Work arrives as GitHub issues #1 to #6. Each issue carries its plan, its verification list and its blockers.
 
-- Read the issue in full before writing code. The spec is `docs/superpowers/specs/2026-10-11-omafind-design.md`; ADR-4 (`docs/adr/0004-stock-llama-server.md`) holds the Phase 0 numbers.
+- Read the issue in full before writing code. The spec is `docs/spec.md`; ADR-4 (`docs/adr/0004-stock-llama-server.md`) holds the Phase 0 numbers.
 - `docs/ipc.md` owns the socket messages. When your issue adds a message or a settings key, update it, `settings.example.json`, `settings.py`, `lib/Settings.js` and the README table in the same pull request.
 - Read `docs/DESIGN.md` before touching any QML surface.
 
