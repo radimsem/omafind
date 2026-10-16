@@ -293,6 +293,19 @@ def test_startup_integrity_check_quarantines_and_records_problem(tmp_path, monke
     store.close()
 
 
+def test_startup_deletes_a_leftover_code_index(tmp_path):
+    from omafindd.main import _drop_code_index
+
+    index = tmp_path / 'data/index'
+    index.mkdir(parents=True)
+    for name in ('code.sqlite', 'code.sqlite-wal', 'code.sqlite-shm', 'usb.sqlite'):
+        (index / name).write_text(name)
+    _drop_code_index(tmp_path / 'data')
+    assert sorted(path.name for path in index.iterdir()) == ['usb.sqlite']
+    _drop_code_index(tmp_path / 'data')
+    _drop_code_index(tmp_path / 'missing')
+
+
 async def test_startup_reuses_verifier_and_cleans_marker_on_normal_exit(tmp_path, monkeypatch):
     from omafindd import health, main, paths
 

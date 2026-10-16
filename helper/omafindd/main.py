@@ -73,6 +73,15 @@ class _LazyEmbedder:
         return await self.instance.embed_query(text)
 
 
+def _drop_code_index(directory):
+    """Deletes the code index an older omafindd left in `directory/index`, if any."""
+    for name in ('code.sqlite', 'code.sqlite-wal', 'code.sqlite-shm'):
+        try:
+            (directory / 'index' / name).unlink()
+        except OSError:
+            pass
+
+
 def _repair(directory):
     paths_to_check = list((directory / 'index').glob('*.sqlite'))
     if not paths_to_check:
@@ -411,6 +420,7 @@ async def _serve(manifest: Path | None = None, *, interval: float = 0.5) -> int:
     settings = SettingsReader(paths.shell_json_path())
     verifier = Verifier()
     detected = await asyncio.to_thread(State.detect, verifier)
+    await asyncio.to_thread(_drop_code_index, directory)
     problems = await asyncio.to_thread(_repair, directory)
     report = health.read(directory / 'index/health.json')
     report.update(started=time.time(), recovery={

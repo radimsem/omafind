@@ -452,8 +452,9 @@ read time before DB mount metadata advances, including child settings reads.
 
 If `state.model` is not `ready`, every search uses `legs:["words"]` and a
 `degraded` error with code `embedding-unavailable` and the cause "Embedding model
-failed verification", including meaning-only requests. Startup verifies
-both model sizes and digests, checks volume DBs with `PRAGMA quick_check`,
+failed verification", including meaning-only requests. Startup deletes the
+`<data>/index/code.sqlite` code index (with its `-wal` and `-shm` files) that an
+older daemon left behind, verifies both model sizes and digests, checks volume DBs with `PRAGMA quick_check`,
 quarantines corrupt stores as `<uuid>.sqlite.bad`, and reconciles online roots
 when recovery is needed. health.json records verification, recovery and rebuild
 facts for `omafind status --json`.
