@@ -38,7 +38,6 @@
     {
       "path": "/home/u/personal/projects/omaone",
       "tracked": 1842,
-      "code_files": 1700,
       "rules": [
         "secrets",
         "generated"
@@ -49,7 +48,6 @@
     {
       "path": "/home/u/personal/projects/herdr",
       "tracked": 320,
-      "code_files": 300,
       "rules": [],
       "index_bytes": 3000000,
       "seconds": 12.6

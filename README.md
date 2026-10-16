@@ -41,7 +41,7 @@ Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON.
 | `venv` | `{path, state}`; `state` is `ready`, `stale` (does not match `helper/uv.lock`, from `uv sync --check`), `missing` or `unknown` (uv not found or the venv unreadable) |
 | `runtime` | `{path, present}` |
 | `model` | `{path, files, verified}`; `files` maps pinned filenames to presence booleans; `verified` is the last daemon verdict, false before a report exists |
-| `volumes` | `[{uuid, label, files, online}]`; `files` counts rows with `indexed_at`, excluding `code.sqlite` |
+| `volumes` | `[{uuid, label, files, online}]`; `files` counts rows with `indexed_at` |
 | `queue` | Total pending and partial file rows across volume indexes |
 | `permissions` | `[{path, expected, actual}]`, with modes such as `0700` and `0644` |
 | `recovery` | Last startup `{clean, mode, journal_retried}`, or `{}` before a report exists |
