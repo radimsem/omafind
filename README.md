@@ -31,7 +31,7 @@ omarchy-shell shell toggle radimsem.omafind '{"view":"search"}'
 It starts in setup until the engine is installed. Setup has three steps:
 
 1. Search engine. Install builds the embedding server (about 3 minutes), then downloads and verifies the model. You can close the window while it runs. Pause stops the job and Resume continues it.
-2. Folders. Pick what to search. Documents, Pictures, Videos, Music, Download and Desktop start checked.
+2. Folders. Pick what to search. Your Documents, Pictures, Videos, Music, Downloads and Desktop folders start checked.
 3. Index. The first index runs, and you choose the shortcut that opens omafind. Indexing keeps going after you close setup.
 
 ## Use
