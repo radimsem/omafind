@@ -74,16 +74,57 @@ def test_cli_checks_file_when_hyprctl_missing(cli, env, capsys):
     assert capsys.readouterr().out == "Super E is bound by omafind.\n"
 
 
-def test_cli_reload_only_on_changed_binding(cli, env):
+OURS = json.dumps([{"modmask": 64, "key": "E", "description": "omafind"}])
+
+
+@pytest.mark.parametrize("live,reloads", [(OURS, 0), ("[]", 1)])
+def test_cli_write_reloads_only_when_hyprland_missed_the_change(cli, env, monkeypatch,
+                                                                 live, reloads):
+    # Hyprland reloads by itself when bindings.lua changes, and each reload resets monitor
+    # scales set at runtime.
     calls = []
 
     def run(argv, **kwargs):
         calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.CompletedProcess(argv, 0, live, "")
 
-    for args in (["write"], ["write"], ["remove"], ["remove"]):
-        assert cli.main(["bindings", *args], env, run=run) == 0
-    assert calls == [["hyprctl", "reload"], ["hyprctl", "reload"]]
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    assert cli.main(["bindings", "write"], env, run=run) == 0
+    assert calls.count(["hyprctl", "reload"]) == reloads
+    assert ["hyprctl", "binds", "-j"] in calls
+
+
+@pytest.mark.parametrize("live,reloads", [("[]", 0), (OURS, 1)])
+def test_cli_remove_reloads_only_when_hyprland_missed_the_change(cli, env, monkeypatch,
+                                                                  live, reloads):
+    path = Path(env["XDG_CONFIG_HOME"]) / "hypr/bindings.lua"
+    path.parent.mkdir(parents=True)
+    bindings.write_block(path, "SUPER + E")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, live, "")
+
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    assert cli.main(["bindings", "remove"], env, run=run) == 0
+    assert calls.count(["hyprctl", "reload"]) == reloads
+
+
+def test_cli_unchanged_binding_calls_no_hyprctl(cli, env):
+    path = Path(env["XDG_CONFIG_HOME"]) / "hypr/bindings.lua"
+    path.parent.mkdir(parents=True)
+    bindings.write_block(path, "SUPER + E")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "[]", "")
+
+    assert cli.main(["bindings", "write"], env, run=run) == 0
+    path.unlink()
+    assert cli.main(["bindings", "remove"], env, run=run) == 0
+    assert calls == []
 
 
 @pytest.mark.parametrize("original", ['{\n  // keep\n  "other": {"label":"Other"}\n}\n',
