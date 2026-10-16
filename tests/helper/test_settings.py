@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 from omafindd import paths
-from omafindd.settings import Settings, SettingsReader, load
+from omafindd.settings import Settings, SettingsReader, load, normalize
 
 ROOT = Path(__file__).resolve().parents[2]
+CASES = json.loads((ROOT / "tests/fixtures/settings-cases.json").read_text())
 
 
 def write_settings(path, **fields):
@@ -19,6 +20,17 @@ def test_example_has_exact_defaults():
         "roots": [], "maxResults": 40, "warmMinutes": 5,
         "imageBudget": 140, "shortcut": "SUPER + E", "ignoredVolumes": [],
     }
+
+
+@pytest.mark.parametrize("case", CASES, ids=[case["name"] for case in CASES])
+def test_normalize_matches_shared_cases(case):
+    settings = normalize(case["input"])
+    assert {
+        "setupDone": settings.setup_done, "gpu": settings.gpu, "audio": settings.audio,
+        "roots": settings.roots, "ignoredVolumes": list(settings.ignored_volumes),
+        "imageBudget": settings.image_budget, "maxResults": settings.max_results,
+        "warmMinutes": settings.warm_minutes, "shortcut": settings.shortcut,
+    } == case["expected"]
 
 
 def test_load_reads_only_plugin_settings(tmp_path):

@@ -27,12 +27,15 @@ class Settings:
 
 
 _MODS = r"(?:SUPER|SHIFT|CTRL|ALT)"
+# ASCII whitespace only, the same set in lib/Settings.js.
+_SPACE = r"[ \t\n\r\f\v]*"
 
 
 def valid_shortcut(value) -> bool:
     """`MODS + KEY` in uppercase, or a lone function key F1 to F35."""
     if not isinstance(value, str) or not re.fullmatch(
-        rf"{_MODS}(?:\s*\+\s*{_MODS})*\s*\+\s*[A-Z0-9_]+|F(?:[1-9]|[12][0-9]|3[0-5])", value
+        rf"{_MODS}(?:{_SPACE}\+{_SPACE}{_MODS})*{_SPACE}\+{_SPACE}[A-Z0-9_]+"
+        r"|F(?:[1-9]|[12][0-9]|3[0-5])", value
     ):
         return False
     parts = [part.strip() for part in value.split("+")]
@@ -63,21 +66,23 @@ def roots(value) -> list[dict]:
             and all(isinstance(path, str) for path in root["excludes"])]
 
 
+def _whole(value):
+    # JavaScript cannot tell 50.0 from 50, so the plugin reads both as 50.
+    return int(value) if type(value) is float and value.is_integer() else value
+
+
 def _integer(entry, key, default, minimum, maximum):
-    value = entry.get(key, default)
+    value = _whole(entry.get(key, default))
     return max(minimum, min(maximum, value)) if type(value) is int else default
 
 
-def _load(path: Path) -> Settings:
-    config = json.loads(path.read_text())
-    entry = find_entry(config, "radimsem.omafind") if isinstance(config, dict) else None
-    if entry is None:
-        raise _MissingEntry("No omafind settings entry")
+def normalize(entry: dict) -> Settings:
+    """Settings from a raw shell.json entry; each invalid value falls back to its default."""
     setup_done = entry.get("setupDone", False)
     gpu = entry.get("gpu", "auto")
     audio = entry.get("audio", True)
     ignored = entry.get("ignoredVolumes", [])
-    budget = entry.get("imageBudget", 140)
+    budget = _whole(entry.get("imageBudget", 140))
     shortcut = entry.get("shortcut", "SUPER + E")
     return Settings(
         setup_done=setup_done if type(setup_done) is bool else False,
@@ -91,6 +96,14 @@ def _load(path: Path) -> Settings:
         ignored_volumes=tuple(uuid for uuid in ignored if isinstance(uuid, str) and uuid)
         if isinstance(ignored, list) else (),
     )
+
+
+def _load(path: Path) -> Settings:
+    config = json.loads(path.read_text())
+    entry = find_entry(config, "radimsem.omafind") if isinstance(config, dict) else None
+    if entry is None:
+        raise _MissingEntry("No omafind settings entry")
+    return normalize(entry)
 
 
 def _remap(settings, mounts=None):
