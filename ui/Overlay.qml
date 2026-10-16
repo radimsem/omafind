@@ -296,7 +296,7 @@ Item {
           id: driveLoader
           anchors.fill: parent
           active: root.view === "drive" && root.driveVolume !== ""
-          source: "ui/DriveDialog.qml"
+          source: "DriveDialog.qml"
           onLoaded: {
             item.service = Qt.binding(() => root.service)
             item.uuid = Qt.binding(() => root.driveVolume)
