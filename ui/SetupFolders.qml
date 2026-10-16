@@ -107,7 +107,8 @@ FocusScope {
     if (!folders.some(row => Tree.isInside(absolute, row.path))) {
       added = added.concat([{path: absolute, name: absolute, xdg: false, repo: false, hasChildren: true, volume: ""}])
     }
-    if (!Tree.searched(absolute, choices)) choices = Tree.click(choices, absolute)
+    if (!Tree.searched(absolute, choices))
+      choices = Tree.click(choices, absolute, service ? Object.keys(Object.assign({}, service.datasets, service.worktrees)) : [])
     // The volume lookup must finish before the root can be saved.
     if (service) service.requestChildren(absolute)
   }

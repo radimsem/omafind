@@ -113,3 +113,29 @@ test('repos inside skipped folders or worktrees are not offered code', () => {
   assert.deepEqual(plain(next.code), ['/h/p/a']);
   assert.deepEqual(plain(Tree.addCode(Tree.toggleCode(next, '/h/p/a'), repos, ['/h/p/a'], ['/h/p/wt']).code), []);
 });
+
+test('a parent click keeps known worktrees and datasets below it left out', () => {
+  const defaults = ['/h/personal/projects/aside-11', '/h/personal/frames'];
+  const on = t.click(state(['/h/Documents']), '/h/personal', defaults);
+  assert.deepEqual(plain(on), { chosen: ['/h/Documents', '/h/personal'],
+    skipped: ['/h/personal/frames', '/h/personal/projects/aside-11'], code: [] });
+  assert.equal(t.mark('/h/personal', on), 'mixed');
+  // The parent is mixed only through the defaults, so the next click turns it off.
+  const off = t.click(on, '/h/personal', defaults);
+  assert.deepEqual(plain(off), { chosen: ['/h/Documents'], skipped: [], code: [] });
+  assert.deepEqual(plain(t.click(off, '/h/personal', defaults)), plain(on));
+});
+
+test('a parent click over a user skip searches the parent without its worktrees', () => {
+  const defaults = ['/h/p/wt'];
+  const s = state(['/h/p'], ['/h/p/wt', '/h/p/junk']);
+  assert.deepEqual(plain(t.click(s, '/h/p', defaults)), { chosen: ['/h/p'], skipped: ['/h/p/wt'], code: [] });
+});
+
+test('ticking a worktree row itself still searches it', () => {
+  const defaults = ['/h/p/wt'];
+  const s = state(['/h/p'], ['/h/p/wt']);
+  assert.deepEqual(plain(t.click(s, '/h/p/wt', defaults)), { chosen: ['/h/p'], skipped: [], code: [] });
+  const nested = t.click(state([]), '/h/p/wt', ['/h/p/wt', '/h/p/wt/frames']);
+  assert.deepEqual(plain(nested), { chosen: ['/h/p/wt'], skipped: ['/h/p/wt/frames'], code: [] });
+});

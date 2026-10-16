@@ -185,3 +185,13 @@ test('a rescan that drops the walk sorts again when the root finishes', () => {
   ctx.walks = { '/h': { done: true } }; ctx.walksChanged();
   assert.deepEqual(paths(ctx), ['/h/b', '/h/a']);
 });
+
+test('a row click leaves the known worktrees and datasets below it out', () => {
+  const edits = [];
+  const ctx = tree({ choices: { chosen: [], skipped: [], code: [] },
+    service: { worktrees: { '/h/p/wt': { path: '/h/p/wt' } },
+      datasets: { '/h/p/frames': { path: '/h/p/frames' } } },
+    choicesEdited: next => edits.push(JSON.parse(JSON.stringify(next))) });
+  ctx.clickRow('/h/p');
+  assert.deepEqual(edits, [{ chosen: ['/h/p'], skipped: ['/h/p/wt', '/h/p/frames'], code: [] }]);
+});

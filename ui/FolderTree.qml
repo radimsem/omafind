@@ -78,6 +78,15 @@ FocusScope {
     return walk && walk.done ? {text: 0, pdf: 0, image: 0, video: 0, audio: 0} : null
   }
 
+  // Known worktrees and datasets: a click that turns a folder on leaves them out again.
+  function skipDefaults() {
+    return service ? Object.keys(Object.assign({}, service.datasets, service.worktrees)) : []
+  }
+
+  function clickRow(path) {
+    root.choicesEdited(Tree.click(root.choices, path, skipDefaults()))
+  }
+
   function evidenceOf(path) {
     return datasets[path] || (meta[path] && meta[path].evidence) || null
   }
@@ -236,7 +245,7 @@ FocusScope {
       actionActive: root.choices.code.indexOf(path) >= 0
       actionLabel: "Index the code in " + (info.name || path)
       fill: check === "on" ? "on" : ""
-      onToggled: root.choicesEdited(Tree.click(root.choices, path))
+      onToggled: root.clickRow(path)
       onTwistyClicked: root.toggle(index)
       onActionClicked: root.choicesEdited(Tree.toggleCode(root.choices, path))
       onFocusedChanged: if (focused) ListView.view.positionViewAtIndex(index, ListView.Contain)
