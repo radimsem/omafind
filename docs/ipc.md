@@ -314,20 +314,20 @@ daemon: {"t":"discover_result","volume":null,"home":"/home/u","device":"gpu",
 
 ```
 daemon: {"t":"discover_counts","root":"/home/u","done":false,"seconds":null,
-         "counts":{"/home/u/Documents":{"text":745,"pdf":67,"image":26,"video":0,"audio":0,"dirs":4}}}
+         "counts":{"/home/u/Documents":{"text":745,"pdf":67,"image":26,"video":0,"audio":0,"code":0,"dirs":4}}}
 daemon: {"t":"discover_counts","root":"/home/u","done":true,"seconds":1.4,"counts":{...},
          "datasets":[{"path":"/home/u/Pictures/frames","kind":"image","files":1418,"named":96}],
          "repos":["/home/u/omaone"],"worktrees":["/home/u/omaone-wt"]}
 ```
 - A fresh walk starts with `counts:{}`, `done:false`, `seconds:null`, and `reset:true`. Clients clear that root's previous counts, datasets, and child replies; a reused walk replays a snapshot without `reset`.
-- Sent about every 250 ms with the folders whose counts changed since the last batch. `counts` are rolled up: a folder counts every indexable file below it. `dirs` counts the rolled-up directories containing those files, including the folder itself; it never contributes to file totals. A folder the walk never reached has no entry; once `done` is true a missing folder has zero files.
+- Sent about every 250 ms with the folders whose counts changed since the last batch. `counts` are rolled up: a folder counts every indexable file below it. `dirs` counts the rolled-up directories containing those files, including the folder itself; it never contributes to file totals. `code` counts the files the code index would take from a git repository (`code.classify_code` true for the path inside the repository) that are not already one of the five content kinds; the nearest git folder above a file decides, so files in a linked worktree are not counted. The plugin adds `code` to the Text column and the estimates only for searched folders whose repository has Code on. A folder the walk never reached has no entry; once `done` is true a missing folder has zero files.
 - The last batch has `done:true`, `seconds` rounded to 0.1, and `datasets`: media folders with 300 or more files of one kind (image, video or audio) of which at least 70% are machine-named; `named` is that share in percent. `repos` and `worktrees` are sorted lists of the absolute paths of the git repositories and linked worktrees the walk found. A done snapshot of a reused walk carries `datasets`, `repos` and `worktrees` too. A failed walk still ends with `done:true` and adds `error`, a `scan-failed` error whose cause is the last error line from fd or the OS reason. Failed walks are never cached, so the next discovery request retries. Folder and file names that cannot be encoded as UTF-8 are skipped.
 
 ```
 plugin: {"t":"discover_children","path":"/home/u/Pictures"}
 daemon: {"t":"discover_children","path":"/home/u/Pictures","volume":"<uuid>","error":null,
          "dirs":[{"path":"/home/u/Pictures/frames","name":"frames","repo":false,"worktree":false,"hasChildren":false,
-                  "counts":{"text":0,"pdf":0,"image":1418,"video":0,"audio":0,"dirs":1},
+                  "counts":{"text":0,"pdf":0,"image":1418,"video":0,"audio":0,"code":0,"dirs":1},
                   "rule":"dataset","evidence":{"kind":"image","files":1418,"named":96}},
                  {"path":"/home/u/Pictures/2024","name":"2024","repo":false,"worktree":false,"hasChildren":true,
                   "counts":null,"rule":null,"evidence":null}]}

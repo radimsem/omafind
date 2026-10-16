@@ -7,8 +7,11 @@ import time
 from pathlib import Path
 
 from . import errors, rules
+from .code import classify_code
 
 KINDS = ('text', 'pdf', 'image', 'video', 'audio')
+# `code` counts source files the code index would take from a repository, outside KINDS.
+COUNTED = (*KINDS, 'code', 'dirs')
 RATES = {
     'gpu': {'text': .07, 'pdf': .37, 'image': .14, 'video': 3.2, 'audio': 1.5, 'code': .042},
     'cpu': {'text': .13, 'pdf': .54, 'image': 1.36, 'video': 18., 'audio': 11.1, 'code': .084},
@@ -176,7 +179,8 @@ class Walk:
         self.popen, self.clock = popen, clock
         self.counts = {}
         self.datasets = []
-        self.repos, self.worktrees, self._checked = [], [], set()
+        self.repos, self.worktrees = [], []
+        self._git, self._owner = {}, {}
         self.done = False
         self.seconds = None
         self.error = None
@@ -208,7 +212,7 @@ class Walk:
             counts = self.counts.get(path)
             if counts is not None:
                 return dict(counts)
-            return dict.fromkeys((*KINDS, "dirs"), 0) if self.done else None
+            return dict.fromkeys(COUNTED, 0) if self.done else None
 
     def dataset(self, path):
         with self._lock:
@@ -235,14 +239,28 @@ class Walk:
                     "done": self.done, "seconds": self.seconds}
 
     def _note_git(self, folder, root):
-        while folder not in self._checked and len(folder) >= len(root):
-            self._checked.add(folder)
-            kind = git_kind(folder)
+        while folder not in self._git and len(folder) >= len(root):
+            kind = self._git[folder] = git_kind(folder)
             if kind == "repo":
                 self.repos.append(folder)
             elif kind == "worktree":
                 self.worktrees.append(folder)
             folder = os.path.dirname(folder)
+
+    def _repo_of(self, folder, root):
+        """The repository whose code index takes files in `folder`, or None.
+
+        The nearest git folder decides, so a linked worktree's files belong to no repository.
+        """
+        if folder not in self._owner:
+            kind = self._git.get(folder)
+            if kind is not None:
+                self._owner[folder] = folder if kind == "repo" else None
+            elif len(folder) <= len(root):
+                self._owner[folder] = None
+            else:
+                self._owner[folder] = self._repo_of(os.path.dirname(folder), root)
+        return self._owner[folder]
 
     def run(self, emit, *, every=.25):
         started = last = self.clock()
@@ -259,11 +277,14 @@ class Walk:
                     name.encode()
                 except UnicodeEncodeError:
                     continue
-                self._note_git(os.path.dirname(name), root)
+                folder = os.path.dirname(name)
+                self._note_git(folder, root)
                 kind = rules.classify_name(os.path.basename(name))
                 if kind is None:
-                    continue
-                folder = os.path.dirname(name)
+                    repo = self._repo_of(folder, root)
+                    if repo is None or not classify_code(Path(os.path.relpath(name, repo))):
+                        continue
+                    kind = "code"
                 if kind in rules.MEDIA_KINDS and folder != root:
                     tally = media.setdefault((folder, kind), [0, 0])
                     tally[0] += 1
@@ -274,7 +295,7 @@ class Walk:
                     while True:
                         if folder not in self.counts:
                             new_dirs += 1
-                        counts = self.counts.setdefault(folder, dict.fromkeys((*KINDS, "dirs"), 0))
+                        counts = self.counts.setdefault(folder, dict.fromkeys(COUNTED, 0))
                         counts[kind] += 1
                         counts["dirs"] += new_dirs
                         changed.add(folder)

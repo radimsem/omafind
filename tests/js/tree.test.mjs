@@ -4,7 +4,7 @@ import { load } from './load.mjs';
 import { plain, freeze } from './fixtures.mjs';
 const t = load('tree.js');
 const state = (chosen, skipped = [], code = []) => freeze({ chosen, skipped, code });
-const ZERO = { text: 0, pdf: 0, image: 0, video: 0, audio: 0 };
+const ZERO = { text: 0, pdf: 0, image: 0, video: 0, audio: 0, code: 0 };
 const c = (text, image = 0) => ({ ...ZERO, text, image });
 
 test('the nearest choice decides whether a folder is searched', () => {
@@ -145,4 +145,19 @@ test('a click that leaves a repo unsearched drops its code', () => {
   assert.deepEqual(plain(t.click(s, '/h/p').code), ['/h/other']);
   assert.deepEqual(plain(t.click(s, '/h/p/a').code), ['/h/p/b', '/h/other']);
   assert.deepEqual(plain(t.click(s, '/h/p/a/docs').code), ['/h/p/a', '/h/p/b', '/h/other']);
+});
+
+test('value counts code files only under searched repos whose code is on', () => {
+  const cc = (text, code) => ({ ...ZERO, text, code });
+  const counts = { '/h/p': cc(10, 50), '/h/p/a': cc(4, 30), '/h/p/a/docs': cc(1, 5),
+    '/h/p/a/sub': cc(0, 8), '/h/p/b': cc(2, 20) };
+  const countOf = path => counts[path] || null;
+  const repos = ['/h/p/a', '/h/p/a/sub', '/h/p/b'];
+  const on = state(['/h/p'], [], ['/h/p/a']);
+  assert.deepEqual(plain(t.value('/h/p', on, countOf, [], repos)), cc(10, 22));
+  assert.deepEqual(plain(t.value('/h/p/a', on, countOf, [], repos)), cc(4, 22));
+  assert.deepEqual(plain(t.value('/h/p/b', on, countOf, [], repos)), cc(2, 0));
+  const skipped = state(['/h/p'], ['/h/p/a/docs'], ['/h/p/a', '/h/p/a/sub']);
+  assert.deepEqual(plain(t.value('/h/p', skipped, countOf, [], repos)), cc(9, 25));
+  assert.deepEqual(plain(t.value('/h/p', state([], [], ['/h/p/a']), countOf, [], repos)), cc(0, 0));
 });

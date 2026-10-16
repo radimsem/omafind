@@ -12,7 +12,7 @@ function tree(values = {}) {
     remove: (i, n) => items.splice(i, n), clear: () => items.splice(0),
   };
   const ctx = vm.createContext({ Tree: load('tree.js'), Setup: load('setup.js'),
-    finished: {}, folders: [], mounts: [], meta: {}, expanded: {}, counts: {}, walks: {}, datasets: {}, cached: {},
+    finished: {}, folders: [], mounts: [], repos: [], meta: {}, expanded: {}, counts: {}, walks: {}, datasets: {}, cached: {},
     rows: model, service: null, home: '/h', mount: '', ...values });
   ctx.root = ctx;
   const file = new URL('../../ui/FolderTree.qml', import.meta.url);
@@ -204,4 +204,15 @@ test('the code button shows only on a searched repo', () => {
   assert.equal(ctx.actionOf(repo, '/h/p/off'), '');
   assert.equal(ctx.actionOf({ repo: true, worktree: true }, '/h/p/wt'), '');
   assert.equal(ctx.actionOf({ repo: false }, '/h/p/plain'), '');
+});
+
+test('totals count code files only while the repo has code on', () => {
+  const values = { folders: [folder('/h/p')], repos: ['/h/p/a'], rates: null, device: 'gpu',
+    counts: { '/h/p': { text: 3, code: 40 }, '/h/p/a': { text: 1, code: 40 } } };
+  const on = tree({ ...values, choices: { chosen: ['/h/p'], skipped: [], code: ['/h/p/a'] } });
+  assert.equal(on.calculatedTotals().files, 43);
+  const off = tree({ ...values, choices: { chosen: ['/h/p'], skipped: [], code: [] } });
+  assert.equal(off.calculatedTotals().files, 3);
+  assert.deepEqual(Array.from(off.cellsOf({ text: 3, pdf: 0, image: 0, video: 0, audio: 0, code: 40 }),
+    cell => cell.n), [43, 0, 0, 0, 0]);
 });

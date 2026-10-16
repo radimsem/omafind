@@ -230,3 +230,11 @@ test('a retried build shows Building, not the old failure', () => {
   assert.match(s.serverTask(retried).value, /^Building/);
   assert.equal(s.modelTask(retried).value, 'Waiting');
 });
+
+test('estimates take code files at the code rate', () => {
+  const s = load('setup.js');
+  const rates = { gpu: { text: 1, pdf: 0, image: 0, video: 0, audio: 0, code: 0.5 },
+    bytes: { text: 10, pdf: 0, image: 0, video: 0, audio: 0, code: 4 } };
+  assert.deepEqual(JSON.parse(JSON.stringify(s.estimate({ text: 2, code: 4 }, rates, 'gpu'))),
+    { bytes: 36, seconds: 4 });
+});

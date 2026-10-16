@@ -32,6 +32,8 @@ FocusScope {
   readonly property var counts: service ? service.discoverCounts : ({})
   readonly property var walks: service ? service.walks : ({})
   readonly property var datasets: service ? service.datasets : ({})
+  // Every repo the walks found; each one decides whether its code files count.
+  readonly property var repos: service && service.repos ? Object.keys(service.repos) : []
   readonly property var cached: service ? service.childFolders : ({})
   readonly property int count: list.count
   readonly property var totals: {
@@ -39,10 +41,11 @@ FocusScope {
     var outer = folders.filter(folder => !folders.some(other =>
       other.path !== folder.path && Tree.isInside(folder.path, other.path)))
     for (var i = 0; i < outer.length; i++) {
-      var kept = Tree.value(outer[i].path, choices, countOf, mounts)
+      var kept = Tree.value(outer[i].path, choices, countOf, mounts, repos)
       if (!kept) continue
       var estimate = Setup.estimate(kept, rates, device)
       Setup.KINDS.forEach(kind => out.files += kept[kind])
+      out.files += kept.code
       out.bytes += estimate.bytes
       out.seconds += estimate.seconds
     }
@@ -75,7 +78,12 @@ FocusScope {
   function countOf(path) {
     if (counts[path]) return counts[path]
     var walk = walkFor(path)
-    return walk && walk.done ? {text: 0, pdf: 0, image: 0, video: 0, audio: 0} : null
+    return walk && walk.done ? {text: 0, pdf: 0, image: 0, video: 0, audio: 0, code: 0} : null
+  }
+
+  // Code files show in the Text column.
+  function cellsOf(shown) {
+    return Setup.KINDS.map(kind => ({n: (shown[kind] || 0) + (kind === "text" ? shown.code || 0 : 0), cut: false}))
   }
 
   // Known worktrees and datasets: a click that turns a folder on leaves them out again.
@@ -226,8 +234,9 @@ FocusScope {
       readonly property var info: root.meta[path] || ({})
       readonly property var found: root.countOf(path)
       readonly property var evidence: root.evidenceOf(path)
-      readonly property var kept: Tree.value(path, root.choices, root.countOf, root.mounts)
-      readonly property var shown: check === "off" ? found : kept
+      readonly property var kept: Tree.value(path, root.choices, root.countOf, root.mounts, root.repos)
+      // An unsearched row shows what it holds, without code: code is indexed only when chosen.
+      readonly property var shown: check === "off" ? (found ? Object.assign({}, found, {code: 0}) : found) : kept
       readonly property var estimate: check !== "off" && kept ? Setup.estimate(kept, root.rates, root.device) : null
       objectName: "omafindFolderRow"
       width: ListView.view.width
@@ -243,7 +252,7 @@ FocusScope {
         : evidence ? Setup.datasetFacts(evidence) : []
       dash: !shown
       pending: !found
-      cells: shown ? Setup.KINDS.map(kind => ({n: shown[kind] || 0, cut: false})) : []
+      cells: shown ? root.cellsOf(shown) : []
       indexText: estimate ? Setup.mb(estimate.bytes) : ""
       timeText: estimate ? Setup.minutes(estimate.seconds) : ""
       action: root.actionOf(info, path)
