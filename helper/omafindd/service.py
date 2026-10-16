@@ -5,7 +5,6 @@ import sqlite3
 from pathlib import Path
 
 from . import errors
-from .code import configured_roots
 
 
 def mounted_volumes():
@@ -60,8 +59,7 @@ class SearchService:
     def searcher(self):
         if self._searcher is None:
             from .search import Searcher
-            self._searcher = Searcher([], self.embedder, start=self._start_query,
-                                      code_directory=self.directory)
+            self._searcher = Searcher([], self.embedder, start=self._start_query)
         return self._searcher
 
     @searcher.setter
@@ -256,7 +254,7 @@ class SearchService:
 
     def current_mounts(self):
         mountinfo = Path("/proc/self/mountinfo").read_bytes()
-        files = set(self.directory.glob("*.sqlite")) - {self.directory / "code.sqlite"}
+        files = set(self.directory.glob("*.sqlite"))
         roots = self.settings().roots
         if (mountinfo != self._mountinfo or files != self._mount_files
                 or roots != self._mount_roots):
@@ -275,8 +273,7 @@ class SearchService:
     def _refresh(self):
         from .store import Store
 
-        self.searcher.code_roots = configured_roots(self.settings)
-        files = set(self.directory.glob("*.sqlite")) - {self.directory / "code.sqlite"}
+        files = set(self.directory.glob("*.sqlite"))
         mounts = self.current_mounts()
         for path in self._databases.keys() - files:
             self._databases.pop(path).close()

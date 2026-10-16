@@ -19,7 +19,6 @@ PREFIXES = {
     "vid": "video",
     "aud": "audio",
     "doc": "text",
-    "code": "code",
 }
 KIND_WORDS = {
     "image": "image",
@@ -112,11 +111,9 @@ def meaning(
 
 
 class Searcher:
-    def __init__(self, stores: Sequence[Store], embedder: Embedder | None, *, start=None,
-                 code_directory: Path | None = None, code_roots: Sequence[Path] = ()):
-        self.stores = [store for store in stores if store.path.name != "code.sqlite"]
+    def __init__(self, stores: Sequence[Store], embedder: Embedder | None, *, start=None):
+        self.stores = list(stores)
         self.embedder = embedder
-        self.code_directory, self.code_roots = code_directory, code_roots
         self.start = start
         self._signatures = None
         self.matrix = np.empty((0, 768), dtype=np.float32)
@@ -276,21 +273,12 @@ class Searcher:
     async def search(self, q: str, *, legs=("words", "meaning"), limit=40, seq=1,
                      kinds=None) -> dict:
         begun = time.monotonic()
-        prefix = re.match(r"^\s*(img|pdf|vid|aud|doc|code):", q, re.IGNORECASE)
+        prefix = re.match(r"^\s*(img|pdf|vid|aud|doc):", q, re.IGNORECASE)
         if prefix:
             kind, q = PREFIXES[prefix[1].lower()], q[prefix.end() :].strip()
             kinds = [kind] if kinds is None or kind in kinds else []
         q = normalized(q).strip()
-        code = None
-        if kinds is not None and "code" in kinds:
-            from .search_code import search_code
-
-            code = await search_code(self, q, roots=self.code_roots, directory=self.code_directory,
-                                     legs=legs, limit=limit, seq=seq, begun=begun)
-            kinds = [kind for kind in kinds if kind != "code"]
-            if not kinds:
-                return code
-        if not self.stores and kinds != [] and code is None:
+        if not self.stores and kinds != []:
             raise FileNotFoundError("No index exists. Run omafind reindex --root PATH.")
         query_result = await self._query(q, bool(q) and "meaning" in legs and kinds != []
                                          and bool(self.stores))
@@ -301,20 +289,8 @@ class Searcher:
                 opened.append(store)
                 # Pin the same WAL snapshot for vectors, metadata, FTS and jump targets.
                 store.db.execute("SELECT value FROM meta LIMIT 1").fetchone()
-            reply = await self._search(q, kinds=kinds, query_result=query_result, begun=begun,
-                                       legs=legs, limit=limit, seq=seq)
-            if code is not None:
-                items = sorted(reply["items"] + code["items"],
-                               key=lambda item: (-item["score"], item["id"]))[:limit]
-                for item in items:
-                    item["weak"] = item["score"] < items[0]["score"] * 0.5
-                reply.update(items=items, total=reply["total"] + code["total"],
-                             weaker=sum(item["weak"] for item in items),
-                             degraded=reply["degraded"] or code["degraded"])
-                for field in ("embed", "words", "scan"):
-                    reply["ms"][field] = round(reply["ms"][field] + code["ms"][field], 3)
-                reply["ms"]["total"] = round((time.monotonic() - begun) * 1000, 3)
-            return reply
+            return await self._search(q, kinds=kinds, query_result=query_result, begun=begun,
+                                      legs=legs, limit=limit, seq=seq)
         finally:
             for store in opened:
                 store.db.rollback()
@@ -423,7 +399,6 @@ class Searcher:
                     "offline": not store.online,
                     "loc": segment["loc"],
                     "loc_end": segment["loc_end"],
-                    "open_line": None,
                     "leg": leg,
                     "part": "image"
                     if segment["kind"] == "page_image"

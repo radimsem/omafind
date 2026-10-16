@@ -1,0 +1,172 @@
+{
+  "base": "~",
+  "manual": true,
+  "notes": "Proposed expectations. Media filenames were listed, not visually inspected; confirm their contents before treating this set as a quality gate. Music is empty, so there are no audio queries.",
+  "queries": [
+    {
+      "q": "img: MulticastDNS resolve mdns.conf",
+      "expect": [
+        "Pictures/screenshot-2026-09-08_17-44-45.png"
+      ],
+      "tag": "screenshot-ocr"
+    },
+    {
+      "q": "img: Czech homework on dot product, norm, distance and angle of vectors",
+      "expect": [
+        "Pictures/screenshot-2026-04-20_12-05-07.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: exam problem about a subspace of R4 spanned by three vectors",
+      "expect": [
+        "Pictures/screenshot-2026-04-20_14-58-09.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: add LLM provider dialog with the default model dropdown open showing no matches",
+      "expect": [
+        "Pictures/screenshot-2026-06-10_20-57-08.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: construction queue of wiki documents all marked failed",
+      "expect": [
+        "Pictures/screenshot-2026-06-12_10-56-56.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: Spotify settings page with song do you see by THERA playing",
+      "expect": [
+        "Pictures/screenshot-2026-08-15_20-15-19.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: mockup of three agent scope banner variants A, B and C",
+      "expect": [
+        "Pictures/screenshot-2026-08-20_13-31-09.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: DeepSeek V4 Flash model card saying architecture is unavailable",
+      "expect": [
+        "Pictures/screenshot-2026-08-22_17-01-54.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: add to team dialog picking an agent like kimi-k3 or grok-4.5",
+      "expect": [
+        "Pictures/screenshot-2026-08-23_11-56-56.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: knowledge graph legend with supports, opposes and record counts",
+      "expect": [
+        "Pictures/screenshot-2026-08-23_18-10-48.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: terminal line saying VM received NeedDebuggerBreak trap",
+      "expect": [
+        "Pictures/screenshot-2026-08-24_12-12-02.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: Hugging Face deep-swe dataset preview table with inspector sidebar",
+      "expect": [
+        "Pictures/screenshot-2026-08-25_12-12-25.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: preparation failed error under Qwen tokenizer corpus selection",
+      "expect": [
+        "Pictures/screenshot-2026-08-29_18-52-00.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: create agent form for a flaky CI agent named Datel",
+      "expect": [
+        "Pictures/screenshot-2026-09-01_10-58-30.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: slide with log probability formula, incident versus alternative token boxes",
+      "expect": [
+        "Pictures/screenshot-2026-09-14_12-48-40.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: AI thinking text about fetching ratatui docs through ctx7",
+      "expect": [
+        "Pictures/screenshot-2026-09-17_17-44-36.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: Blender viewport of a wireframe humanoid robot with process crashed notification",
+      "expect": [
+        "Pictures/screenshot-2026-09-28_20-34-03.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: meeting notes page about AI toolset listing participants",
+      "expect": [
+        "Pictures/screenshot-2026-10-01_13-17-57.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "img: tiny list of agents named aside, omaone and research",
+      "expect": [
+        "Pictures/screenshot-2026-10-11_18-51-41.png"
+      ],
+      "tag": "image-meaning"
+    },
+    {
+      "q": "vid: robot head visor and display details with neck actuator specs",
+      "expect": [
+        "Videos/screenrecording-2026-10-03_08-44-29.mp4"
+      ],
+      "tag": "video-meaning",
+      "loc": 24
+    },
+    {
+      "q": "vid: transparent humanoid robot torso with battery pack 2.3 kWh panel",
+      "expect": [
+        "Videos/screenrecording-2026-10-03_08-45-31.mp4"
+      ],
+      "tag": "video-meaning",
+      "loc": 30
+    },
+    {
+      "q": "vid: periodic table with a copper outlook chart to 2050",
+      "expect": [
+        "Videos/screenrecording-2026-10-03_09-00-09.mp4"
+      ],
+      "tag": "video-meaning",
+      "loc": 35
+    },
+    {
+      "q": "vid: terminal with screen recording error force-killed notification",
+      "expect": [
+        "Videos/screenrecording-2026-10-09_14-58-27.mp4"
+      ],
+      "tag": "video-meaning",
+      "loc": 4
+    }
+  ]
+}

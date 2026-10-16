@@ -7,16 +7,13 @@ import time
 from pathlib import Path
 
 from . import errors, rules
-from .code import classify_code
 
 KINDS = ('text', 'pdf', 'image', 'video', 'audio')
-# `code` counts source files the code index would take from a repository, outside KINDS.
-COUNTED = (*KINDS, 'code', 'dirs')
+COUNTED = (*KINDS, 'dirs')
 RATES = {
-    'gpu': {'text': .07, 'pdf': .37, 'image': .14, 'video': 3.2, 'audio': 1.5, 'code': .042},
-    'cpu': {'text': .13, 'pdf': .54, 'image': 1.36, 'video': 18., 'audio': 11.1, 'code': .084},
-    'bytes': {'text': 11000, 'pdf': 48000, 'image': 7000, 'video': 40000,
-              'audio': 12000, 'code': 10000},
+    'gpu': {'text': .07, 'pdf': .37, 'image': .14, 'video': 3.2, 'audio': 1.5},
+    'cpu': {'text': .13, 'pdf': .54, 'image': 1.36, 'video': 18., 'audio': 11.1},
+    'bytes': {'text': 11000, 'pdf': 48000, 'image': 7000, 'video': 40000, 'audio': 12000},
 }
 
 
@@ -180,7 +177,7 @@ class Walk:
         self.counts = {}
         self.datasets = []
         self.repos, self.worktrees = [], []
-        self._git, self._owner = {}, {}
+        self._git = {}
         self.done = False
         self.seconds = None
         self.error = None
@@ -247,21 +244,6 @@ class Walk:
                 self.worktrees.append(folder)
             folder = os.path.dirname(folder)
 
-    def _repo_of(self, folder, root):
-        """The repository whose code index takes files in `folder`, or None.
-
-        The nearest git folder decides, so a linked worktree's files belong to no repository.
-        """
-        if folder not in self._owner:
-            kind = self._git.get(folder)
-            if kind is not None:
-                self._owner[folder] = folder if kind == "repo" else None
-            elif len(folder) <= len(root):
-                self._owner[folder] = None
-            else:
-                self._owner[folder] = self._repo_of(os.path.dirname(folder), root)
-        return self._owner[folder]
-
     def run(self, emit, *, every=.25):
         started = last = self.clock()
         root = str(self.root)
@@ -281,10 +263,7 @@ class Walk:
                 self._note_git(folder, root)
                 kind = rules.classify_name(os.path.basename(name))
                 if kind is None:
-                    repo = self._repo_of(folder, root)
-                    if repo is None or not classify_code(Path(os.path.relpath(name, repo))):
-                        continue
-                    kind = "code"
+                    continue
                 if kind in rules.MEDIA_KINDS and folder != root:
                     tally = media.setdefault((folder, kind), [0, 0])
                     tally[0] += 1

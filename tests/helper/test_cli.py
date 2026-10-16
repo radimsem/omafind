@@ -521,7 +521,7 @@ def test_status_volumes_queue_and_health_are_read_only(cli, env, venv, capsys):
     data = Path(env['XDG_DATA_HOME']) / 'omafind'
     index = data / 'index'
     index.mkdir(parents=True)
-    for uuid, label in (('u', 'Photos2024'), ('v', 'Backup'), ('code', 'code')):
+    for uuid, label in (('u', 'Photos2024'), ('v', 'Backup')):
         with sqlite3.connect(index / f'{uuid}.sqlite') as db:
             db.execute('CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)')
             db.execute("INSERT INTO meta VALUES('volume_label', ?)", (label,))

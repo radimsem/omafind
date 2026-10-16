@@ -282,14 +282,12 @@ def test_startup_integrity_check_quarantines_and_records_problem(tmp_path, monke
     index = directory / 'index'
     index.mkdir(parents=True)
     (index / 'usb.sqlite').write_text('corrupt database')
-    (index / 'code.sqlite').write_text('leave code alone')
     monkeypatch.setattr('omafindd.store.mounted_volumes', lambda: {'usb': Path('/media/drive')})
     problems = _repair(directory)
     assert len(problems) == 1
     assert problems[0]['volume'] == 'usb'
     assert problems[0]['action'] == 'rebuilt'
     assert Path(problems[0]['moved_to']).read_text() == 'corrupt database'
-    assert (index / 'code.sqlite').read_text() == 'leave code alone'
     store = Store.open_existing(index / 'usb.sqlite', Path('/media/drive'))
     assert store.db.execute('SELECT count(*) FROM files').fetchone()[0] == 0
     store.close()

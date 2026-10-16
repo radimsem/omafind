@@ -12,7 +12,6 @@ from pathlib import Path
 from threading import Lock
 
 from . import errors, opener
-from .code import code_run
 from .state import State
 
 PROTOCOL_VERSION = 1
@@ -277,13 +276,11 @@ class IpcServer:
             return {"t": "error", "id": item_id, "for": "open",
                     **errors.bad_request("Invalid open arguments").to_dict()}
         target = dict(item)
-        if target.get("kind") not in ("text", "code"):
+        if target.get("kind") != "text":
             line = None
         jump = line if line is not None else self._jumps.get(writer, {}).get(item_id)
         if jump is not None:
             target["loc"] = jump
-            if target["kind"] == "code":
-                target["open_line"] = jump
         try:
             opener.launch(target, how=how)
         except OSError as error:
@@ -330,17 +327,12 @@ class IpcServer:
                         "SELECT count(*),count(indexed_at),sum(state='pending' OR "
                         "(state='partial' AND detail IS NULL)) FROM files"
                     ).fetchone()
-                    run = code_run(db) if path.name == "code.sqlite" else None
-                    if run is not None:
-                        # Code rows appear one at a time, so the pass's own counts show progress.
-                        count, pending = run["total"], run["total"] - run["done"]
-                    if path.name != "code.sqlite":
-                        try:
-                            meta = dict(db.execute("SELECT key,value FROM meta"))
-                        except sqlite3.Error:
-                            meta = {}
-                        if meta.get("volume_uuid") and meta["volume_uuid"] not in mounts:
-                            offline.append(meta.get("volume_label", path.stem))
+                    try:
+                        meta = dict(db.execute("SELECT key,value FROM meta"))
+                    except sqlite3.Error:
+                        meta = {}
+                    if meta.get("volume_uuid") and meta["volume_uuid"] not in mounts:
+                        offline.append(meta.get("volume_label", path.stem))
             except sqlite3.Error:
                 failed = True
                 continue

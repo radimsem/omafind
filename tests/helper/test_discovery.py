@@ -91,7 +91,7 @@ def test_volume_lookup_reuses_mount_table_and_prefers_inner_mount(monkeypatch):
     assert calls == [True]
 
 
-ZERO = dict.fromkeys((*discovery.KINDS, "code", "dirs"), 0)
+ZERO = dict.fromkeys((*discovery.KINDS, "dirs"), 0)
 
 
 def test_folders_hide_symlinks_hidden_heavy_and_secrets(tmp_path):
@@ -410,7 +410,7 @@ def test_rows_and_walk_report_repos_and_worktrees(tmp_path):
     assert walk.snapshot()["worktrees"] == [str(tmp_path / "proj/wt")]
 
 
-def test_walk_counts_code_files_of_repos_once(tmp_path):
+def test_walk_leaves_source_files_of_repos_uncounted(tmp_path):
     _repo(tmp_path / "proj/main")
     for name in ("app.py", "README.md", "Makefile", "build/out.py", "data.bin"):
         (tmp_path / "proj/main" / name).parent.mkdir(parents=True, exist_ok=True)
@@ -423,8 +423,8 @@ def test_walk_counts_code_files_of_repos_once(tmp_path):
                       + [tmp_path / "proj/wt/app.py", tmp_path / "proj/loose.py"])
     walk = discovery.Walk(tmp_path, popen=lambda *args, **kwargs: process)
     walk.run(lambda batch: None)
-    main = walk.count(str(tmp_path / "proj/main"))
-    assert (main["code"], main["text"]) == (2, 1)
-    assert walk.count(str(tmp_path / "proj"))["code"] == 2
-    assert walk.count(str(tmp_path / "proj/wt"))["code"] == 0
-    assert walk.count(str(tmp_path / "nowhere")) == ZERO
+    assert walk.count(str(tmp_path / "proj/main")) == ZERO | {"text": 1, "dirs": 1}
+    assert walk.count(str(tmp_path / "proj")) == ZERO | {"text": 1, "dirs": 2}
+    assert walk.count(str(tmp_path / "proj/wt")) == ZERO
+    assert walk.repos == [str(tmp_path / "proj/main")]
+    assert walk.worktrees == [str(tmp_path / "proj/wt")]

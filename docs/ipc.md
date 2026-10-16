@@ -147,18 +147,19 @@ replies may arrive in any order; clients use `seq` to match them to requests.
 A search gets exactly one reply. `seq` is an integer, `q` a string, `legs` a
 nonempty array of `words` and/or `meaning`, and `limit` an integer 1..200.
 Omitted legs mean both; an omitted limit uses `maxResults` (default 40).
-Optional `kinds` is an array of `text`, `pdf`, `image`, `video`, `audio` and/or
-`code`. Other types or unknown kinds return `bad-request`. Omission searches
-the content index; `code` explicitly includes the code index, using the same
-route as `code:`. An empty array matches nothing. Multiple kinds form a union;
-a textual prefix narrows it to that kind. Filtering happens before candidate
-budgets, the result limit, `total` and `weaker` are computed.
+Optional `kinds` is an array of `text`, `pdf`, `image`, `video` and/or
+`audio`. Other types or unknown kinds return `bad-request`. Omission searches
+every kind. An empty array matches nothing. Multiple kinds form a union;
+a textual prefix (`doc:`, `pdf:`, `img:`, `vid:` or `aud:`) narrows it to that
+kind. Any other word before a colon, such as `code:`, is part of the query.
+Filtering happens before candidate budgets, the result limit, `total` and
+`weaker` are computed.
 A client may repeat `seq` with words-only then both legs. For one `seq`, a reply
 whose `legs` include `meaning` supersedes words-only regardless of arrival order.
 Results are flat in score order; grouping is client-side in #4.
 
 ```json
-{"t":"results","seq":7,"legs":["words","meaning"],"ms":{"embed":14,"scan":9,"words":4,"total":31},"total":17,"weaker":3,"degraded":null,"items":[{"id":"b81e:812:900","kind":"pdf","path":"/home/u/a.pdf","name":"a.pdf","dir":"/home/u","volume":"<uuid>","label":"root","drive":false,"offline":false,"loc":12,"loc_end":null,"open_line":null,"leg":"meaning + words","part":"text","z":3.4,"score":7.4,"weak":false,"hits":["invoice","4412"],"snippet":[{"t":"due on ","m":false},{"t":"invoice","m":true}],"thumb":null,"mtime":1760000000,"size":48211,"info":{}}]}
+{"t":"results","seq":7,"legs":["words","meaning"],"ms":{"embed":14,"scan":9,"words":4,"total":31},"total":17,"weaker":3,"degraded":null,"items":[{"id":"b81e:812:900","kind":"pdf","path":"/home/u/a.pdf","name":"a.pdf","dir":"/home/u","volume":"<uuid>","label":"root","drive":false,"offline":false,"loc":12,"loc_end":null,"leg":"meaning + words","part":"text","z":3.4,"score":7.4,"weak":false,"hits":["invoice","4412"],"snippet":[{"t":"due on ","m":false},{"t":"invoice","m":true}],"thumb":null,"mtime":1760000000,"size":48211,"info":{}}]}
 ```
 
 `id` is opaque, resolved only against that connection's latest results.
@@ -166,7 +167,7 @@ Results are flat in score order; grouping is client-side in #4.
 Drive items carry their stored `label` and a `dir` relative to the mount,
 prefixed by `/`, whether online or offline. Internal-volume items carry
 `drive:false` and an absolute `dir`. Online `path` remains the absolute file path.
-`offline` reflects the volume mount state; code results carry `open_line`. `loc` is a 1-based
+`offline` reflects the volume mount state. `loc` is a 1-based
 line or PDF page, or seconds for video and audio; images have a null location.
 `loc_end` is the next kept frame's second or the audio window's end second.
 Extracted HTML/docx/odt set `info.extracted:true`. `part` is `text`, `image`
@@ -177,10 +178,6 @@ files before the limit; `weaker` counts weak items in the returned list.
 `degraded` is null or an error object (see Errors): `server-starting`,
 `index-running`, `server-start-failed` or `embedding-unavailable`. Embedding
 failures still return words.
-A `kinds:["code"]` search with no code index adds `notice:"no-code-index"` when no repository has
-Code turned on, or `notice:"code-index-pending"` when one has but the index is not built yet;
-`degraded` stays null. While an index run is building the code index, a `code` search returns
-what is indexed so far with `notice:"code-index-building"`.
 Timing fields are milliseconds.
 
 Error replies carry `seq` and the error fields, for example
@@ -195,8 +192,8 @@ The CLI sends seq 1 with both legs and prints the complete results object for
 
 Settings in the plugin's shell.json entry now include `roots` (default `[]`),
 `maxResults` (10..200, default 40), `warmMinutes` (0..60, default 5),
-`codeRoots` (`[{path, excludes}]`, default `[]`: an absolute repository path and folders relative to it whose code is left out; an older plain path string loads as `{path, excludes: []}`), and `imageBudget`
-(70, 140 or 280, default 140). Invalid paths are dropped; budgets are not coerced.
+and `imageBudget` (70, 140 or 280, default 140). Invalid paths are dropped;
+budgets are not coerced. A `codeRoots` key left by an older plugin is ignored.
 `audio` (bool, default true) controls audio files and video soundtracks.
 With audio off, audio files have state `skipped` and code `audio-off`.
 Silent audio has code `silent-audio`. A failed soundtrack leaves frame vectors
@@ -216,16 +213,16 @@ After `hello`, the plugin may send:
 | t | Fields | Behavior |
 |---|---|---|
 | `preview` | `id`, `q` (string, default `""`) | Render the selected result on demand. Unknown IDs or missing online files reply `error` with `id` and a `file-missing` error. |
-| `open` | `id`, `how:"open"\|"reveal"` (default `"open"`), optional `line` (int ≥ 1) | Open text and code at `line`, else at the preview jump, else at the chunk start; other kinds ignore `line`. `how:"reveal"` selects the file with detached `nautilus --select`. Offline and missing files run nothing. A bad `how` or `line` replies `error` with `for:"open"`, `code:"bad-request"`. |
+| `open` | `id`, `how:"open"\|"reveal"` (default `"open"`), optional `line` (int ≥ 1) | Open text at `line`, else at the preview jump, else at the chunk start; other kinds ignore `line`. `how:"reveal"` selects the file with detached `nautilus --select`. Offline and missing files run nothing. A bad `how` or `line` replies `error` with `for:"open"`, `code:"bad-request"`. |
 | `status` | none | Reply with current indexed-file and queue counts. |
 
 | t | Fields | Behavior |
 |---|---|---|
-| `preview` | `id`, `mode:"lines"\|"image"\|"bars"`, `lines:[{no,text,hit}]`, `jump`, `range:[first,last]\|null`, `image:path\|null`, `bars:[int]`, `opener`, `editor` (text/code only) | Text/code use a clamped ±8-line window. PDF/video render the selected page/second; online images use the source file, or a cached `magick` still at 1200 x 840 when Qt cannot decode the format (HEIC, AVIF, RAW); PDF pages render 1200 px on the long side. Audio has 64 RMS bars in 0..100. Unused arrays are empty. Offline items use mode `image` with their cached thumbnail or null. |
+| `preview` | `id`, `mode:"lines"\|"image"\|"bars"`, `lines:[{no,text,hit}]`, `jump`, `range:[first,last]\|null`, `image:path\|null`, `bars:[int]`, `opener`, `editor` (text only) | Text uses a clamped ±8-line window. PDF/video render the selected page/second; online images use the source file, or a cached `magick` still at 1200 x 840 when Qt cannot decode the format (HEIC, AVIF, RAW); PDF pages render 1200 px on the long side. Audio has 64 RMS bars in 0..100. Unused arrays are empty. Offline items use mode `image` with their cached thumbnail or null. |
 | `opened` | `id`, `opener`, `at:string\|null` | Human command label and location: `mpv --start=872`/`14:32`, `omarchy-launch-browser`/`p. 37`, `nvim +212`/`L212`; images and reveals have null `at`. |
 | `open_failed` | `id`, `error` | The file cannot be opened: `drive-not-mounted` for a file on an unplugged drive, `file-missing` for a missing file or an unknown ID, `open-failed` with the cause when the opener fails to start. |
 | `error` | `id`, `for:"open"`, error fields | `bad-request` for invalid open arguments, `internal` for an unexpected exception. A failed preview replies `error` with `id` and no `for`. |
-| `status` | `files`, `roots`, `offline:[]`, `done`, `total` | Counts from all index stores, including code. Also pushed when changed, at most once every 0.5 seconds. |
+| `status` | `files`, `roots`, `offline:[]`, `done`, `total` | Counts from all index stores. Also pushed when changed, at most once every 0.5 seconds. |
 
 IDs resolve only against that connection's latest `results`; a `results` reply with a new `seq` clears
 its remembered preview jumps; the meaning leg of the same `seq` keeps the jumps of ids it still lists. `editor` is the basename of the first command in
@@ -300,9 +297,9 @@ daemon: {"t":"runtime_progress","state":"idle|running|paused|failed|done",
 plugin: {"t":"discover_start"}                      // $HOME plus every non-system volume
 plugin: {"t":"discover_start","volume":"<uuid>"}    // one volume only (#6 new-drive flow)
 daemon: {"t":"discover_result","volume":null,"home":"/home/u","device":"gpu",
-         "rates":{"gpu":{"text":0.07,"pdf":0.37,"image":0.14,"video":3.2,"audio":1.5,"code":0.042},
-                  "cpu":{"text":0.13,"pdf":0.54,"image":1.36,"video":18.0,"audio":11.1,"code":0.084},
-                  "bytes":{"text":11000,"pdf":48000,"image":7000,"video":40000,"audio":12000,"code":10000}},
+         "rates":{"gpu":{"text":0.07,"pdf":0.37,"image":0.14,"video":3.2,"audio":1.5},
+                  "cpu":{"text":0.13,"pdf":0.54,"image":1.36,"video":18.0,"audio":11.1},
+                  "bytes":{"text":11000,"pdf":48000,"image":7000,"video":40000,"audio":12000}},
          "roots":[{"path":"/home/u","volume":"<uuid>"},{"path":"/run/media/u/USB","volume":"<uuid>"}],
          "folders":[{"path":"/home/u/Documents","name":"Documents","xdg":true,"repo":false,"worktree":false,"hasChildren":true,"volume":"<uuid>"},
                     {"path":"/home/u/omaone","name":"omaone","xdg":false,"repo":true,"worktree":false,"hasChildren":true,"volume":"<uuid>"},
@@ -315,20 +312,20 @@ daemon: {"t":"discover_result","volume":null,"home":"/home/u","device":"gpu",
 
 ```
 daemon: {"t":"discover_counts","root":"/home/u","done":false,"seconds":null,
-         "counts":{"/home/u/Documents":{"text":745,"pdf":67,"image":26,"video":0,"audio":0,"code":0,"dirs":4}}}
+         "counts":{"/home/u/Documents":{"text":745,"pdf":67,"image":26,"video":0,"audio":0,"dirs":4}}}
 daemon: {"t":"discover_counts","root":"/home/u","done":true,"seconds":1.4,"counts":{...},
          "datasets":[{"path":"/home/u/Pictures/frames","kind":"image","files":1418,"named":96}],
          "repos":["/home/u/omaone"],"worktrees":["/home/u/omaone-wt"]}
 ```
 - A fresh walk starts with `counts:{}`, `done:false`, `seconds:null`, and `reset:true`. Clients clear that root's previous counts, datasets, and child replies; a reused walk replays a snapshot without `reset`.
-- Sent about every 250 ms with the folders whose counts changed since the last batch. `counts` are rolled up: a folder counts every indexable file below it. `dirs` counts the rolled-up directories containing those files, including the folder itself; it never contributes to file totals. `code` counts the files the code index would take from a git repository (`code.classify_code` true for the path inside the repository) that are not already one of the five content kinds; the nearest git folder above a file decides, so files in a linked worktree are not counted. The plugin adds `code` to the Text column and the estimates only for searched folders whose repository has Code on. A folder the walk never reached has no entry; once `done` is true a missing folder has zero files.
+- Sent about every 250 ms with the folders whose counts changed since the last batch. `counts` are rolled up: a folder counts every indexable file below it. `dirs` counts the rolled-up directories containing those files, including the folder itself; it never contributes to file totals. A folder the walk never reached has no entry; once `done` is true a missing folder has zero files.
 - The last batch has `done:true`, `seconds` rounded to 0.1, and `datasets`: media folders with 300 or more files of one kind (image, video or audio) of which at least 70% are machine-named; `named` is that share in percent. `repos` and `worktrees` are sorted lists of the absolute paths of the git repositories and linked worktrees the walk found. A done snapshot of a reused walk carries `datasets`, `repos` and `worktrees` too. A failed walk still ends with `done:true` and adds `error`, a `scan-failed` error whose cause is the last error line from fd or the OS reason. Failed walks are never cached, so the next discovery request retries. Folder and file names that cannot be encoded as UTF-8 are skipped.
 
 ```
 plugin: {"t":"discover_children","path":"/home/u/Pictures"}
 daemon: {"t":"discover_children","path":"/home/u/Pictures","volume":"<uuid>","error":null,
          "dirs":[{"path":"/home/u/Pictures/frames","name":"frames","repo":false,"worktree":false,"hasChildren":false,
-                  "counts":{"text":0,"pdf":0,"image":1418,"video":0,"audio":0,"code":0,"dirs":1},
+                  "counts":{"text":0,"pdf":0,"image":1418,"video":0,"audio":0,"dirs":1},
                   "rule":"dataset","evidence":{"kind":"image","files":1418,"named":96}},
                  {"path":"/home/u/Pictures/2024","name":"2024","repo":false,"worktree":false,"hasChildren":true,
                   "counts":null,"rule":null,"evidence":null}]}
@@ -361,15 +358,14 @@ daemon: {"t":"progress","running":true,"done":612,"queued":597,"volume":"<uuid>"
                          "fix":{"kind":"install","packages":["tesseract"]}}]}
 ```
 - `index_progress` replies the same `progress` body and starts nothing, so a view can fill before the next broadcast.
-- The code index is built after every volume, in the same child. While it runs, `progress` adds `code:{"done":n,"total":m}`, counted in repository files; `done`, `queued` and `kinds` leave code out. The child records the pass as meta `code_run` (`{pid, done, total}`) in `code.sqlite` and deletes it when the pass ends, so `progress` shows `code` only while that child runs. `status` counts a running pass's `done` and `total` too. The child's log gets `done N queued M volume code` lines.
 - Reply to `index_start` is a `progress` snapshot. Then the daemon broadcasts `progress` at most twice per second while the index job runs, and once more when it exits (`running:false`). `status` keeps working unchanged for the #4 footer.
 - When the child exits non-zero, the final `progress` includes `exit:<code>` (negative for termination by a signal). The daemon then broadcasts exactly one `error` with `for:"index_start"` and code `index-exited`, whose detail names the exit code and whose `log` is the absolute `<data>/index/reindex.log` path. These broadcasts report failure after the initial reply; they carry no `seq` or `id`. Successful completion omits `exit` and sends no error.
 - `device` is `gpu`, `cpu` or null; `vram_gb` is a float or null (unknown is null, the client hides the token). `skipped` and `failed` omit zero keys. Secrets are never listed, so they are not counted in `skipped`. `problems` lists at most 50 failed files.
-- `problems` items are `{path, code, detail}`, and `failed` counts files by the same `code`. Per-file codes are kebab-case: `encrypted-pdf`, `timeout`, `extract-failed`, `embedding-failed`, `embedding-precision-fault`, `soundtrack-failed`, `audio-off`, `silent-audio`, `tool-missing`, `code-index-failed`. `detail` is the extractor's own message; for `tool-missing` it names the tool. Code-index failures are counted and listed like any other file.
+- `problems` items are `{path, code, detail}`, and `failed` counts files by the same `code`. Per-file codes are kebab-case: `encrypted-pdf`, `timeout`, `extract-failed`, `embedding-failed`, `embedding-precision-fault`, `soundtrack-failed`, `audio-off`, `silent-audio`, `tool-missing`. `detail` is the extractor's own message; for `tool-missing` it names the tool.
 - `tool_errors` holds one `tool-missing` error per missing tool, each with an install fix for that tool's package. It is `[]` when no file waits on a tool.
 - A file whose embedding the server rejects gets code `embedding-failed`: state `failed`, or, for a `partial` file whose earlier pages are already indexed, state `partial` with that detail. The halted file stays searchable up to where it stopped and leaves the queue.
 - `kinds.image.ocr` counts ready images with a non-empty OCR text segment (`kind:"ocr"`); filename and parent-folder text in `name` segments does not count.
-- Error codes on these `error` replies: `no-roots` (settings have no roots and no codeRoots), `bad-request`, `scan-failed`, `drive-not-mounted` (a drive scan whose drive is gone), `binds-failed`, `index-exited` and `internal`. Runtime job failures arrive in `runtime_progress.error`, not as `error` replies.
+- Error codes on these `error` replies: `no-roots` (settings have no roots), `bad-request`, `scan-failed`, `drive-not-mounted` (a drive scan whose drive is gone), `binds-failed`, `index-exited` and `internal`. Runtime job failures arrive in `runtime_progress.error`, not as `error` replies.
 
 ```
 plugin: {"t":"retry_failed","code":"tool-missing"}
@@ -385,8 +381,7 @@ The daemon refuses to build without a systemd user memory scope.
 Indexing runs as a `bin/omafind reindex --incremental` child in a new session.
 The daemon reads committed store counts every 0.5 s.
 The child logs to `<data>/index/reindex.log` (0600, replaced for each run), writes
-skip counts to `run.json`, and is terminated when the daemon stops. Code stores
-are excluded from setup kind counts. `status` retains the issue #4 footer shape.
+skip counts to `run.json`, and is terminated when the daemon stops. `status` retains the issue #4 footer shape.
 
 Later issues append their messages here.
 
@@ -437,11 +432,10 @@ while a child runs are deferred and processed after it exits.
 
 `index_start.volume` is optional and selects `reindex --incremental --volume
 <uuid>`; omission runs all configured volumes. `progress.volumes` holds one
-`{label,done,total}` object per content store keyed by UUID. Code stores remain
-excluded from these counts. Progress and status are pushed while counts advance
+`{label,done,total}` object per content store keyed by UUID. Progress and status are pushed while counts advance
 and on child exit, so the indexed footer and open list follow watcher updates.
 `status.offline` lists stored labels for known content volumes absent from the
-current mounts; status still includes code in its file counts.
+current mounts.
 
 Offline stores stay searchable, including meaning search when the verified
 model is ready. Their items retain the cached thumbnail and carry these fields:

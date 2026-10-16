@@ -114,8 +114,6 @@ def _index_status(env, run):
     volumes = []
     queue = 0
     for path in sorted((data / "index").glob("*.sqlite")):
-        if path.name == "code.sqlite":
-            continue
         label = path.stem
         files = pending = 0
         try:
@@ -382,7 +380,6 @@ def search(args, env, request):
 
 
 def reindex(args, env, execve=os.execve):
-    from omafindd.code import configured_roots
     from omafindd.settings import load
 
     parser = argparse.ArgumentParser(prog="omafind reindex")
@@ -394,14 +391,13 @@ def reindex(args, env, execve=os.execve):
     except SystemExit as error:
         return error.code
     settings = load(Path(env["HOME"]) / ".config/omarchy/shell.json")
-    code_roots = configured_roots(lambda: settings)
     configured = {Path(root["path"]).resolve(): root for root in settings.roots}
     roots = []
     for root in parsed.root:
         path = Path(root).expanduser().resolve()
         roots.append(dict(configured.get(path, {"excludes": []}), path=str(path)))
     roots = roots or settings.roots
-    if not roots and not code_roots:
+    if not roots:
         print("Choose --root PATH or configure the roots setting before omafind reindex",
               file=sys.stderr)
         return 2
@@ -424,7 +420,7 @@ def reindex(args, env, execve=os.execve):
                                 api_key=env.get('OMAFIND_EMBED_KEY')))
     try:
         asyncio.run(index(roots, directory=directory, embedder=embedder, volume=parsed.volume,
-                          settings=settings, code_roots=code_roots, force=not parsed.incremental))
+                          settings=settings, force=not parsed.incremental))
     except EmbeddingError as error:
         print(str(error), file=sys.stderr)
         return 1

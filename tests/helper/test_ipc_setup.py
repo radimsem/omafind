@@ -431,9 +431,8 @@ def _failed_rows(service, rows):
     store.close()
 
 
-async def test_progress_names_failures_missing_tools_and_code_index(service):
+async def test_progress_names_failures_and_missing_tools(service):
     from omafindd import errors
-    from omafindd.code import CodeStore
 
     _failed_rows(service, [
         ("a.png", "failed", "tool-missing: tesseract"),
@@ -442,18 +441,10 @@ async def test_progress_names_failures_missing_tools_and_code_index(service):
         ("d.txt", "failed", "embedding precision fault"),
         ("e.mp4", "failed", "tool-missing: ffprobe"),
     ])
-    code = CodeStore(service.data_dir / "index/code.sqlite")
-    code.db.execute(
-        "INSERT INTO files(path,kind,size,mtime,inode,device,state,detail) "
-        "VALUES('src/repo/bad.py','code',0,0,0,0,'failed','HTTP 500: too large')"
-    )
-    code.db.commit()
-    code.close()
     result = await service.handle({"t": "index_progress"})
     assert result["failed"] == {"tool-missing": 3, "extract-failed": 1,
-                                "embedding-precision-fault": 1, "code-index-failed": 1}
+                                "embedding-precision-fault": 1}
     assert result["problems"] == [
-        {"path": "/src/repo/bad.py", "code": "code-index-failed", "detail": "HTTP 500: too large"},
         {"path": "/h/a.png", "code": "tool-missing", "detail": "tesseract"},
         {"path": "/h/b.png", "code": "tool-missing", "detail": "tesseract"},
         {"path": "/h/c.pdf", "code": "extract-failed",
@@ -900,17 +891,3 @@ async def test_binds_get_failure_keeps_the_cause(service, error, detail):
     service.run = run
     reply = await service.handle({"t": "binds_get"})
     assert reply["code"] == "binds-failed" and reply["detail"] == detail
-
-
-async def test_progress_shows_the_code_pass_of_the_running_index(service):
-    from omafindd.code import CodeStore
-
-    code = CodeStore(service.data_dir / "index/code.sqlite")
-    with code.db:
-        code.db.execute("INSERT INTO meta VALUES('code_run',?)",
-                        (json.dumps({"pid": 987654, "done": 1, "total": 3}),))
-    code.close()
-    result = await service.handle({"t": "index_start"})
-    assert result["code"] == {"done": 1, "total": 3}
-    service._index.pid = 1
-    assert "code" not in await service.handle({"t": "index_progress"})

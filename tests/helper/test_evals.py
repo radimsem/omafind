@@ -40,27 +40,33 @@ def test_combined_gate_preserves_each_query_files_base(tmp_path, monkeypatch, ca
     import asyncio
 
     from fakes.embedder import FakeEmbedder
-    from omafindd.code import index_code
+    from omafindd.crawler import crawl
+    from omafindd.jobs import Jobs
+    from omafindd.store import Store
 
     root = Path(__file__).resolve().parents[2]
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    (repo / "retry.py").write_text("def retry_with_backoff(): pass")
-    subprocess.run(["git", "-C", str(repo), "add", "retry.py"], check=True)
-    asyncio.run(index_code([repo], tmp_path / "index", FakeEmbedder()))
-    first, second = tmp_path / "personal.json", tmp_path / "media-code.json"
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "retry.md").write_text("retry with exponential backoff")
+    store = Store(tmp_path / "index/fixture.sqlite", volume="fixture", mount=tmp_path)
+    try:
+        crawl(store, [{"path": str(docs), "excludes": []}])
+        asyncio.run(Jobs(store, FakeEmbedder(), journal=tmp_path / "journal").drain())
+    finally:
+        store.close()
+    first, second = tmp_path / "personal.json", tmp_path / "media.json"
     first.write_text(json.dumps({"base": str(tmp_path), "queries": [
-        {"q": "code: retry_with_backoff", "expect": ["repo/retry.py"], "tag": "lookup"}
+        {"q": "backoff", "expect": ["docs/retry.md"], "tag": "lookup"}
     ] * 8}))
-    second.write_text(json.dumps({"base": str(repo), "queries": [
-        {"q": "code: retry_with_backoff", "expect": ["retry.py"], "tag": "lookup"},
-        {"q": "code: missing_identifier", "expect": ["missing.py"], "tag": "meaning"},
+    second.write_text(json.dumps({"base": str(docs), "queries": [
+        {"q": "backoff", "expect": ["retry.md"], "tag": "lookup"},
+        {"q": "backoff", "expect": ["missing.md"], "tag": "meaning"},
     ]}))
     spec = importlib.util.spec_from_file_location("eval_run", root / "evals/run.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "Adapter", lambda runtime: FakeEmbedder())
+    monkeypatch.setattr(module, "volume_for", lambda path: ("fixture", tmp_path))
     monkeypatch.setattr(sys, "argv", ["evals/run.py", "--index", str(tmp_path / "index"),
                                     "--queries", str(first), "--queries", str(second),
                                     "--gate", str(gate)])

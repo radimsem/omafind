@@ -29,7 +29,6 @@ ITEM_KEYS = {
     "offline",
     "loc",
     "loc_end",
-    "open_line",
     "leg",
     "part",
     "z",
@@ -87,7 +86,6 @@ async def test_item_shape_and_same_seq_later_reply(store, tmp_path):
     assert second["legs"] == ["words", "meaning"]
     assert set(second["items"][0]) == ITEM_KEYS
     assert second["items"][0]["offline"] is False
-    assert second["items"][0]["open_line"] is None
     assert first["items"][0]["loc"] == 41
     await service.stop()
 

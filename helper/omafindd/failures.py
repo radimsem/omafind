@@ -10,7 +10,6 @@ CODES = (
     "audio-off",
     "silent-audio",
     "tool-missing",
-    "code-index-failed",
 )
 # Indexes written before the codes existed stored these sentences.
 LEGACY = {
@@ -27,11 +26,14 @@ def encode(code: str, detail="") -> str:
     return f"{code}: {line[:200]}" if line else code
 
 
-def decode(value: str | None, fallback: str = "extract-failed") -> tuple[str, str]:
-    """`(code, detail)` from a stored value. Any other text becomes `fallback` with it as detail."""
+def decode(value: str | None) -> tuple[str, str]:
+    """`(code, detail)` from a stored value.
+
+    Any other text becomes `extract-failed` with it as detail.
+    """
     if not value:
-        return fallback, ""
+        return "extract-failed", ""
     if value in LEGACY:
         return LEGACY[value], ""
     code, _, detail = value.partition(": ")
-    return (code, detail) if code in CODES else (fallback, value)
+    return (code, detail) if code in CODES else ("extract-failed", value)

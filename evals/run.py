@@ -14,7 +14,6 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from fakes.embedder import FakeEmbedder  # noqa: E402
 from omafindd import paths  # noqa: E402
-from omafindd.code import CodeStore  # noqa: E402
 from omafindd.crawler import crawl  # noqa: E402
 from omafindd.embedder import Embedder  # noqa: E402
 from omafindd.embedding import Adapter  # noqa: E402
@@ -52,7 +51,6 @@ async def run(args):
                   for config in configs]
     base = query_sets[0][1]
     stores = []
-    code_directory, code_roots = None, ()
     embedder = (
         FakeEmbedder()
         if args.index is None
@@ -72,29 +70,13 @@ async def run(args):
                 crawl(store, [{"path": str(base), "excludes": []}])
                 await Jobs(store, embedder, journal=Path(temporary) / "journal").drain()
             else:
-                code_directory = args.index.parent if args.index.is_file() else args.index
-                code_path = code_directory / "code.sqlite"
-                if code_path.is_file():
-                    code = CodeStore.open_existing(code_path.resolve(), Path("/"))
-                    try:
-                        row = code.db.execute(
-                            "SELECT value FROM meta WHERE key='code_roots'"
-                        ).fetchone()
-                        code_roots = tuple(Path(root) for root in json.loads(row[0])) if row else ()
-                    finally:
-                        code.close()
                 databases = (
                     [args.index] if args.index.is_file() else sorted(args.index.glob("*.sqlite"))
                 )
-                if any(path.name != "code.sqlite" for path in databases):
+                if databases:
                     _, mount = volume_for(base)
-                stores.extend(
-                    Store.open_existing(path.resolve(), mount)
-                    for path in databases
-                    if path.name != "code.sqlite"
-                )
-            searcher = Searcher(stores, embedder, code_directory=code_directory,
-                                code_roots=code_roots)
+                stores.extend(Store.open_existing(path.resolve(), mount) for path in databases)
+            searcher = Searcher(stores, embedder)
             return 0 if await evaluate_sets(searcher, query_sets, args.gate) else 1
     finally:
         await embedder.stop()

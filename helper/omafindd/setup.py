@@ -11,7 +11,6 @@ from contextlib import closing
 from pathlib import Path
 
 from . import bindings, discovery, errors, failures, tools
-from .code import code_run
 from .install import RuntimeJob
 
 
@@ -336,7 +335,7 @@ class SetupService:
     async def _start_index(self, volume=None):
         async with self._index_lock:
             settings = self.settings()
-            if not settings.roots and not settings.code_roots:
+            if not settings.roots:
                 return errors.reply("index_start", errors.no_roots())
             if self.check_disk is not None:
                 await self.check_disk()
@@ -421,14 +420,9 @@ class SetupService:
         return None, None
 
     def _retry_failed(self, code):
-        """Queues the failed files whose failure is `code` again and returns how many.
-
-        The code index is left alone: every pass retries its failed files.
-        """
+        """Queues the failed files whose failure is `code` again and returns how many."""
         count = 0
         for path in sorted((self.data_dir / "index").glob("*.sqlite")):
-            if path.name == "code.sqlite":
-                continue
             with closing(
                 sqlite3.connect(path.absolute().as_uri() + "?mode=rw", uri=True, timeout=5)
             ) as db, db:
@@ -446,8 +440,6 @@ class SetupService:
         kinds = {kind: {"done": 0, "total": 0} for kind in KINDS}
         kinds["pdf"]["pages"] = kinds["image"]["ocr"] = 0
         failed, problems, volumes, missing = {}, [], {}, {}
-        code_pass = None
-        running = self._index is not None and self._index.returncode is None
         volume = pending_volume = None
         try:
             self._mounts = mounted_volumes()
@@ -455,59 +447,52 @@ class SetupService:
             pass
         ready = "NOT (state='pending' OR (state='partial' AND detail IS NULL))"
         for path in sorted((self.data_dir / "index").glob("*.sqlite")):
-            code_index = path.name == "code.sqlite"
             try:
                 with closing(
                     sqlite3.connect(path.absolute().as_uri() + "?mode=rw", uri=True, timeout=0.05)
                 ) as db:
                     meta = dict(db.execute("SELECT key,value FROM meta"))
                     current = meta.get("volume_uuid", path.stem)
-                    run = code_run(db, live=False) if code_index and running else None
-                    if run is not None and run["pid"] == self._index.pid:
-                        code_pass = {"done": run["done"], "total": run["total"]}
-                    if not code_index:
-                        volume = current
-                        total, done = db.execute(
-                            f"SELECT count(*),coalesce(sum({ready}),0) FROM files"
-                        ).fetchone()
-                        volumes[current] = {"label": meta.get("volume_label", "root"),
-                                            "done": done, "total": total}
-                        for kind, total, done in db.execute(
-                            f"SELECT kind,count(*),sum({ready}) FROM files GROUP BY kind"
-                        ):
-                            if kind not in kinds:
-                                continue
-                            kinds[kind]["total"] += total
-                            kinds[kind]["done"] += done or 0
-                            if total != done:
-                                pending_volume = current
-                        kinds["pdf"]["pages"] += db.execute(
-                            "SELECT coalesce(sum(json_extract(info,'$.pages')),0) FROM files "
-                            f"WHERE kind='pdf' AND {ready}"
-                        ).fetchone()[0]
-                        kinds["image"]["ocr"] += db.execute(
-                            "SELECT count(*) FROM files f WHERE kind='image' AND "
-                            + ready
-                            + " AND EXISTS (SELECT 1 FROM segments s JOIN fts ON fts.rowid=s.id "
-                            "WHERE s.file=f.id AND s.kind='ocr' AND length(fts.body)>0)"
-                        ).fetchone()[0]
-                    fallback = "code-index-failed" if code_index else "extract-failed"
+                    volume = current
+                    total, done = db.execute(
+                        f"SELECT count(*),coalesce(sum({ready}),0) FROM files"
+                    ).fetchone()
+                    volumes[current] = {"label": meta.get("volume_label", "root"),
+                                        "done": done, "total": total}
+                    for kind, total, done in db.execute(
+                        f"SELECT kind,count(*),sum({ready}) FROM files GROUP BY kind"
+                    ):
+                        if kind not in kinds:
+                            continue
+                        kinds[kind]["total"] += total
+                        kinds[kind]["done"] += done or 0
+                        if total != done:
+                            pending_volume = current
+                    kinds["pdf"]["pages"] += db.execute(
+                        "SELECT coalesce(sum(json_extract(info,'$.pages')),0) FROM files "
+                        f"WHERE kind='pdf' AND {ready}"
+                    ).fetchone()[0]
+                    kinds["image"]["ocr"] += db.execute(
+                        "SELECT count(*) FROM files f WHERE kind='image' AND "
+                        + ready
+                        + " AND EXISTS (SELECT 1 FROM segments s JOIN fts ON fts.rowid=s.id "
+                        "WHERE s.file=f.id AND s.kind='ocr' AND length(fts.body)>0)"
+                    ).fetchone()[0]
                     for value, count in db.execute(
                         "SELECT detail,count(*) FROM files WHERE state='failed' GROUP BY detail"
                     ):
-                        code, detail = failures.decode(value, fallback)
+                        code, detail = failures.decode(value)
                         failed[code] = failed.get(code, 0) + count
                         if code == "tool-missing" and detail in tools.TOOL_FEATURES:
                             missing[detail] = missing.get(detail, 0) + count
-                    # Code index paths are relative to /.
-                    mount = Path("/") if code_index else self._mounts.get(current)
+                    mount = self._mounts.get(current)
                     if mount is not None:
                         for rel, value in db.execute(
                             "SELECT path,detail FROM files WHERE state='failed' "
                             "ORDER BY path LIMIT ?",
                             (50 - len(problems),),
                         ):
-                            code, detail = failures.decode(value, fallback)
+                            code, detail = failures.decode(value)
                             problems.append(
                                 {"path": str(mount / rel), "code": code, "detail": detail}
                             )
@@ -537,7 +522,6 @@ class SetupService:
             "device": device,
             "vram_gb": vram,
             "kinds": kinds,
-            **({"code": code_pass} if code_pass is not None else {}),
             "skipped": skipped,
             "failed": failed,
             "problems": problems,

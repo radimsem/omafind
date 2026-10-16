@@ -34,11 +34,10 @@ def test_docs_jump_and_rg_hits(environment):
     assert reply["mode"] == "lines"
 
 
-def test_code_uses_open_line_and_empty_query(environment):
-    path = environment / "a.py"
+def test_empty_query_jumps_to_the_chunk_start(environment):
+    path = environment / "a.txt"
     path.write_text("\n".join(["pass"] * 25))
-    reply = preview.render({"id": "code", "kind": "code", "path": str(path),
-                            "loc": 1, "open_line": 20}, "")
+    reply = preview.render({"id": "text", "kind": "text", "path": str(path), "loc": 20}, "")
     assert reply["jump"] == 20
     assert reply["range"] == [12, 25]
     assert not any(line["hit"] for line in reply["lines"])

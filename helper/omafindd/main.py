@@ -74,7 +74,7 @@ class _LazyEmbedder:
 
 
 def _repair(directory):
-    paths_to_check = [p for p in (directory / 'index').glob('*.sqlite') if p.name != 'code.sqlite']
+    paths_to_check = list((directory / 'index').glob('*.sqlite'))
     if not paths_to_check:
         return []
     from .store import Store, mounted_volumes, quarantine, quick_check

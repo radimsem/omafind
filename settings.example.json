@@ -4,7 +4,6 @@
   "audio": true,
   "roots": [],
   "ignoredVolumes": [],
-  "codeRoots": [],
   "imageBudget": 140,
   "maxResults": 40,
   "warmMinutes": 5,
