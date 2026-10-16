@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def fingerprint(root: Path) -> str:
-    """Return `<manifest version>+<12 hex>` for the daemon code, lock and defaults under `root`.
+    """Return `<version>+<12 hex>` for the daemon code, lock, unit and defaults under `root`.
 
     Raises OSError for an unreadable file and ValueError for a manifest without a version.
     Stdlib only: bin/omafind runs it with the system Python before the venv exists.
@@ -14,7 +14,7 @@ def fingerprint(root: Path) -> str:
         raise ValueError(f"{root / 'manifest.json'} has no version")
     helper = root / "helper"
     files = [helper / "uv.lock", helper / "pyproject.toml", root / "settings.example.json",
-             *sorted((helper / "omafindd").rglob("*.py"))]
+             root / "systemd/omafind.service", *sorted((helper / "omafindd").rglob("*.py"))]
     digest = hashlib.sha256()
     for path in files:
         data = path.read_bytes()

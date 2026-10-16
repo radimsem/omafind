@@ -3,6 +3,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -382,6 +383,32 @@ def test_cli_import_needs_only_stdlib(env):
          str(ROOT / "bin/omafind")], env=env, capture_output=True, text=True, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_cli_keeps_bytecode_out_of_the_plugin(tmp_path, env):
+    # The Omarchy shell reloads every plugin, and so closes the overlay, when a file in the
+    # plugins folder changes.
+    plugin = tmp_path / "plugin"
+    skip = shutil.ignore_patterns("__pycache__")
+    shutil.copytree(ROOT / "bin", plugin / "bin", ignore=skip)
+    shutil.copytree(ROOT / "helper/omafindd", plugin / "helper/omafindd", ignore=skip)
+    for name in ("manifest.json", "settings.example.json", "systemd/omafind.service",
+                 "helper/uv.lock", "helper/pyproject.toml"):
+        (plugin / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, plugin / name)
+    clean = {key: value for key, value in env.items()
+             if key not in ("PYTHONPYCACHEPREFIX", "PYTHONDONTWRITEBYTECODE")}
+    clean["XDG_CACHE_HOME"] = str(tmp_path / "cache")
+    result = subprocess.run([sys.executable, str(plugin / "bin/omafind"), "fingerprint"],
+                            env=clean, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert not list(plugin.rglob("__pycache__"))
+    assert list((tmp_path / "cache/omafind/pycache").rglob("*.pyc"))
+
+
+def test_daemon_unit_caches_bytecode_outside_the_plugin():
+    unit = (ROOT / "systemd/omafind.service").read_text()
+    assert "Environment=PYTHONPYCACHEPREFIX=%C/omafind/pycache\n" in unit
 
 
 def test_status_is_read_only(cli, env, monkeypatch, capsys):
