@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "radimsem.omafind",
   "name": "omafind",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "author": "radimsem",
   "license": "MIT",
   "description": "Search local files by content",
