@@ -162,6 +162,18 @@ test('value counts code files only under searched repos whose code is on', () =>
   assert.deepEqual(plain(t.value('/h/p', state([], [], ['/h/p/a']), countOf, [], repos)), cc(0, 0));
 });
 
+test('a folder ticked again inside a skipped part of a repo counts no code', () => {
+  const cc = (text, code) => ({ ...ZERO, text, code });
+  const counts = { '/h/p': cc(10, 50), '/h/p/a': cc(4, 30), '/h/p/a/docs': cc(1, 5),
+    '/h/p/a/docs/keep': cc(1, 3), '/h/p/a/sub': cc(0, 8) };
+  const countOf = path => counts[path] || null;
+  const repos = ['/h/p/a', '/h/p/a/sub'];
+  const s = state(['/h/p', '/h/p/a/docs/keep'], ['/h/p/a/docs'], ['/h/p/a']);
+  assert.equal(t.codeOn('/h/p/a/docs/keep', s, repos), false);
+  assert.deepEqual(plain(t.value('/h/p/a/docs/keep', s, countOf, [], repos)), cc(1, 0));
+  assert.deepEqual(plain(t.value('/h/p', s, countOf, [], repos)), cc(10, 17));
+});
+
 test('code roots carry the skipped folders below each repo as relative excludes', () => {
   assert.deepEqual(plain(t.toCodeRoots(['/h/p/a', '/h/p/b'], ['/h/p/a/docs', '/h/p/a/x/y', '/h/p/c', '/h/p/a'])), [
     { path: '/h/p/a', excludes: ['docs', 'x/y'] }, { path: '/h/p/b', excludes: [] }]);
