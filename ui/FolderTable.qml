@@ -3,7 +3,7 @@ import qs.Commons
 import ".." as Plugin
 
 // `.dt-h`: the folder table header, and the column geometry every `.dt-r` row lays out against.
-// Columns: check, folder (flexible), Text, PDF, Images, Video, Audio, Index, Time, action.
+// Columns: check, folder (flexible), Text, PDF, Images, Video, Audio, Index, Time.
 Item {
   id: root
 
@@ -18,7 +18,7 @@ Item {
     var flex = Math.max(0, width - 2 * padding - fixed - gap * (columns.length - 1))
     return columns.map((w, i) => i === 1 ? flex : w)
   }
-  readonly property var labels: ["", folderLabel, "Text", "PDF", "Images", "Video", "Audio", "Index", "Time", ""]
+  readonly property var labels: ["", folderLabel, "Text", "PDF", "Images", "Video", "Audio", "Index", "Time"]
 
   function cellX(index) {
     var x = padding

@@ -17,24 +17,21 @@
       "pdf": 0.37,
       "image": 0.14,
       "video": 3.2,
-      "audio": 1.5,
-      "code": 0.042
+      "audio": 1.5
     },
     "cpu": {
       "text": 0.13,
       "pdf": 0.54,
       "image": 1.36,
       "video": 18,
-      "audio": 11.1,
-      "code": 0.084
+      "audio": 11.1
     },
     "bytes": {
       "text": 11000,
       "pdf": 48000,
       "image": 7000,
       "video": 40000,
-      "audio": 12000,
-      "code": 10000
+      "audio": 12000
     }
   },
   "repos": [

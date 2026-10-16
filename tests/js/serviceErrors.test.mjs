@@ -141,10 +141,10 @@ test('a known home root keeps its folder error while a drive scan is pending', (
 
 test('a folder save that fails reports on the surface that asked', () => {
   const ctx = service({ persist() { return false; }, indexTimer: { restart() {} } });
-  assert.equal(ctx.startIndexing([], [], ''), false);
+  assert.equal(ctx.startIndexing([], ''), false);
   assert.match(ctx.folderError.title, /press Start indexing again\.$/);
   assert.equal(ctx.indexError, null);
-  assert.equal(ctx.startIndexing([], [], 'usb'), false);
+  assert.equal(ctx.startIndexing([], 'usb'), false);
   assert.match(ctx.driveError.title, /press Index this drive again\.$/);
 });
 
@@ -168,7 +168,7 @@ test('starting an action clears the error on its own surface', () => {
   assert.equal(ctx.engineError, null);
   ctx.scan();
   assert.equal(ctx.folderError, null);
-  ctx.startIndexing(['~'], [], '');
+  ctx.startIndexing(['~'], '');
   assert.equal(ctx.indexError, null);
   ctx.scanDrive('usb');
   assert.equal(ctx.driveError, null);

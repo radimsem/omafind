@@ -7,35 +7,35 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 test('settings default to unfinished setup, automatic GPU and audio', () => {
   for (const entry of [undefined, null, [], 'bad', {}]) {
-    assert.deepEqual(plain(normalize(entry)), { setupDone: false, gpu: 'auto', audio: true, roots: [], maxResults: 40, warmMinutes: 5, codeRoots: [], imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
+    assert.deepEqual(plain(normalize(entry)), { setupDone: false, gpu: 'auto', audio: true, roots: [], maxResults: 40, warmMinutes: 5, imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
   }
 });
 
 test('settings preserve valid configured values', () => {
-  assert.deepEqual(plain(normalize({ setupDone: true, gpu: 'never', audio: false, roots: [], maxResults: 40, warmMinutes: 5, codeRoots: [], imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] })),
-    { setupDone: true, gpu: 'never', audio: false, roots: [], maxResults: 40, warmMinutes: 5, codeRoots: [], imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
+  assert.deepEqual(plain(normalize({ setupDone: true, gpu: 'never', audio: false, roots: [], maxResults: 40, warmMinutes: 5, imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] })),
+    { setupDone: true, gpu: 'never', audio: false, roots: [], maxResults: 40, warmMinutes: 5, imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
 });
 
 test('settings clamp invalid values to defaults without coercion', () => {
   assert.deepEqual(plain(normalize({ setupDone: 'true', gpu: 'always', audio: 0 })),
-    { setupDone: false, gpu: 'auto', audio: true, roots: [], maxResults: 40, warmMinutes: 5, codeRoots: [], imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
+    { setupDone: false, gpu: 'auto', audio: true, roots: [], maxResults: 40, warmMinutes: 5, imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
 });
 
 test('merge preserves unknown keys including nested settings', () => {
   const entry = Object.freeze({ enabled: true, roots: [{ path: '/x', volume: 'v', excludes: [] }],
     audio: true, gpu: 'auto' });
-  const changes = Object.freeze({ audio: false, setupDone: true, future: { mode: 'on' }, maxResults: 40, warmMinutes: 5, codeRoots: [], imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
+  const changes = Object.freeze({ audio: false, setupDone: true, future: { mode: 'on' }, maxResults: 40, warmMinutes: 5, imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
   assert.deepEqual(plain(merge(entry, changes)), { enabled: true,
     roots: [{ path: '/x', volume: 'v', excludes: [] }], audio: false, gpu: 'auto',
-    setupDone: true, future: { mode: 'on' }, maxResults: 40, warmMinutes: 5, codeRoots: [], imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
+    setupDone: true, future: { mode: 'on' }, maxResults: 40, warmMinutes: 5, imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
   assert.equal(entry.audio, true);
 });
 
 test('merge accepts absent entries and normalizes invalid known keys', () => {
   assert.deepEqual(plain(merge(null, { gpu: 'bad', audio: 'false' })),
-    { setupDone: false, gpu: 'auto', audio: true, roots: [], maxResults: 40, warmMinutes: 5, codeRoots: [], imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
+    { setupDone: false, gpu: 'auto', audio: true, roots: [], maxResults: 40, warmMinutes: 5, imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
   assert.deepEqual(plain(merge(undefined, undefined)),
-    { setupDone: false, gpu: 'auto', audio: true, roots: [], maxResults: 40, warmMinutes: 5, codeRoots: [], imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
+    { setupDone: false, gpu: 'auto', audio: true, roots: [], maxResults: 40, warmMinutes: 5, imageBudget: 140, shortcut: 'SUPER + E', ignoredVolumes: [] });
 });
 
 test('merge keeps special unknown keys as own properties', () => {
@@ -59,14 +59,17 @@ test('roots retain only valid path volume and excludes entries', () => {
     [{path: '/x', volume: 'v', excludes: ['/x/no']}]);
 });
 
-test('media budgets and code roots validate without coercion', () => {
+test('media budgets validate without coercion', () => {
   for (const budget of [70, 140, 280]) assert.equal(normalize({imageBudget: budget}).imageBudget, budget);
   for (const budget of [71, true, '280', null]) assert.equal(normalize({imageBudget: budget}).imageBudget, 140);
-  assert.deepEqual(plain(normalize({codeRoots: ['/repo', 'relative', null, 42,
-    {path: '/kept', excludes: ['docs', 'a/b']}, {path: 'rel', excludes: []}, {path: '/bad', excludes: 'docs'},
-    {path: '/odd', excludes: [1]}, {path: '/bare'}]}).codeRoots),
-    [{path: '/repo', excludes: []}, {path: '/kept', excludes: ['docs', 'a/b']}, {path: '/bare', excludes: []}]);
-  assert.deepEqual(plain(normalize({codeRoots: '/repo'}).codeRoots), []);
+});
+
+test('a legacy codeRoots is ignored on load and dropped on the next write', () => {
+  const entry = Object.freeze({ id: 'radimsem.omafind', codeRoots: [{ path: '/h/repo', excludes: [] }] });
+  assert.equal(Object.hasOwn(normalize(entry), 'codeRoots'), false);
+  const written = plain(merge(entry, { audio: false }));
+  assert.equal(Object.hasOwn(written, 'codeRoots'), false);
+  assert.equal(written.id, 'radimsem.omafind');
 });
 
 test('shortcut accepts MODS + KEY and falls back otherwise', () => {
@@ -92,13 +95,11 @@ test('findEntry searches bar sections before plugins and tolerates missing layou
 
 test('setup writes retain nested roots and unrelated settings through JSON', () => {
   const entry = {id: 'radimsem.omafind', enabled: true, future: {mode: 'keep'}};
-  const changes = {setupDone: true, roots: [{path: '/home/u/Documents', volume: 'v', excludes: ['tax/2024']}],
-    codeRoots: [{path: '/home/u/personal/projects/omaone', excludes: ['docs']}]};
+  const changes = {setupDone: true, roots: [{path: '/home/u/Documents', volume: 'v', excludes: ['tax/2024']}]};
   const written = JSON.parse(JSON.stringify(merge(entry, changes)));
   assert.equal(written.enabled, true);
   assert.deepEqual(written.future, {mode: 'keep'});
   assert.deepEqual(written.roots, changes.roots);
-  assert.deepEqual(written.codeRoots, changes.codeRoots);
   assert.equal(normalize(written).setupDone, true);
 });
 

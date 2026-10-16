@@ -85,7 +85,7 @@ FocusScope {
   // Every folder on the drive starts checked.
   function seed() {
     if (seeded || !folders.length) return
-    choices = {chosen: folders.map(folder => folder.path), skipped: [], code: []}
+    choices = {chosen: folders.map(folder => folder.path), skipped: []}
     seeded = true
     offerDatasets()
   }
@@ -107,9 +107,7 @@ FocusScope {
     var fresh = Tree.toRoots(choices.chosen, choices.skipped, () => root.uuid)
     var paths = fresh.map(r => r.path)
     var roots = service.settings.roots.filter(r => paths.indexOf(r.path) < 0).concat(fresh)
-    var code = service.settings.codeRoots.filter(entry => !Tree.isInside(entry.path, mount))
-      .concat(Tree.toCodeRoots(choices.code.filter(path => Tree.searched(path, choices)), choices.skipped))
-    if (!service.startIndexing(roots, code, uuid)) return
+    if (!service.startIndexing(roots, uuid)) return
     sawProgress = false
     phase = "run"
   }

@@ -22,7 +22,7 @@ function settings(values = {}) {
     recorder: { active: false, operation: '', pendingLeave: false, conflict: '', lost: false, exposed: false,
       stop() { calls.push('stop'); } },
     shortcutRow: { take() { calls.push('focus'); } },
-    service: { settings: { shortcut: 'SUPER + R', roots: [{ path: '/h/Documents' }], codeRoots: [] },
+    service: { settings: { shortcut: 'SUPER + R', roots: [{ path: '/h/Documents' }] },
       binds: [], bindsReady: true, bindsError: null, menuRow: false,
       getBinds() { calls.push('binds'); },
       saveShortcut(chord, menuRow, done) { calls.push(['save', chord, menuRow]); this.done = done; },

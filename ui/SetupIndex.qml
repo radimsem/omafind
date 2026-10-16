@@ -31,7 +31,6 @@ FocusScope {
   readonly property var toolErrors: progress && Array.isArray(progress.tool_errors) ? progress.tool_errors : []
   // The problem list (up to eight rows) and the error cards grow the panel instead of scrolling inside it.
   readonly property real extraHeight: (showList && problems.length ? list.height + Style.space(8) : 0)
-    + kinds.extraHeight
     + (cards.visible ? cards.height + Plugin.Tokens.setupGap : 0)
     + (bindsCard.visible ? bindsCard.height + Plugin.Tokens.setupGap : 0)
     + (saveCard.visible ? saveCard.height + Plugin.Tokens.setupGap : 0)
@@ -78,7 +77,7 @@ FocusScope {
 
   // Retry on the index card starts the saved roots again.
   function retryIndex() {
-    if (service) service.startIndexing(service.settings.roots, service.settings.codeRoots)
+    if (service) service.startIndexing(service.settings.roots)
   }
 
   Connections {
@@ -144,7 +143,6 @@ FocusScope {
     }
 
     KindProgress {
-      id: kinds
       width: parent.width
       topPadding: Style.space(2)
       progress: root.progress

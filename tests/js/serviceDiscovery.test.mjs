@@ -47,15 +47,17 @@ test('children requests send once and failed sends can be retried', () => {
   assert.equal(calls, 2);
 });
 
-test('drive indexing persists code toggles without marking setup done', () => {
+test('drive indexing persists the roots without marking setup done', () => {
   let saved;
   let timers = 0;
   const ctx = service({ persist(changes) { saved = plain(changes); return true; },
     indexTimer: { restart() { timers++; } } });
-  assert.equal(ctx.startIndexing([{ path: '/m/docs', volume: 'usb', excludes: [] }], ['/m/repo'], 'usb'), true);
-  assert.deepEqual(saved, { roots: [{ path: '/m/docs', volume: 'usb', excludes: [] }], codeRoots: ['/m/repo'] });
+  assert.equal(ctx.startIndexing([{ path: '/m/docs', volume: 'usb', excludes: [] }], 'usb'), true);
+  assert.deepEqual(saved, { roots: [{ path: '/m/docs', volume: 'usb', excludes: [] }] });
   assert.equal(ctx.indexVolume, 'usb');
   assert.equal(timers, 1);
+  assert.equal(ctx.startIndexing([{ path: '/h', volume: 'u', excludes: [] }]), true);
+  assert.deepEqual(saved, { roots: [{ path: '/h', volume: 'u', excludes: [] }], setupDone: true });
 });
 
 test('an unreadable children reply can be retried', () => {

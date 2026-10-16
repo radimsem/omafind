@@ -12,7 +12,7 @@ function tree(values = {}) {
     remove: (i, n) => items.splice(i, n), clear: () => items.splice(0),
   };
   const ctx = vm.createContext({ Tree: load('tree.js'), Setup: load('setup.js'),
-    finished: {}, folders: [], mounts: [], repos: [], meta: {}, expanded: {}, counts: {}, walks: {}, datasets: {}, cached: {},
+    finished: {}, folders: [], mounts: [], meta: {}, expanded: {}, counts: {}, walks: {}, datasets: {}, cached: {},
     rows: model, service: null, home: '/h', mount: '', ...values });
   ctx.root = ctx;
   const file = new URL('../../ui/FolderTree.qml', import.meta.url);
@@ -65,7 +65,7 @@ test('reopening an unreadable folder retries the children request', () => {
 
 test('overlapping top rows count selected files only once', () => {
   const ctx = tree({ folders: [folder('/h/Docs'), folder('/h')],
-    choices: { chosen: ['/h'], skipped: [], code: [] },
+    choices: { chosen: ['/h'], skipped: [] },
     counts: { '/h': { text: 3 }, '/h/Docs': { text: 3 } }, rates: null, device: 'gpu' });
   assert.equal(ctx.calculatedTotals().files, 3);
 });
@@ -188,31 +188,10 @@ test('a rescan that drops the walk sorts again when the root finishes', () => {
 
 test('a row click leaves the known worktrees and datasets below it out', () => {
   const edits = [];
-  const ctx = tree({ choices: { chosen: [], skipped: [], code: [] },
+  const ctx = tree({ choices: { chosen: [], skipped: [] },
     service: { worktrees: { '/h/p/wt': { path: '/h/p/wt' } },
       datasets: { '/h/p/frames': { path: '/h/p/frames' } } },
     choicesEdited: next => edits.push(JSON.parse(JSON.stringify(next))) });
   ctx.clickRow('/h/p');
-  assert.deepEqual(edits, [{ chosen: ['/h/p'], skipped: ['/h/p/wt', '/h/p/frames'], code: [] }]);
-});
-
-test('the code button shows only on a searched repo', () => {
-  const ctx = tree({ choices: { chosen: ['/h/p'], skipped: ['/h/p/off', '/h/p/mixed/docs'], code: [] } });
-  const repo = { repo: true, worktree: false };
-  assert.equal(ctx.actionOf(repo, '/h/p/on'), 'code');
-  assert.equal(ctx.actionOf(repo, '/h/p/mixed'), 'code');
-  assert.equal(ctx.actionOf(repo, '/h/p/off'), '');
-  assert.equal(ctx.actionOf({ repo: true, worktree: true }, '/h/p/wt'), '');
-  assert.equal(ctx.actionOf({ repo: false }, '/h/p/plain'), '');
-});
-
-test('totals count code files only while the repo has code on', () => {
-  const values = { folders: [folder('/h/p')], repos: ['/h/p/a'], rates: null, device: 'gpu',
-    counts: { '/h/p': { text: 3, code: 40 }, '/h/p/a': { text: 1, code: 40 } } };
-  const on = tree({ ...values, choices: { chosen: ['/h/p'], skipped: [], code: ['/h/p/a'] } });
-  assert.equal(on.calculatedTotals().files, 43);
-  const off = tree({ ...values, choices: { chosen: ['/h/p'], skipped: [], code: [] } });
-  assert.equal(off.calculatedTotals().files, 3);
-  assert.deepEqual(Array.from(off.cellsOf({ text: 3, pdf: 0, image: 0, video: 0, audio: 0, code: 40 }),
-    cell => cell.n), [43, 0, 0, 0, 0]);
+  assert.deepEqual(edits, [{ chosen: ['/h/p'], skipped: ['/h/p/wt', '/h/p/frames'] }]);
 });

@@ -6,7 +6,7 @@ import { load } from './load.mjs';
 const plain = value => JSON.parse(JSON.stringify(value));
 function dialog(values = {}) {
   const ctx = vm.createContext({ Tree: load('tree.js'), Setup: load('setup.js'),
-    folders: [], choices: { chosen: [], skipped: [], code: [] }, proposed: [], seeded: false,
+    folders: [], choices: { chosen: [], skipped: [] }, proposed: [], seeded: false,
     uuid: 'usb', mount: '/m', phase: 'pick', sawProgress: false, ...values });
   ctx.root = ctx;
   const source = readFileSync(new URL('../../ui/DriveDialog.qml', import.meta.url), 'utf8');
@@ -18,23 +18,20 @@ test('drive folders start checked and dataset proposals preserve user edits', ()
   const ctx = dialog({ folders: [{ path: '/m/Photos' }],
     service: { datasets: { '/m/Photos/frames': { path: '/m/Photos/frames' } } } });
   ctx.seed();
-  assert.deepEqual(plain(ctx.choices), { chosen: ['/m/Photos'], skipped: ['/m/Photos/frames'], code: [] });
+  assert.deepEqual(plain(ctx.choices), { chosen: ['/m/Photos'], skipped: ['/m/Photos/frames'] });
   ctx.choices = ctx.Tree.click(ctx.choices, '/m/Photos/frames');
   ctx.offerDatasets();
   assert.deepEqual(plain(ctx.choices.skipped), []);
 });
 
-test('drive save carries excludes and code choices and preserves other volumes', () => {
+test('drive save carries excludes and preserves other volumes', () => {
   let saved;
-  const ctx = dialog({ choices: { chosen: ['/m/Photos'], skipped: ['/m/Photos/data', '/m/Photos/repo/docs'],
-    code: ['/m/Photos/repo', '/m/Photos/data/repo', '/m/repo'] },
-    service: { settings: { roots: [{ path: '/h/Docs', volume: 'u', excludes: [] }],
-      codeRoots: [{ path: '/h/code', excludes: [] }, { path: '/m/old', excludes: [] }] },
+  const ctx = dialog({ choices: { chosen: ['/m/Photos'], skipped: ['/m/Photos/data', '/m/Photos/repo/docs'] },
+    service: { settings: { roots: [{ path: '/h/Docs', volume: 'u', excludes: [] }] },
       startIndexing(...args) { saved = args; return true; } } });
   ctx.startIndexing();
   assert.deepEqual(plain(saved), [[{ path: '/h/Docs', volume: 'u', excludes: [] },
-    { path: '/m/Photos', volume: 'usb', excludes: ['data', 'repo/docs'] }],
-    [{ path: '/h/code', excludes: [] }, { path: '/m/Photos/repo', excludes: ['docs'] }], 'usb']);
+    { path: '/m/Photos', volume: 'usb', excludes: ['data', 'repo/docs'] }], 'usb']);
   assert.equal(ctx.phase, 'run');
 });
 
@@ -59,8 +56,8 @@ test('the dialog shows its own error, then the walk, then the drive index run', 
 test('Retry scans the drive again while picking and indexes it again after', () => {
   const calls = [];
   const ctx = dialog({ service: { scanDrive: uuid => calls.push(['scan', uuid]),
-    settings: { roots: [], codeRoots: [] },
-    startIndexing: (roots, code, volume) => { calls.push(['index', volume]); return true; } } });
+    settings: { roots: [] },
+    startIndexing: (roots, volume) => { calls.push(['index', volume]); return true; } } });
   ctx.retry();
   ctx.phase = 'run';
   ctx.retry();

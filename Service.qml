@@ -119,11 +119,10 @@ Item {
   // The daemon reads settings when index_start arrives, so the request waits for the shell's
   // off-thread write to land in shell.json (or 2 s, whichever comes first). A drive passes its
   // volume UUID and saves only the roots, so setup state stays as it was.
-  function startIndexing(roots, codeRoots, volume) {
+  function startIndexing(roots, volume) {
     indexError = null
     if (volume) driveError = null
-    var changes = volume ? {roots: roots} : {roots: roots, codeRoots: codeRoots, setupDone: true}
-    if (volume && Array.isArray(codeRoots)) changes.codeRoots = codeRoots
+    var changes = volume ? {roots: roots} : {roots: roots, setupDone: true}
     if (!persist(changes)) {
       var failure = Errors.wrap(volume
         ? "Could not save the folders to shell.json. Check that the omafind plugin is enabled, then press Index this drive again."

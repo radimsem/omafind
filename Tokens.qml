@@ -36,7 +36,7 @@ QtObject {
   readonly property int tableGap: Style.space(10)
   readonly property int tablePadding: Style.space(10)
   // `.dt` columns: check, folder (0 = flexible), text, pdf, images, video, audio, index, time, action.
-  readonly property var tableColumns: [28, 0, 64, 56, 64, 56, 56, 84, 72, 32].map(px => Style.space(px))
+  readonly property var tableColumns: [28, 0, 64, 56, 64, 56, 56, 84, 72].map(px => Style.space(px))
   // Tracking of uppercase headers in em, rounded to whole pixels where used.
   readonly property real tracking: 0.08
   readonly property color crust: Util.alpha(Color.background, 0.42)
