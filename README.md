@@ -1,6 +1,6 @@
 # omafind
 
-Search your local files by content from an Omarchy overlay.
+**Describe it and find it.** Search the files on your Omarchy desktop by what's in them, with Google DeepMind's [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2).
 
 omafind is an Omarchy 4 plugin. Describe what you remember, or type words from the file, and it finds documents, PDF pages, images, video moments and audio clips on your machine.
 
