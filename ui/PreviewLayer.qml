@@ -35,7 +35,7 @@ Item {
   readonly property real playhead: mine ? player.position : (entry.loc || 0)
   readonly property bool playingHere: mine && player.playing
   // The daemon's preview picks the line the opener jumps to; actions name that line.
-  readonly property var jump: preview && (kind === "text" || kind === "code") ? preview.jump : null
+  readonly property var jump: preview && kind === "text" ? preview.jump : null
   // A preview error from the daemon (`{id, error}`), shown in place of the media.
   readonly property var failure: preview && preview.error ? preview.error : null
   // Set when Qt cannot decode the full image (for example a missing image plugin).
@@ -49,7 +49,7 @@ Item {
     return path ? Util.fileUrl(path) : ""
   }
   readonly property bool mediaReady: imageSource === "" || kind === "audio"
-    || (kind === "text" || kind === "code") || (kind === "pdf" ? page.status !== Image.Loading
+    || kind === "text" || (kind === "pdf" ? page.status !== Image.Loading
       : frame.status !== Image.Loading)
 
   function folder(value) {
@@ -445,7 +445,7 @@ Item {
     Rectangle {
       id: well
       anchors.centerIn: parent
-      visible: (root.kind === "text" || root.kind === "code") && !root.offline
+      visible: root.kind === "text" && !root.offline
       width: Style.space(640)
       height: Style.space(400)
       radius: Style.cornerRadius
@@ -633,7 +633,7 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       leftPadding: Style.space(6)
       visible: !root.offline && !!(root.preview && root.preview.opener)
-        && ["video", "pdf", "text", "code"].indexOf(root.kind) >= 0
+        && ["video", "pdf", "text"].indexOf(root.kind) >= 0
       tokens: root.preview && root.preview.opener ? [{k: "opener", v: root.preview.opener, tone: "plain"}] : []
       fontSize: Style.font.bodySmall
     }

@@ -8,12 +8,11 @@ const search = () => load('format.js', 'results.js', 'searchState.js');
 test('prefixes are lowercase, anchored, and strip only leading spaces from the remaining query', () => {
   const { parse } = search();
   for (const [prefix, kind] of [['img:', 'image'], ['pdf:', 'pdf'], ['doc:', 'text'],
-    ['vid:', 'video'], ['aud:', 'audio'], ['code:', 'code']]) {
-    assert.deepEqual(plain(parse(prefix + '  router ')),
-      { prefix, kind, text: 'router ', code: kind === 'code' });
+    ['vid:', 'video'], ['aud:', 'audio']]) {
+    assert.deepEqual(plain(parse(prefix + '  router ')), { prefix, kind, text: 'router ' });
   }
-  for (const query of ['IMG: router', ' img: router', 'find img: router', 'router']) {
-    assert.deepEqual(plain(parse(query)), { prefix: null, kind: null, text: query, code: false });
+  for (const query of ['IMG: router', ' img: router', 'find img: router', 'router', 'code: router']) {
+    assert.deepEqual(plain(parse(query)), { prefix: null, kind: null, text: query });
   }
 });
 

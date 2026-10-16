@@ -35,18 +35,16 @@ test('local dates and metadata skip absent facts while retaining zero', () => {
   assert.equal(meta({ kind: 'image' }), 'Image');
   assert.equal(meta({ kind: 'text', info: { extracted: true, pages: 2, duration: 10 } }), 'Text');
   for (const [kind, label] of [['image', 'Image'], ['video', 'Video'], ['audio', 'Audio'],
-    ['pdf', 'PDF'], ['text', 'Text'], ['code', 'Code']]) assert.equal(kindLabel(kind), label);
+    ['pdf', 'PDF'], ['text', 'Text']]) assert.equal(kindLabel(kind), label);
 });
 
-test('jump values use seconds, pages, line ranges, and code open_line', () => {
+test('jump values use seconds, pages, and line ranges', () => {
   const { at } = load('format.js');
   for (const [item, want] of [[{ kind: 'image', loc: 12 }, null],
     [{ kind: 'video', loc: 872 }, '14:32'], [{ kind: 'audio', loc: 0 }, '0:00'],
     [{ kind: 'pdf', loc: 12 }, 'p. 12'], [{ kind: 'text', loc: 41 }, 'L41'],
     [{ kind: 'text', loc: 1, loc_end: 47 }, 'L1–47'],
     [{ kind: 'text', loc: 1, loc_end: 47, open_line: 8 }, 'L1–47'],
-    [{ kind: 'code', loc: 1, loc_end: 47, open_line: 8 }, 'L8'],
-    [{ kind: 'code', loc: 1, loc_end: 47 }, 'L1–47'],
     [{ kind: 'text', loc: 41, loc_end: 20 }, 'L41'], [{ kind: 'pdf', loc: null }, null]]) {
     assert.equal(at(freeze(item)), want);
   }
@@ -66,7 +64,7 @@ test('why tokens keep key order, accent targets and hits, and omit empty values'
   assert.deepEqual(plain(why({ kind: 'image', z: 0, hits: [] }, { opener: 'xdg-open' })),
     [{ k: 'z', v: '0.0', tone: 'plain' }]);
   assert.deepEqual(plain(why({ kind: 'audio' }, { opener: 'mpv' })), []);
-  for (const kind of ['video', 'pdf', 'text', 'code']) {
+  for (const kind of ['video', 'pdf', 'text']) {
     assert.deepEqual(plain(why({ kind }, { opener: 'app' })),
       [{ k: 'opener', v: 'app', tone: 'plain' }]);
   }

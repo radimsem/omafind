@@ -228,15 +228,13 @@ Item {
     focusQuery()
   }
 
-  // Footer hints from lib/keys.js, with the editor named for code and the play label following playback.
+  // Footer hints from lib/keys.js, with the play label following playback.
   function hintsFor(row) {
     var hints = KeyMap.hints(row, row && row.type === "item" ? jumpFor(row.item) : null)
     if (!row || row.type !== "item") return hints
     var item = row.item
     for (var i = 0; i < hints.length; i++) {
       var hint = hints[i]
-      if (hint.keys.length === 1 && hint.keys[0] === "Enter" && item.kind === "code")
-        hint.label = hint.label.replace(/^open at line/, "open in " + editorName + " at line")
       if (hint.keys.join(" ") === "Ctrl Space" && player.playback.id === item.id)
         hint.label = player.playing ? "pause" : "resume"
     }
@@ -246,7 +244,7 @@ Item {
   // The preview names the line the opener jumps to, so labels use it once it arrives.
   function jumpFor(item) {
     if (!item || !preview || preview.id !== item.id) return null
-    return item.kind === "text" || item.kind === "code" ? preview.jump : null
+    return item.kind === "text" ? preview.jump : null
   }
 
   function folder(item) {
@@ -458,7 +456,6 @@ Item {
     anchors.left: parent.left
     anchors.right: parent.right
     prefix: root.parsed.prefix || ""
-    code: root.parsed.code
     status: SearchState.status(root.search, root.reply).text
     spinning: SearchState.status(root.search, root.reply).spinner
     onTextChanged: root.typed(text)
@@ -590,7 +587,7 @@ Item {
 
     text: root.idle ? (idleFacts ? idleFacts.text : "")
       : root.noText ? ""
-      : Results.footerLeft({reply: root.reply, query: root.search.query, prefix: root.parsed.prefix,
+      : Results.footerLeft({reply: root.reply, query: root.search.query,
         phase: root.reply ? root.search.phase : "words"})
     offline: root.idle && root.service && root.service.status && root.service.status.offline
       ? root.service.status.offline : []

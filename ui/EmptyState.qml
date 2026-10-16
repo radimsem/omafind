@@ -13,8 +13,7 @@ Item {
     {p: "pdf:", label: "PDF pages"},
     {p: "doc:", label: "notes and documents"},
     {p: "vid:", label: "video moments"},
-    {p: "aud:", label: "audio moments"},
-    {p: "code:", label: "code"}
+    {p: "aud:", label: "audio moments"}
   ]
 
   Column {

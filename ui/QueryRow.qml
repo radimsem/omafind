@@ -7,7 +7,6 @@ Item {
   id: root
 
   property string prefix: ""
-  property bool code: false
   property string status: ""
   property bool spinning: false
   readonly property alias text: input.text
@@ -31,7 +30,7 @@ Item {
     anchors.left: parent.left
     anchors.leftMargin: Style.space(22)
     anchors.verticalCenter: parent.verticalCenter
-    name: root.code ? "code" : "search"
+    name: "search"
     size: Style.space(22)
     strokeWidth: 2
     color: Color.accent

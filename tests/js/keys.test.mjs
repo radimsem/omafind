@@ -41,7 +41,7 @@ test('Enter opens items, Ctrl Enter reveals, and weak or offline rows restrict a
 
 test('Ctrl Space plays only online audio and video selections', () => {
   const { action } = load('format.js', 'keys.js');
-  for (const kind of ['image', 'video', 'audio', 'pdf', 'text', 'code']) {
+  for (const kind of ['image', 'video', 'audio', 'pdf', 'text']) {
     const item = fixture(kind).items[0];
     assert.equal(action({ key: 0x20, modifiers: 0x04000000 }, { row: { type: 'item', item } }),
       ['audio', 'video'].includes(kind) ? 'play' : null);
@@ -53,8 +53,7 @@ test('hints follow jump targets and offer Ctrl Space only for audio and video', 
   for (const [kind, open, play] of [['image', 'open', null],
     ['video', 'open at 14:32', 'play at 14:32'],
     ['audio', 'open at 7:55', 'play at 7:55'],
-    ['pdf', 'open at page 12', null], ['text', 'open at line 41', null],
-    ['code', 'open at line 8', null]]) {
+    ['pdf', 'open at page 12', null], ['text', 'open at line 41', null]]) {
     const want = [{ keys: ['Enter'], label: open },
       { keys: ['Ctrl', 'Enter'], label: 'show in folder' }];
     if (play) want.push({ keys: ['Ctrl', 'Space'], label: play });
@@ -83,8 +82,7 @@ test('editor names use basenames and actions name the actual opening line', () =
     [fixture('video').items[0], 'Neovim', 'Open at 14:32'],
     [fixture('audio').items[0], 'Neovim', 'Open at 7:55'],
     [fixture('pdf').items[0], 'Neovim', 'Open at page 12'],
-    [{ kind: 'text', loc: 212, loc_end: 222 }, 'Neovim', 'Open in Neovim at line 212'],
-    [fixture('code').items[0], 'Neovim', 'Open in Neovim at line 8']]) {
+    [{ kind: 'text', loc: 212, loc_end: 222 }, 'Neovim', 'Open in Neovim at line 212']]) {
     assert.equal(actionLabel(freeze(item), name), want);
   }
 });
@@ -92,7 +90,7 @@ test('editor names use basenames and actions name the actual opening line', () =
 
 test('preview jumps override source lines without mutating items', () => {
   const { hints, actionLabel } = load('format.js', 'keys.js');
-  for (const item of [{ kind: 'text', loc: 41 }, { kind: 'code', loc: 41, open_line: 8 },
+  for (const item of [{ kind: 'text', loc: 41 },
     { kind: 'text', loc: null }]) {
     freeze(item);
     assert.equal(hints({ type: 'item', item }, 212)[0].label, 'open at line 212');
