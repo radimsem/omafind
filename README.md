@@ -70,6 +70,23 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
 | `warmMinutes` | int, clamped to 0..60 | `5` |
 | `shortcut` | uppercase `MODS + KEY` (mods: SUPER, SHIFT, CTRL, ALT) or a lone `F1` to `F35` | `"SUPER + E"` |
 
+## Use
+
+The `shortcut` setting opens the overlay on an empty query. Type to search; start with `img:`, `pdf:`, `doc:`, `vid:`, `aud:` or `code:` to search one kind.
+
+| Key | Action |
+|---|---|
+| `Up` `Down`, `Ctrl J` `Ctrl K` | Move across results |
+| `Enter` | Open the result at the match |
+| `Ctrl Enter` | Show the result in its folder |
+| `Ctrl Space` | Play or pause an audio or video preview |
+| `Ctrl C` | Copy the result's path |
+| `Ctrl I` | Show indexing progress |
+| `Ctrl ,` | Open Settings |
+| `Esc` | Clear the query, then close |
+
+Settings changes the shortcut (checked against your Hyprland binds, written as in setup), shows or hides the Find files row in the Omarchy menu, and opens setup at the Folders step through Change folders. `Esc` or Back returns to search.
+
 ## Troubleshooting
 
 Setup and search show every failure as a card: what happened, why, and what to do next. A card with a log offers Open log. [docs/ipc.md](docs/ipc.md#errors) lists every code. The logs live under `~/.local/share/omafind`:

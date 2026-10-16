@@ -165,7 +165,7 @@ for (const action of ['close', 'dismiss', 'toggle', 'showSearch']) {
     const page = functions('ui/SetupIndex.qml', { recorder: { stop() { stops++; } } }).ctx;
     const setup = functions('SetupView.qml', { indexPage: page }).ctx;
     const { ctx } = functions('Overlay.qml', {
-      opened: true, view: 'setup', pendingOpen: null, setup: { item: setup },
+      opened: true, view: 'setup', pendingOpen: null, setup: { item: setup }, settingsView: { item: null },
       service: null, shell: null, manifest: null,
       closeTimer: { stop() {} }, unmap: { restart() {} },
       searchView: { stopPlayback() {}, reset() {}, flash: '' }, Qt: { callLater() {} },

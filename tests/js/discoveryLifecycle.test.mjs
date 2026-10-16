@@ -13,7 +13,7 @@ function functions(file, values) {
 
 test('closing a picker stops its discovery without touching playback in another window', () => {
   let stops = 0;
-  const ctx = functions('Overlay.qml', { opened: true, view: 'setup', pendingOpen: null, setup: { item: null },
+  const ctx = functions('Overlay.qml', { opened: true, view: 'setup', pendingOpen: null, setup: { item: null }, settingsView: { item: null },
     closeTimer: { stop() {} }, searchView: { stopPlayback() {}, flash: '' }, unmap: { restart() {} },
     service: { stopDiscovery() { stops++; } } });
   ctx.close(); ctx.close();
@@ -61,7 +61,7 @@ test('Change folders opens setup at the Folders step until indexing starts', () 
   let statusAsks = 0;
   const setupItem = { pickFolders: false, resets: 0, reset() { this.resets++; } };
   const ctx = functions('Overlay.qml', { opened: true, view: 'settings', setupFolders: false,
-    setup: { item: null }, Qt: { callLater() {} },
+    setup: { item: null }, settingsView: { item: null }, Qt: { callLater() {} },
     service: { requestRuntimeStatus() { statusAsks++; } } });
   ctx.showFolders();
   assert.equal(ctx.view, 'setup');

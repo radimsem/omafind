@@ -269,6 +269,7 @@ In the overlay:
 | `Ctrl Enter` | Result | Show in folder. |
 | `Ctrl Space` | Audio or video | Play or pause the preview from the matched second. Other kinds show no hint. |
 | `Ctrl C` | Result | Copy the path. |
+| `Ctrl ,` | Any | Open Settings: the shortcut, the Find files menu row and Change folders. `Esc` or Back returns to search. The idle footer shows the hint. |
 | `Esc` | Any | Clear the query, then close. |
 | Click a row | Any | Select it. |
 

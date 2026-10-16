@@ -78,6 +78,7 @@ Item {
   }
 
   signal closeRequested()
+  signal settingsRequested()
   signal toastRequested(string title, var tokens, bool error)
   // `message` is the open request, kept so the failure toast can send it again.
   signal openStarted(var item, string how, var message)
@@ -344,6 +345,9 @@ Item {
     case "progress":
       toggleProgress()
       break
+    case "settings":
+      settingsRequested()
+      break
     case "copy":
       act("copy")
       break
@@ -594,8 +598,7 @@ Item {
     indexed: !root.idle && root.service && root.service.status && typeof root.service.status.files === "number"
       ? root.service.status.files : -1
     reconcile: root.service && root.service.volumes ? Volumes.footer(root.service.volumes, root.service.clock) : null
-    hints: root.idle || !root.reply
-      ? (idleFacts && idleFacts.progress ? [{keys: ["Ctrl", "I"], label: "progress"}] : []).concat([{keys: ["Esc"], label: "close"}])
+    hints: root.idle || !root.reply ? KeyMap.idleHints(!!(idleFacts && idleFacts.progress))
       : root.hintsFor(root.selectedRow)
     onProgressClicked: root.toggleProgress()
   }

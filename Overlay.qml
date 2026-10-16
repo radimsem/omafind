@@ -29,6 +29,7 @@ Item {
 
   function open(payload) {
     if (setup.item) setup.item.stop()
+    if (settingsView.item) settingsView.item.stop()
     var parsed = {}
     try {
       parsed = payload ? JSON.parse(payload) : {}
@@ -74,9 +75,10 @@ Item {
     Qt.callLater(focusView)
   }
 
-  // "Save shortcut and open search" leaves setup for an empty search.
+  // "Save shortcut and open search" leaves setup for an empty search; Esc and Back leave Settings.
   function showSearch() {
     if (setup.item) setup.item.stop()
+    if (settingsView.item) settingsView.item.stop()
     if (service && view !== "search") service.stopDiscovery()
     view = "search"
     searchView.reset()
@@ -87,7 +89,14 @@ Item {
     Qt.callLater(focusView)
   }
 
+  function showSettings() {
+    searchView.stopPlayback()
+    view = "settings"
+    Qt.callLater(focusView)
+  }
+
   function showFolders() {
+    if (settingsView.item) settingsView.item.stop()
     setupFolders = true
     view = "setup"
     if (setup.item) {
@@ -101,6 +110,7 @@ Item {
   // Idempotent: shell.hide() calls it again after dismiss().
   function close() {
     if (setup.item) setup.item.stop()
+    if (settingsView.item) settingsView.item.stop()
     if (!opened) return
     opened = false
     if (service && view !== "search") service.stopDiscovery()
@@ -129,6 +139,7 @@ Item {
     if (view === "search") searchView.focusQuery()
     else if (view === "drive" && driveLoader.item) driveLoader.item.focusFirst()
     else if (view === "setup" && setup.item) setup.item.focusFirst()
+    else if (view === "settings" && settingsView.item) settingsView.item.focusFirst()
     else keyCatcher.forceActiveFocus()
   }
 
@@ -176,7 +187,8 @@ Item {
 
     Rectangle {
       id: card
-      readonly property var panelItem: root.view === "setup" ? setup.item : root.view === "drive" ? driveLoader.item : null
+      readonly property var panelItem: root.view === "setup" ? setup.item : root.view === "drive" ? driveLoader.item
+        : root.view === "settings" ? settingsView.item : null
       readonly property bool sized: !!panelItem
       width: Math.min(sized ? panelItem.panelWidth : Plugin.Tokens.overlayWidth, panel.width - Style.gapsOut * 2)
       height: Math.min(sized ? panelItem.panelHeight : Plugin.Tokens.overlayHeight,
@@ -226,6 +238,7 @@ Item {
         service: root.service
         pending: root.pendingOpen
         onCloseRequested: root.dismiss()
+        onSettingsRequested: root.showSettings()
         onToastRequested: (title, tokens, error) => toast.show(title, tokens, error)
         onOpenStarted: (item, how, message) => {
           root.pendingOpen = {id: item.id, how: how, item: item, message: message, reply: null, closed: false}
@@ -259,6 +272,24 @@ Item {
           ignoreUnknownSignals: true
           function onCloseRequested() { root.dismiss() }
           function onSearchRequested() { root.showSearch() }
+        }
+
+        Loader {
+          id: settingsView
+          anchors.fill: parent
+          active: root.view === "settings"
+          source: "SettingsView.qml"
+          onLoaded: {
+            item.service = Qt.binding(() => root.service)
+            item.reset()
+          }
+        }
+
+        Connections {
+          target: settingsView.item
+          ignoreUnknownSignals: true
+          function onBackRequested() { root.showSearch() }
+          function onFoldersRequested() { root.showFolders() }
         }
 
         Loader {

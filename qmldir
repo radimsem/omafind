@@ -4,3 +4,4 @@ Service Service.qml
 Overlay Overlay.qml
 SearchView SearchView.qml
 SetupView SetupView.qml
+SettingsView SettingsView.qml

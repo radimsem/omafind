@@ -128,3 +128,20 @@ test('Ctrl I toggles the progress popover with or without a selection', () => {
   assert.equal(action(ctrlI, { query: 'x', row: { type: 'item', item: fixture('pdf').items[0] } }), 'progress');
   assert.equal(action({ key: 0x49, modifiers: 0 }, { query: '', row: null }), null);
 });
+
+test('Ctrl comma opens settings from any selection, a bare comma stays text', () => {
+  const { action } = load('format.js', 'keys.js');
+  const item = { type: 'item', item: { kind: 'text', loc: 3 } };
+  for (const ctx of [{ query: '', row: null }, { query: 'router', row: item }, { query: '', row: { type: 'weak' } }]) {
+    assert.equal(action({ key: 0x2c, text: ',', modifiers: 0x04000000 }, ctx), 'settings');
+    assert.equal(action({ key: 0x2c, text: ',', modifiers: 0 }, ctx), null);
+  }
+});
+
+test('the idle footer offers settings beside progress and close', () => {
+  const { idleHints } = load('format.js', 'keys.js');
+  const settings = { keys: ['Ctrl', ','], label: 'settings' };
+  const close = { keys: ['Esc'], label: 'close' };
+  assert.deepEqual(plain(idleHints(false)), [settings, close]);
+  assert.deepEqual(plain(idleHints(true)), [{ keys: ['Ctrl', 'I'], label: 'progress' }, settings, close]);
+});

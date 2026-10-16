@@ -54,6 +54,8 @@ Item {
   property var binds: []
   property bool bindsReady: false
   property var bindsError: null
+  // The "Find files" row in the Omarchy menu: true, false, or null until a daemon reports it.
+  property var menuRow: null
   property var engineError: null
   property var indexError: null
   property bool helperRunning: false
@@ -265,6 +267,13 @@ Item {
     runSteps(steps, done)
   }
 
+  function setMenuRow(on, done) {
+    runSteps([["bindings", "menu", on ? "add" : "remove"]], (ok, line) => {
+      if (ok) menuRow = on
+      done(ok, line)
+    })
+  }
+
   function runSteps(steps, done) {
     if (!steps.length) {
       done(true, "")
@@ -375,6 +384,7 @@ Item {
       break
     case "binds":
       binds = Array.isArray(message.binds) ? message.binds : []
+      menuRow = typeof message.menu === "boolean" ? message.menu : null
       bindsReady = true
       bindsError = null
       break
