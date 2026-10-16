@@ -33,6 +33,7 @@ FocusScope {
 
   function reset() {
     back = false
+    indexPage.followMenu = pickFolders
     if (step === 2) ensureScan(true)
     if (step === 3 && service) service.getBinds()
   }
@@ -53,6 +54,8 @@ FocusScope {
       event.accepted = true
     }
   }
+
+  onPickFoldersChanged: if (pickFolders) indexPage.followMenu = true
 
   onStepChanged: {
     if (step === 2) ensureScan()

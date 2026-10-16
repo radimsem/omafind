@@ -22,7 +22,7 @@ test('closing a picker stops its discovery without touching playback in another 
 
 test('reopening setup reuses or restarts discovery despite a cached first level', () => {
   let scans = 0;
-  const ctx = functions('SetupView.qml', { back: false, step: 2, walkError: '',
+  const ctx = functions('SetupView.qml', { back: false, step: 2, walkError: '', pickFolders: false, indexPage: {},
     service: { discover: { folders: [] }, folderError: null, scanning: false,
       scan() { scans++; } } });
   ctx.reset();

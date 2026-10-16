@@ -12,6 +12,10 @@ FocusScope {
   property var service: null
   property string chosen: ""
   property bool menuRow: true
+  // Set when Settings reopened setup: the switch then shows the menu as it is, so Save does not
+  // add back a row the user removed. A first setup offers to add it.
+  property bool followMenu: false
+  property bool menuTouched: false
   property bool showList: false
   property bool saving: false
   property string saveError: ""
@@ -42,7 +46,14 @@ FocusScope {
   function begin() {
     saveError = ""
     chosen = service ? service.settings.shortcut : "SUPER + E"
+    menuTouched = false
+    syncMenuRow()
     if (service) service.getBinds()
+  }
+
+  function syncMenuRow() {
+    if (menuTouched) return
+    menuRow = !followMenu || !service || typeof service.menuRow !== "boolean" || service.menuRow
   }
 
   function stop() {
@@ -68,6 +79,11 @@ FocusScope {
   // Retry on the index card starts the saved roots again.
   function retryIndex() {
     if (service) service.startIndexing(service.settings.roots, service.settings.codeRoots)
+  }
+
+  Connections {
+    target: root.service
+    function onMenuRowChanged() { root.syncMenuRow() }
   }
 
   Column {
@@ -288,7 +304,10 @@ FocusScope {
         anchors.verticalCenter: parent.verticalCenter
         checked: root.menuRow
         label: "Add Find files to the Omarchy menu"
-        onToggled: root.menuRow = !root.menuRow
+        onToggled: {
+          root.menuTouched = true
+          root.menuRow = !root.menuRow
+        }
       }
 
       Column {

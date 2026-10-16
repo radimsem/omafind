@@ -43,7 +43,7 @@ test('Service requests live binds and routes replies and errors', () => {
 test('Index step checks any saved chord and preserves the save workflow', () => {
   const calls = [];
   const { ctx, source } = functions('ui/SetupIndex.qml', {
-    chosen: '', saving: false, saveError: '', menuRow: true,
+    chosen: '', saving: false, saveError: '', menuRow: true, menuTouched: false, followMenu: false,
     service: { settings: { shortcut: 'SUPER + SHIFT + H' }, getBinds() { calls.push('binds'); },
       saveShortcut(chord, menuRow, done) { calls.push([chord, menuRow]); done(true, ''); } },
     searchRequested() { calls.push('search'); },
@@ -153,10 +153,44 @@ test('Change stays enabled during leave so the row keeps keyboard focus', () => 
 
 test('reopening the Index step retries the binds read without replacing the chosen chord', () => {
   let requests = 0;
-  const { ctx } = functions('SetupView.qml', { back: false, step: 3,
+  const { ctx } = functions('SetupView.qml', { back: false, step: 3, pickFolders: false, indexPage: {},
     service: { getBinds() { requests++; } } });
   ctx.reset();
   assert.equal(requests, 1);
+});
+
+test('a setup reopened from Settings keeps the menu row as it is', () => {
+  const calls = [];
+  const service = { settings: { shortcut: 'SUPER + R' }, menuRow: null, getBinds() {},
+    saveShortcut(chord, menuRow, done) { calls.push(menuRow); done(true, ''); } };
+  const { ctx } = functions('ui/SetupIndex.qml', { chosen: '', saving: false, saveError: '',
+    menuRow: true, menuTouched: false, followMenu: true, service, searchRequested() {} });
+  ctx.begin();
+  assert.equal(ctx.menuRow, true);
+  service.menuRow = false;
+  ctx.syncMenuRow();
+  assert.equal(ctx.menuRow, false);
+  ctx.saveShortcut();
+  assert.deepEqual(calls, [false]);
+  ctx.menuTouched = true;
+  ctx.menuRow = true;
+  ctx.syncMenuRow();
+  assert.equal(ctx.menuRow, true);
+  ctx.followMenu = false;
+  ctx.begin();
+  assert.equal(ctx.menuRow, true);
+});
+
+test('only Change folders makes the Index step follow the menu row', () => {
+  const page = {};
+  const { ctx, source } = functions('SetupView.qml', { back: false, step: 2, pickFolders: true, indexPage: page,
+    service: null, ensureScan() {} });
+  ctx.reset();
+  assert.equal(page.followMenu, true);
+  ctx.pickFolders = false;
+  ctx.reset();
+  assert.equal(page.followMenu, false);
+  assert.match(source, /onPickFoldersChanged: if \(pickFolders\) indexPage.followMenu = true/);
 });
 
 for (const action of ['close', 'dismiss', 'toggle', 'showSearch']) {
