@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.bigprog`, `.bar2` and `.fb`: a hover-fill track, an accent fill that turns green when done.
 Rectangle {

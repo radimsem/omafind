@@ -77,17 +77,17 @@ def test_invalid_manifest_is_rejected(tmp_path, mutation):
         manifest["entryPoints"] = []
     elif mutation in ("absolute", "parent", "newline", "empty-path", "non-string-path"):
         manifest["entryPoints"]["overlay"] = {
-            "absolute": str(root / "Overlay.qml"), "parent": "../Overlay.qml",
-            "newline": "Overlay.qml\n", "empty-path": "", "non-string-path": None,
+            "absolute": str(root / "ui/Overlay.qml"), "parent": "../ui/Overlay.qml",
+            "newline": "ui/Overlay.qml\n", "empty-path": "", "non-string-path": None,
         }[mutation]
     elif mutation == "missing-file":
-        (root / "Overlay.qml").unlink()
+        (root / "ui/Overlay.qml").unlink()
     elif mutation in ("missing-service", "missing-overlay"):
         del manifest["entryPoints"][mutation[8:]]
     elif mutation in ("missing-panel", "missing-bar-widget"):
         manifest["kinds"].append(mutation[8:])
     elif mutation == "symlink-file":
-        (root / "linked").symlink_to(root / "Overlay.qml")
+        (root / "linked").symlink_to(root / "ui/Overlay.qml")
     elif mutation == "symlink-directory":
         (root / "linked").symlink_to(root / "lib", target_is_directory=True)
     (root / "manifest.json").write_text(json.dumps(manifest))

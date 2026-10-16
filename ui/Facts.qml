@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // A row of fact tokens: a dim key, then its value. `tone` is plain, hit, warn or strong.
 Row {

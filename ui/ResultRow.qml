@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/format.js" as Format
 
 // `.it`: thumbnail or kind icon, name, folder or keyword snippet, and the jump badge.

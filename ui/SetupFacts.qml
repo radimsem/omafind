@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // Fact tokens for setup: Facts.qml plus a settable gap and `<b>` runs inside a value
 // (`selected <b>1,209</b> files`), drawn in the foreground and bold as `.fx .v b`.

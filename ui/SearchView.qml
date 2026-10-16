@@ -3,14 +3,14 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import "." as Plugin
-import "ui" as Parts
-import "lib/keys.js" as KeyMap
-import "lib/setup.js" as Setup
-import "lib/results.js" as Results
-import "lib/searchState.js" as SearchState
-import "lib/Update.js" as Update
-import "lib/volumes.js" as Volumes
-import "lib/errors.js" as Errors
+import "." as Parts
+import "../lib/keys.js" as KeyMap
+import "../lib/setup.js" as Setup
+import "../lib/results.js" as Results
+import "../lib/searchState.js" as SearchState
+import "../lib/Update.js" as Update
+import "../lib/volumes.js" as Volumes
+import "../lib/errors.js" as Errors
 
 // The search overlay body: query row, banner, result list, preview and footer.
 Item {

@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/setup.js" as Setup
 
 // Step 1 (board Setup, M3 step 1): helper, embedding server and model, then the footer buttons.

@@ -2,8 +2,8 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import "." as Plugin
-import "ui" as Parts
-import "lib/setup.js" as Setup
+import "." as Parts
+import "../lib/setup.js" as Setup
 
 // The first-run flow derives its step from daemon facts; only "Back" is local.
 FocusScope {

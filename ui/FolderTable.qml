@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.dt-h`: the folder table header, and the column geometry every `.dt-r` row lays out against.
 // Columns: check, folder (flexible), Text, PDF, Images, Video, Audio, Index, Time.

@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/setup.js" as Setup
 import "../lib/errors.js" as Errors
 import "../lib/keycombo.js" as Keycombo

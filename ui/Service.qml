@@ -1,14 +1,14 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import "lib/Backoff.js" as Backoff
-import "lib/Protocol.js" as Protocol
-import "lib/Connection.js" as Connection
-import "lib/errors.js" as Errors
-import "lib/Settings.js" as Settings
-import "lib/Update.js" as Update
-import "lib/volumes.js" as Volumes
-import "ui" as Parts
+import "../lib/Backoff.js" as Backoff
+import "../lib/Protocol.js" as Protocol
+import "../lib/Connection.js" as Connection
+import "../lib/errors.js" as Errors
+import "../lib/Settings.js" as Settings
+import "../lib/Update.js" as Update
+import "../lib/volumes.js" as Volumes
+import "." as Parts
 
 Item {
   id: root
@@ -79,7 +79,7 @@ Item {
     : []
   readonly property bool ticking: volumes.toasts.some(toast => toast.until !== null)
     || (!!volumes.reconcile && volumes.reconcile.done_at !== null && clock < volumes.reconcile.done_at + 1250)
-  readonly property string pluginDir: decodeURIComponent(Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")).replace(/\/$/, "")
+  readonly property string pluginDir: decodeURIComponent(Qt.resolvedUrl("..").toString().replace(/^file:\/\//, "")).replace(/\/$/, "")
 
   signal resultsReceived(var reply)
   signal previewReceived(var reply)

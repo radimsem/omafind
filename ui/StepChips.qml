@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.steps`: number box, label and a 48 px dash per step. Model from lib/setup.js chips(step).
 Row {

@@ -4,9 +4,9 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
 import "." as Plugin
-import "ui" as Parts
-import "lib/errors.js" as Errors
-import "lib/setup.js" as Setup
+import "." as Parts
+import "../lib/errors.js" as Errors
+import "../lib/setup.js" as Setup
 
 // The search overlay. The shell calls only open(payload) and close(), and reads `opened` to toggle.
 Item {

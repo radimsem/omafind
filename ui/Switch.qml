@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.switch`: 42 by 22 track with a 14 px knob. Rounded themes round both, as the shell does.
 Rectangle {

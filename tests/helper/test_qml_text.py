@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-QML = sorted([*ROOT.glob("*.qml"), *(ROOT / "ui").glob("*.qml")])
+QML = sorted((ROOT / "ui").rglob("*.qml"))
 TEXT = re.compile(r"^\s*(?:delegate:\s*|component \w+:\s*)?Text\s*\{", re.MULTILINE)
 
 

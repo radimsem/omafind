@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/format.js" as Format
 
 // `.wk` from board Code: a chevron and "5 weaker matches". Enter or a click folds and unfolds the weaker hits.

@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/errors.js" as Errors
 
 // One failure in the anatomy of `.ban`: a glyph, the bold title, the detail and the fix buttons on

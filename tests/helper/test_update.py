@@ -47,7 +47,8 @@ def test_fingerprint_ignores_bytecode_and_plugin_qml(plugin):
     cache = plugin / "helper/omafindd/__pycache__"
     cache.mkdir()
     (cache / "main.cpython-312.pyc").write_bytes(b"\0")
-    (plugin / "Service.qml").write_text("Item {}\n")
+    (plugin / "ui").mkdir()
+    (plugin / "ui/Service.qml").write_text("Item {}\n")
     assert build.fingerprint(plugin) == before
 
 

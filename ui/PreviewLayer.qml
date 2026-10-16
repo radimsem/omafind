@@ -3,7 +3,7 @@ import QtQuick.Window
 import QtMultimedia
 import Quickshell
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/format.js" as Format
 import "../lib/keys.js" as KeyMap
 import "../lib/searchState.js" as SearchState

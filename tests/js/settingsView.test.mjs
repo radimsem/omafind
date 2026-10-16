@@ -8,7 +8,7 @@ import { plain } from './fixtures.mjs';
 function functions(path, values) {
   const ctx = vm.createContext({ ...values });
   ctx.root = ctx;
-  const source = readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/' + path, import.meta.url), 'utf8');
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
   return { ctx, source };
 }

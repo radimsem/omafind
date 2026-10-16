@@ -14,7 +14,7 @@ function overlay(values = {}) {
     toast: { dismissed: 0, showError(error) { shown.push(error); }, dismiss() { this.dismissed++; } },
     ...values });
   ctx.root = ctx;
-  const source = readFileSync(new URL('../../Overlay.qml', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/Overlay.qml', import.meta.url), 'utf8');
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
   return { ctx, shown };
 }

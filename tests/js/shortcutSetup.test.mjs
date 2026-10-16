@@ -6,7 +6,7 @@ import { load } from './load.mjs';
 
 function functions(path, values) {
   const ctx = vm.createContext({ ...values });
-  const source = readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/' + path, import.meta.url), 'utf8');
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
   Object.assign(ctx, values);
   ctx.root = ctx;
@@ -42,7 +42,7 @@ test('Service requests live binds and routes replies and errors', () => {
 
 test('Index step checks any saved chord and preserves the save workflow', () => {
   const calls = [];
-  const { ctx, source } = functions('ui/SetupIndex.qml', {
+  const { ctx, source } = functions('SetupIndex.qml', {
     chosen: '', saving: false, saveError: '', menuRow: true, menuTouched: false, followMenu: false,
     service: { settings: { shortcut: 'SUPER + SHIFT + H' }, getBinds() { calls.push('binds'); },
       saveShortcut(chord, menuRow, done) { calls.push([chord, menuRow]); done(true, ''); } },
@@ -60,7 +60,7 @@ test('Index step checks any saved chord and preserves the save workflow', () => 
 });
 
 test('the shortcut row captures Space and Return, cancels on focus loss and leaves Tab alone', () => {
-  const { ctx, source } = functions('ui/ShortcutRow.qml', {
+  const { ctx, source } = functions('ShortcutRow.qml', {
     recording: true, canChange: true, Qt: { Key_Tab: 1, Key_Backtab: 2, Key_Space: 32, Key_Return: 4, Key_Enter: 5 },
     captured(key) { this.keys.push(key); }, keys: [], cancel() { this.cancelled = true; },
     button: { forceActiveFocus() {} },
@@ -84,7 +84,7 @@ test('the shortcut row captures Space and Return, cancels on focus loss and leav
 });
 
 function index(values = {}) {
-  const { ctx, source } = functions('ui/SetupIndex.qml', {
+  const { ctx, source } = functions('SetupIndex.qml', {
     chosen: 'F9', saving: false, Keycombo: load('keycombo.js'),
     service: { binds: [], bindsReady: true, bindsError: null },
     recorder: { active: false, operation: '', pendingLeave: false, conflict: '', lost: false, exposed: false },
@@ -163,7 +163,7 @@ test('a setup reopened from Settings keeps the menu row as it is', () => {
   const calls = [];
   const service = { settings: { shortcut: 'SUPER + R' }, menuRow: null, getBinds() {},
     saveShortcut(chord, menuRow, done) { calls.push(menuRow); done(true, ''); } };
-  const { ctx } = functions('ui/SetupIndex.qml', { chosen: '', saving: false, saveError: '',
+  const { ctx } = functions('SetupIndex.qml', { chosen: '', saving: false, saveError: '',
     menuRow: true, menuTouched: false, followMenu: true, service, searchRequested() {} });
   ctx.begin();
   assert.equal(ctx.menuRow, true);
@@ -196,7 +196,7 @@ test('only Change folders makes the Index step follow the menu row', () => {
 for (const action of ['close', 'dismiss', 'toggle', 'showSearch']) {
   test(`${action} stops the setup recorder through the loaded view`, () => {
     let stops = 0;
-    const page = functions('ui/SetupIndex.qml', { recorder: { stop() { stops++; } } }).ctx;
+    const page = functions('SetupIndex.qml', { recorder: { stop() { stops++; } } }).ctx;
     const setup = functions('SetupView.qml', { indexPage: page }).ctx;
     const { ctx } = functions('Overlay.qml', {
       opened: true, view: 'setup', pendingOpen: null, setup: { item: setup }, settingsView: { item: null },
@@ -213,7 +213,7 @@ for (const action of ['close', 'dismiss', 'toggle', 'showSearch']) {
 
 test('binds Retry starts an offline service and otherwise requests binds', () => {
   const calls = [];
-  const { ctx, source } = functions('ui/SetupIndex.qml', {
+  const { ctx, source } = functions('SetupIndex.qml', {
     service: { bindsError: { code: 'daemon-offline' },
       installHelper() { calls.push('install'); }, getBinds() { calls.push('binds'); } },
   });

@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/errors.js" as Errors
 
 // The "Add folder" picker inside the overlay (plan D11): a path field completed from `fs_list`.

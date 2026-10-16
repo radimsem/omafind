@@ -11,7 +11,7 @@ function service(values = {}) {
     Protocol: { decode: JSON.parse }, Errors: load('errors.js'), childrenReceived() {}, setupFailed() {},
     send() { return true; }, ...values,
   });
-  const source = readFileSync(new URL('../../Service.qml', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/Service.qml', import.meta.url), 'utf8');
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm))
     vm.runInContext(match[0], ctx);
   for (const match of source.matchAll(/^  function \w+\([^\n]*\) \{[^\n]*\}$/gm))

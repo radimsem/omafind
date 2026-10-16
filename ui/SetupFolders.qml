@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/setup.js" as Setup
 import "../lib/tree.js" as Tree
 

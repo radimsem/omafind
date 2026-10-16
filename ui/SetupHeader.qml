@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.p-head`: an optional crumb, the title, a sentence or fact line beneath, and `Step N of 3` right.
 Item {

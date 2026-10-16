@@ -6,7 +6,7 @@ import vm from 'node:vm';
 function functions(file, values) {
   const ctx = vm.createContext(values);
   ctx.root = ctx;
-  const source = readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8');
+  const source = readFileSync(new URL(`../../ui/${file}`, import.meta.url), 'utf8');
   for (const match of source.matchAll(/^  function \w+\([^]*?^  \}/gm)) vm.runInContext(match[0], ctx);
   return ctx;
 }
@@ -35,7 +35,7 @@ test('a reconnected Folders step requests a fresh discovery snapshot', () => {
   const ctx = functions('SetupView.qml', { visible: true, step: 2, walkError: '',
     service: { ready: true, discover: { folders: [] }, folderError: null, scanning: false,
       scan() { scans++; } } });
-  const source = readFileSync(new URL('../../SetupView.qml', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/SetupView.qml', import.meta.url), 'utf8');
   const handler = source.match(/function onReadyChanged\(\) \{([^]*?)^    \}/m);
   assert.ok(handler, 'Folders step listens for reconnection');
   vm.runInContext('function reconnected() {' + handler[1] + '}', ctx);
@@ -74,7 +74,7 @@ test('Change folders opens setup at the Folders step until indexing starts', () 
   assert.equal(setupItem.resets, 1);
 
   const view = functions('SetupView.qml', { pickFolders: true, service: { indexPending: false } });
-  const source = readFileSync(new URL('../../SetupView.qml', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/SetupView.qml', import.meta.url), 'utf8');
   const handler = source.match(/function onIndexPendingChanged\(\) \{([^]*?)^    \}/m);
   assert.ok(handler, 'Setup leaves the Folders step when indexing starts');
   vm.runInContext('function pending() {' + handler[1] + '}', view);
@@ -86,7 +86,7 @@ test('Change folders opens setup at the Folders step until indexing starts', () 
 });
 
 test('opening the overlay never lands on the Folders step by itself', () => {
-  const source = readFileSync(new URL('../../Overlay.qml', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../ui/Overlay.qml', import.meta.url), 'utf8');
   const open = source.match(/^  function open\(payload\) \{([^]*?)^  \}/m)[1];
   assert.match(open, /setupFolders = false/);
 });

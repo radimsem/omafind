@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 import "../lib/setup.js" as Setup
 import "../lib/tree.js" as Tree
 import "../lib/volumes.js" as Volumes

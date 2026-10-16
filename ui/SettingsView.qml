@@ -1,10 +1,10 @@
 import QtQuick
 import qs.Commons
 import "." as Plugin
-import "ui" as Parts
-import "lib/errors.js" as Errors
-import "lib/keycombo.js" as Keycombo
-import "lib/setup.js" as Setup
+import "." as Parts
+import "../lib/errors.js" as Errors
+import "../lib/keycombo.js" as Keycombo
+import "../lib/setup.js" as Setup
 
 // Ctrl , from search: the shortcut, the "Find files" menu row and a way back to the Folders step.
 FocusScope {

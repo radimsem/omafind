@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import ".." as Plugin
+import "." as Plugin
 
 // `.tg`: 16 px rule tag. repo and user accent, worktree cyan, dataset yellow, secrets green with a lock, other rules dim.
 Rectangle {
