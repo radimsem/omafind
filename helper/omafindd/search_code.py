@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .code import CodeStore, classify_code, code_root, read
+from .code import CodeStore, classify_code, code_root, code_run, read
 from .lookup import COMMENT_STARTS, definition, has, identifier
 from .rules import SECRET_GLOBS
 from .search_text import snippet_parts
@@ -169,6 +169,8 @@ async def search_code(searcher, q: str, *, roots: Sequence[Path], directory: Pat
         store = CodeStore.open_existing(path.absolute(), Path("/"))
         try:
             store.db.execute("BEGIN")
+            if code_run(store.db) is not None:
+                reply["notice"] = "code-index-building"
             files = {str(store.mount / row["path"]): row for row in
                      store.db.execute("SELECT * FROM files WHERE state='done'")
                      if any(scope.holds(store.mount / row["path"]) for scope in scopes)}

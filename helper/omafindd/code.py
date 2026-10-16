@@ -258,72 +258,124 @@ class CodeStore:
         self.db.close()
 
 
-async def index_code(roots: Sequence[Path], directory: Path, embedder):
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
+
+
+def code_run(db, *, live=True) -> dict | None:
+    """The code pass that index_code is running, as `{pid, done, total}`, or None.
+
+    With `live` a pass whose process is gone counts as none, since a killed pass leaves its row.
+    """
+    try:
+        row = db.execute("SELECT value FROM meta WHERE key='code_run'").fetchone()
+        run = json.loads(row[0]) if row else None
+    except (sqlite3.Error, ValueError, TypeError):
+        return None
+    if not isinstance(run, dict) or not all(
+        type(run.get(key)) is int for key in ("pid", "done", "total")
+    ) or run["pid"] <= 0:
+        return None
+    return run if not live or _alive(run["pid"]) else None
+
+
+async def index_code(roots: Sequence[Path], directory: Path, embedder, *, progress=None,
+                     clock=time.monotonic):
+    """Indexes the code of `roots` into `directory/code.sqlite`.
+
+    While it runs, meta `code_run` holds its pid and counts, and `progress` gets
+    `{done, queued, volume: "code"}` at most every 0.5 s and once at the end.
+    """
     from .embedder import EmbeddingError, document_text
     from .embedding import validated
 
     roots = tuple(code_root(root) for root in roots)
     store = CodeStore(directory / "code.sqlite")
     seen = set()
+
+    def report(done, total, *, force=False):
+        nonlocal reported
+        now = clock()
+        if not force and now - reported < .5:
+            return
+        reported = now
+        with store.db:
+            store.db.execute("INSERT OR REPLACE INTO meta VALUES('code_run',?)", (json.dumps(
+                {"pid": os.getpid(), "done": done, "total": total}),))
+        if progress is not None:
+            progress({"done": done, "queued": total - done, "volume": "code"})
+
+    async def index_file(root, path):
+        relative = path.relative_to(store.mount).as_posix()
+        stat = path.stat()
+        old = store.db.execute("SELECT * FROM files WHERE path=?", (relative,)).fetchone()
+        if old and old["state"] == "done" and (old["size"], old["mtime"]) == (
+            stat.st_size, stat.st_mtime
+        ):
+            seen.add(relative)
+            return
+        try:
+            pieces = read(path)
+        except (OSError, ValueError, TypeError):
+            return
+        seen.add(relative)
+        with store.db:
+            store.db.execute(
+                "INSERT INTO files(path,kind,size,mtime,inode,device) "
+                "VALUES(?, 'code',?,?,?,?) "
+                "ON CONFLICT(path) DO UPDATE SET size=excluded.size,mtime=excluded.mtime,"
+                "inode=excluded.inode,device=excluded.device,state='pending'",
+                (relative, stat.st_size, stat.st_mtime, stat.st_ino, stat.st_dev),
+            )
+            file = store.db.execute(
+                "SELECT id FROM files WHERE path=?", (relative,)
+            ).fetchone()[0]
+            store.db.execute("DELETE FROM segments WHERE file=?", (file,))
+        try:
+            vectors = []
+            title = f"{root.name}/{path.relative_to(root).as_posix()}"
+            for offset in range(0, len(pieces), 16):
+                batch = pieces[offset:offset + 16]
+                result = await embedder.embed_documents(
+                    [document_text(title, piece.text) for piece in batch]
+                )
+                if len(result) != len(batch):
+                    raise ValueError("embedding precision fault")
+                vectors.extend(validated(vector) for vector in result)
+            with store.db:
+                store.db.executemany(
+                    "INSERT INTO segments(file,kind,modality,loc,loc_end,excerpt,vec) "
+                    "VALUES(?,'code','text',?,?,?,?)",
+                    [(file, piece.first, piece.last, piece.text[:400], vector.tobytes())
+                     for piece, vector in zip(pieces, vectors, strict=True)],
+                )
+                store.db.execute(
+                    "UPDATE files SET state='done',detail=NULL,indexed_at=? WHERE id=?",
+                    (time.time(), file),
+                )
+        except (EmbeddingError, OSError, ValueError) as error:
+            with store.db:
+                store.db.execute(
+                    "UPDATE files SET state='failed',detail=? WHERE id=?",
+                    (failures.encode("code-index-failed", str(error)), file),
+                )
+
+    reported = float("-inf")
     try:
+        plan = [(scope.path, path) for scope in roots
+                for path in repository_files(scope.path, scope.excludes)]
+        report(0, len(plan), force=True)
         # Text mode caps a request at 512 tokens; an 1800-character code stretch often needs more.
         await embedder.start("full")
-        for scope in roots:
-            root = scope.path
-            for path in repository_files(root, scope.excludes):
-                relative = path.relative_to(store.mount).as_posix()
-                stat = path.stat()
-                old = store.db.execute("SELECT * FROM files WHERE path=?", (relative,)).fetchone()
-                if old and old["state"] == "done" and (old["size"], old["mtime"]) == (
-                    stat.st_size, stat.st_mtime
-                ):
-                    seen.add(relative)
-                    continue
-                try:
-                    pieces = read(path)
-                except (OSError, ValueError, TypeError):
-                    continue
-                seen.add(relative)
-                with store.db:
-                    store.db.execute(
-                        "INSERT INTO files(path,kind,size,mtime,inode,device) "
-                        "VALUES(?, 'code',?,?,?,?) "
-                        "ON CONFLICT(path) DO UPDATE SET size=excluded.size,mtime=excluded.mtime,"
-                        "inode=excluded.inode,device=excluded.device,state='pending'",
-                        (relative, stat.st_size, stat.st_mtime, stat.st_ino, stat.st_dev),
-                    )
-                    file = store.db.execute(
-                        "SELECT id FROM files WHERE path=?", (relative,)
-                    ).fetchone()[0]
-                    store.db.execute("DELETE FROM segments WHERE file=?", (file,))
-                try:
-                    vectors = []
-                    title = f"{root.name}/{path.relative_to(root).as_posix()}"
-                    for offset in range(0, len(pieces), 16):
-                        batch = pieces[offset:offset + 16]
-                        result = await embedder.embed_documents(
-                            [document_text(title, piece.text) for piece in batch]
-                        )
-                        if len(result) != len(batch):
-                            raise ValueError("embedding precision fault")
-                        vectors.extend(validated(vector) for vector in result)
-                    with store.db:
-                        store.db.executemany(
-                            "INSERT INTO segments(file,kind,modality,loc,loc_end,excerpt,vec) "
-                            "VALUES(?,'code','text',?,?,?,?)",
-                            [(file, piece.first, piece.last, piece.text[:400], vector.tobytes())
-                             for piece, vector in zip(pieces, vectors, strict=True)],
-                        )
-                        store.db.execute(
-                            "UPDATE files SET state='done',detail=NULL,indexed_at=? WHERE id=?",
-                            (time.time(), file),
-                        )
-                except (EmbeddingError, OSError, ValueError) as error:
-                    with store.db:
-                        store.db.execute(
-                            "UPDATE files SET state='failed',detail=? WHERE id=?",
-                            (failures.encode("code-index-failed", str(error)), file),
-                        )
+        for done, (root, path) in enumerate(plan, 1):
+            await index_file(root, path)
+            report(done, len(plan), force=done == len(plan))
         with store.db:
             for row in store.db.execute("SELECT id,path FROM files").fetchall():
                 if row["path"] not in seen:
@@ -331,4 +383,6 @@ async def index_code(roots: Sequence[Path], directory: Path, embedder):
             store.db.execute("INSERT OR REPLACE INTO meta VALUES('code_roots',?)",
                              (json.dumps([str(root.path) for root in roots]),))
     finally:
+        with store.db:
+            store.db.execute("DELETE FROM meta WHERE key='code_run'")
         store.close()

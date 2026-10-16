@@ -179,7 +179,8 @@ files before the limit; `weaker` counts weak items in the returned list.
 failures still return words.
 A `kinds:["code"]` search with no code index adds `notice:"no-code-index"` when no repository has
 Code turned on, or `notice:"code-index-pending"` when one has but the index is not built yet;
-`degraded` stays null.
+`degraded` stays null. While an index run is building the code index, a `code` search returns
+what is indexed so far with `notice:"code-index-building"`.
 Timing fields are milliseconds.
 
 Error replies carry `seq` and the error fields, for example
@@ -359,6 +360,7 @@ daemon: {"t":"progress","running":true,"done":612,"queued":597,"volume":"<uuid>"
                          "fix":{"kind":"install","packages":["tesseract"]}}]}
 ```
 - `index_progress` replies the same `progress` body and starts nothing, so a view can fill before the next broadcast.
+- The code index is built after every volume, in the same child. While it runs, `progress` adds `code:{"done":n,"total":m}`, counted in repository files; `done`, `queued` and `kinds` leave code out. The child records the pass as meta `code_run` (`{pid, done, total}`) in `code.sqlite` and deletes it when the pass ends, so `progress` shows `code` only while that child runs. `status` counts a running pass's `done` and `total` too. The child's log gets `done N queued M volume code` lines.
 - Reply to `index_start` is a `progress` snapshot. Then the daemon broadcasts `progress` at most twice per second while the index job runs, and once more when it exits (`running:false`). `status` keeps working unchanged for the #4 footer.
 - When the child exits non-zero, the final `progress` includes `exit:<code>` (negative for termination by a signal). The daemon then broadcasts exactly one `error` with `for:"index_start"` and code `index-exited`, whose detail names the exit code and whose `log` is the absolute `<data>/index/reindex.log` path. These broadcasts report failure after the initial reply; they carry no `seq` or `id`. Successful completion omits `exit` and sends no error.
 - `device` is `gpu`, `cpu` or null; `vram_gb` is a float or null (unknown is null, the client hides the token). `skipped` and `failed` omit zero keys. Secrets are never listed, so they are not counted in `skipped`. `problems` lists at most 50 failed files.

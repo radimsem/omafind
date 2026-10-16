@@ -238,3 +238,16 @@ test('estimates take code files at the code rate', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(s.estimate({ text: 2, code: 4 }, rates, 'gpu'))),
     { bytes: 36, seconds: 4 });
 });
+
+test('a running code pass keeps the run open and shows its own row', () => {
+  const run = { running: true, done: 10, queued: 0, device: 'gpu', kinds: { text: { done: 10, total: 10 } },
+    code: { done: 30, total: 90 } };
+  const rows = plain(s.kindRows(run));
+  assert.deepEqual(rows.map(row => row.label), ['Text', 'PDF', 'Images', 'Video', 'Audio', 'Code']);
+  assert.deepEqual(rows[5], { label: 'Code', fraction: 1 / 3, done: false, text: '30 of 90 · running' });
+  const head = s.indexHead(run, discover.rates);
+  assert.equal(head.count, '40');
+  assert.equal(head.fraction, 40 / 100);
+  assert.deepEqual(values(head.facts), [['of', '100 files'], ['left', '< 1 min']]);
+  assert.equal(s.kindRows({ ...run, code: undefined }).length, 5);
+});

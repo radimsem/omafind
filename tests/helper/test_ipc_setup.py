@@ -889,3 +889,17 @@ async def test_binds_get_failure_keeps_the_cause(service, error, detail):
     service.run = run
     reply = await service.handle({"t": "binds_get"})
     assert reply["code"] == "binds-failed" and reply["detail"] == detail
+
+
+async def test_progress_shows_the_code_pass_of_the_running_index(service):
+    from omafindd.code import CodeStore
+
+    code = CodeStore(service.data_dir / "index/code.sqlite")
+    with code.db:
+        code.db.execute("INSERT INTO meta VALUES('code_run',?)",
+                        (json.dumps({"pid": 987654, "done": 1, "total": 3}),))
+    code.close()
+    result = await service.handle({"t": "index_start"})
+    assert result["code"] == {"done": 1, "total": 3}
+    service._index.pid = 1
+    assert "code" not in await service.handle({"t": "index_progress"})

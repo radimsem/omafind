@@ -11,6 +11,7 @@ from contextlib import closing
 from pathlib import Path
 
 from . import bindings, discovery, errors, failures, tools
+from .code import code_run
 from .install import RuntimeJob
 
 
@@ -437,6 +438,8 @@ class SetupService:
         kinds = {kind: {"done": 0, "total": 0} for kind in KINDS}
         kinds["pdf"]["pages"] = kinds["image"]["ocr"] = 0
         failed, problems, volumes, missing = {}, [], {}, {}
+        code_pass = None
+        running = self._index is not None and self._index.returncode is None
         volume = pending_volume = None
         try:
             self._mounts = mounted_volumes()
@@ -451,6 +454,9 @@ class SetupService:
                 ) as db:
                     meta = dict(db.execute("SELECT key,value FROM meta"))
                     current = meta.get("volume_uuid", path.stem)
+                    run = code_run(db, live=False) if code_index and running else None
+                    if run is not None and run["pid"] == self._index.pid:
+                        code_pass = {"done": run["done"], "total": run["total"]}
                     if not code_index:
                         volume = current
                         total, done = db.execute(
@@ -523,6 +529,7 @@ class SetupService:
             "device": device,
             "vram_gb": vram,
             "kinds": kinds,
+            **({"code": code_pass} if code_pass is not None else {}),
             "skipped": skipped,
             "failed": failed,
             "problems": problems,

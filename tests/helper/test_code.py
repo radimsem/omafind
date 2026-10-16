@@ -195,8 +195,11 @@ async def test_reindex_hook_and_configured_roots(repo, tmp_path):
     assert configured_roots(lambda: SimpleNamespace(code_roots=())) == ()
     roots = configured_roots(lambda: SimpleNamespace(code_roots=(str(repo),)))
     embedder = FakeEmbedder()
-    await reindex([], directory=tmp_path / "data", embedder=embedder, code_roots=roots)
+    events = []
+    await reindex([], directory=tmp_path / "data", embedder=embedder, code_roots=roots,
+                  progress=events.append)
     assert (tmp_path / "data/index/code.sqlite").exists()
+    assert events[-1] == {"done": 1, "queued": 0, "volume": "code"}
     assert embedder.mode is None
 
 
@@ -585,3 +588,47 @@ def test_configured_roots_read_both_shapes(repo):
     assert configured_roots(lambda: SimpleNamespace(code_roots=(
         str(repo), {"path": str(repo), "excludes": ["a/b"]}))) == (
         CodeRoot(repo, ()), CodeRoot(repo, ("a/b",)))
+
+
+async def test_code_pass_reports_progress_and_marks_itself_running(repo, tmp_path):
+    import os
+    import sqlite3
+
+    from omafindd.code import code_run, index_code
+    from omafindd.search import Searcher
+
+    tracked(repo, "one.py", "def retry_with_backoff(): pass")
+    tracked(repo, "two.py", "def retry_with_backoff(): pass")
+    seen, events = [], []
+
+    class Watching(FakeEmbedder):
+        async def embed_documents(self, texts):
+            with sqlite3.connect(tmp_path / "index/code.sqlite") as db:
+                seen.append(code_run(db))
+            return await super().embed_documents(texts)
+
+    await index_code([repo], tmp_path / "index", Watching(), progress=events.append)
+    assert seen[0] == {"pid": os.getpid(), "done": 0, "total": 2}
+    assert events[-1] == {"done": 2, "queued": 0, "volume": "code"}
+    with sqlite3.connect(tmp_path / "index/code.sqlite") as db:
+        assert code_run(db) is None
+        db.execute("INSERT INTO meta VALUES('code_run',?)",
+                   (json.dumps({"pid": os.getpid(), "done": 1, "total": 2}),))
+    searcher = Searcher([], None, code_directory=tmp_path / "index", code_roots=[repo])
+    reply = await searcher.search("code: retry_with_backoff", legs=["words"])
+    assert reply["notice"] == "code-index-building" and len(reply["items"]) == 2
+
+
+def test_a_code_pass_of_a_gone_process_is_not_running(tmp_path):
+    import sqlite3
+
+    from omafindd.code import CodeStore, code_run
+
+    store = CodeStore(tmp_path / "code.sqlite")
+    with store.db:
+        store.db.execute("INSERT INTO meta VALUES('code_run',?)",
+                         (json.dumps({"pid": 2 ** 22 + 1, "done": 1, "total": 2}),))
+    store.close()
+    with sqlite3.connect(tmp_path / "code.sqlite") as db:
+        assert code_run(db, live=False) == {"pid": 2 ** 22 + 1, "done": 1, "total": 2}
+        assert code_run(db) is None

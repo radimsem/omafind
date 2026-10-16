@@ -12,6 +12,7 @@ from pathlib import Path
 from threading import Lock
 
 from . import errors, opener
+from .code import code_run
 from .state import State
 
 PROTOCOL_VERSION = 1
@@ -329,6 +330,10 @@ class IpcServer:
                         "SELECT count(*),count(indexed_at),sum(state='pending' OR "
                         "(state='partial' AND detail IS NULL)) FROM files"
                     ).fetchone()
+                    run = code_run(db) if path.name == "code.sqlite" else None
+                    if run is not None:
+                        # Code rows appear one at a time, so the pass's own counts show progress.
+                        count, pending = run["total"], run["total"] - run["done"]
                     if path.name != "code.sqlite":
                         try:
                             meta = dict(db.execute("SELECT key,value FROM meta"))

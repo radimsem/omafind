@@ -383,3 +383,19 @@ async def test_client_line_only_overrides_text_and_code(server, tmp_path, monkey
     if kind == "code":
         assert calls[0]["open_line"] == 230
     assert item["loc"] == (3 if kind == "pdf" else None)
+
+
+def test_status_counts_a_running_code_pass(server, tmp_path):
+    import json
+    import os
+
+    from omafindd.code import CodeStore
+
+    store = CodeStore(tmp_path / "code.sqlite")
+    with store.db:
+        store.db.execute("INSERT INTO meta VALUES('code_run',?)",
+                         (json.dumps({"pid": os.getpid(), "done": 4, "total": 10}),))
+    store.close()
+    server.service = SimpleNamespace(directory=tmp_path, settings=lambda: Settings())
+    status = server.status_message()
+    assert (status["done"], status["total"]) == (4, 10)

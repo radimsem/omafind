@@ -12,8 +12,13 @@ Column {
 
   spacing: Style.space(8)
 
+  readonly property var rows: Setup.kindRows(root.progress)
+  // Height of the rows past the five kinds, such as the code pass, for panels sized to five.
+  readonly property real extraHeight: rows.length > 5
+    ? (rows.length - 5) * (implicitHeight - topPadding - bottomPadding + spacing) / rows.length : 0
+
   Repeater {
-    model: Setup.kindRows(root.progress)
+    model: root.rows
 
     delegate: Item {
       required property var modelData

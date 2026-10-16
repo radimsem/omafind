@@ -112,7 +112,8 @@ async def reindex(
                             pause=pause)
                 await jobs.drain(progress=progress or _progress)
             if code_roots:
-                await index_code(code_roots, directory / "index", embedder)
+                await index_code(code_roots, directory / "index", embedder,
+                                 progress=progress or _progress)
             print("queued 0", file=sys.stderr)
         finally:
             await embedder.stop()

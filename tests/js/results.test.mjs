@@ -170,3 +170,10 @@ test('the banner slot shows one error and names what its Retry does', () => {
   assert.deepEqual(plain(R.bannerFor({ reply: { ...fixture('main'), degraded: 'Vulkan device lost' } })),
     { error: { code: 'unknown', title: 'Vulkan device lost', detail: '' }, retry: 'search' });
 });
+
+test('a code search while the code index is being built says so', () => {
+  const R = load('format.js', 'results.js');
+  assert.equal(R.footerLeft({ phase: 'done', prefix: 'code:',
+    reply: { total: 3, weaker: 0, items: [], notice: 'code-index-building' } }),
+    '3 results in your code · the code index is still being built');
+});
