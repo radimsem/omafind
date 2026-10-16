@@ -55,19 +55,7 @@ See [docs/ipc.md](docs/ipc.md) for the handshake.
 
 When the plugin code changes (a `git pull` in a dev checkout or a marketplace update), the plugin compares `bin/omafind fingerprint` with the `build` the daemon reports and reruns `bin/omafind setup` once, which syncs the venv and restarts the unit. A daemon that starts on a venv missing a dependency logs `omafindd cannot import <module>. Run bin/omafind setup.` to the unit journal and to `~/.local/share/omafind/cache/logs/omafindd-start.log`, and exits 1. A socket bind failure is logged the same way.
 
-Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell.json`. The plugin writes them through `updateEntryInline`; the daemon only reads them. Later issues add keys.
-
-| Key | Type | Default |
-|---|---|---|
-| `setupDone` | bool | `false` |
-| `gpu` | `"auto"` or `"never"` | `"auto"` |
-| `audio` | bool | `true` |
-| `roots` | `[{path, volume, excludes: [path]}]` | `[]` |
-| `ignoredVolumes` | list of filesystem UUIDs the new-drive toast skips | `[]` |
-| `imageBudget` | 70, 140 or 280 | `140` |
-| `maxResults` | int, clamped to 10..200 | `40` |
-| `warmMinutes` | int, clamped to 0..60 | `5` |
-| `shortcut` | uppercase `MODS + KEY` (mods: SUPER, SHIFT, CTRL, ALT) or a lone `F1` to `F35` | `"SUPER + E"` |
+Settings: see [docs/settings.md](docs/settings.md).
 
 ## Use
 

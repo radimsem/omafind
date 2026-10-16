@@ -190,9 +190,11 @@ The CLI sends seq 1 with both legs and prints the complete results object for
 `--json`. It exits 0 for any result, 1 for no index or a service error, 2 for bad arguments, and
 3 for a silent socket.
 
-Settings in the plugin's shell.json entry now include `roots` (default `[]`),
-`maxResults` (10..200, default 40), `warmMinutes` (0..60, default 5),
-and `imageBudget` (70, 140 or 280, default 140). Invalid paths are dropped;
+Settings in the plugin's shell.json entry are `setupDone` (bool, default false),
+`gpu` (`"auto"` or `"never"`, default `"auto"`), `audio`, `roots` (default `[]`),
+`ignoredVolumes` (default `[]`, see Volumes), `maxResults` (10..200, default 40),
+`warmMinutes` (0..60, default 5), `imageBudget` (70, 140 or 280, default 140)
+and `shortcut`. [settings.md](settings.md) has the full table. Invalid paths are dropped;
 budgets are not coerced. A `codeRoots` key left by an older plugin is ignored.
 `audio` (bool, default true) controls audio files and video soundtracks.
 With audio off, audio files have state `skipped` and code `audio-off`.

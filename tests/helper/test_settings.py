@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -230,3 +231,13 @@ def test_shortcut_accepts_a_lone_function_key(value, valid):
     from omafindd.settings import valid_shortcut
 
     assert valid_shortcut(value) is valid
+
+
+def test_settings_docs_name_every_default_key():
+    keys = set(json.loads((ROOT / "settings.example.json").read_text()))
+    table = set(re.findall(r"^\| `(\w+)` \|", (ROOT / "docs/settings.md").read_text(), re.M))
+    ipc = (ROOT / "docs/ipc.md").read_text()
+    ipc = ipc[ipc.index("Settings in the plugin's shell.json entry"):]
+    ipc = ipc[:ipc.index("\n## ")]
+    assert table == keys
+    assert [key for key in sorted(keys) if f"`{key}`" not in ipc] == []
