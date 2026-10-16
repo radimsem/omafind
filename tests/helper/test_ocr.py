@@ -85,7 +85,10 @@ async def test_missing_tesseract_fails_the_screenshot_as_tool_missing(tmp_path, 
     command("magick", "-size", "1200x160", "xc:white", str(files / "screenshot-text.png"))
     tools = tmp_path / "bin"
     tools.mkdir()
-    (tools / "magick").symlink_to(shutil.which("magick"))
+    # CI's magick is a shim that execs ImageMagick 6's convert and identify.
+    for name in ("magick", "convert", "identify"):
+        if path := shutil.which(name):
+            (tools / name).symlink_to(path)
     monkeypatch.setattr(jobs, "ProcessPoolExecutor", InlinePool)
     store = Store(tmp_path / "index/v.sqlite", volume="v", mount=files)
     try:
