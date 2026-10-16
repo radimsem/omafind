@@ -1,235 +1,94 @@
 # omafind
 
-omafind is an Omarchy 4 plugin for local content search across text, PDFs, images, video and audio. It uses an overlay and a Python daemon, `omafindd`, with a local embedding runtime. This scaffold provides the daemon handshake and runtime setup; indexing and search arrive in later issues.
+Search your local files by content from an Omarchy overlay.
 
-## Develop
+omafind is an Omarchy 4 plugin. Describe what you remember, or type words from the file, and it finds documents, PDF pages, images, video moments and audio clips on your machine.
 
-Requires Omarchy 4, Quickshell and `uv` with Python 3.12 or newer.
+- Searches by meaning and by exact words. Words answer first and meaning re-ranks.
+- Reads text documents, PDFs, images (screenshots get OCR), video and audio.
+- Runs locally on one embedding model, EmbeddingGemma 2, served by `llama-server`.
+- Opens a result at the match: the page, the line or the second.
+
+## Requirements
+
+- Omarchy 4.
+- About 2 GB of free disk for the install: the engine build takes roughly 800 MB while it runs, and the model files are 865 MB. The index grows with your files. Indexing pauses below 2 GB free.
+- A Vulkan GPU makes indexing much faster. Without one, omafind falls back to the CPU.
+- Build packages for the engine: `vulkan-headers`, `shaderc`, `gcc`, `git` and `uv`. Setup checks for them and offers to install what is missing.
+
+## Install
 
 ```bash
-git clone git@github.com:radimsem/omafind.git
-cd omafind
-mkdir -p ~/.config/omarchy/plugins
-ln -s "$PWD" ~/.config/omarchy/plugins/radimsem.omafind
-omarchy-shell shell rescanPlugins
-omarchy plugin enable radimsem.omafind
-bin/omafind setup
-bin/omafind build-runtime
+omarchy plugin add https://github.com/radimsem/omafind --enable
 ```
 
-Setup creates `~/.local/share/omafind/venv`, copies the user unit into `~/.config/systemd/user/omafind.service`, enables it and waits for `hello`. Repeat setup to apply unit changes. Runtime building and model downloads start through `build-runtime` or the setup view's Install button. The daemon owns setup jobs, so closing the overlay leaves them running; Pause stops a job and Resume continues it.
+Open the overlay once:
 
-The Vulkan build needs `vulkan-headers` and `shaderc`. Prefer installing the remaining build tools with `sudo pacman -S cmake ninja spirv-headers`. The script can bootstrap private copies when those are missing. It runs in a memory-capped systemd user scope (12 GiB, no swap) when the user manager is available. It builds the pinned llama.cpp runtime, then downloads and verifies both pinned model files.
+```bash
+omarchy-shell shell toggle radimsem.omafind '{"view":"search"}'
+```
 
-Run `bin/omafind status` for fact lines or `bin/omafind status --json` for JSON. Status reports runtime and per-file model presence, the last model verification, volumes, queue length and permission problems. The daemon verifies pinned model sizes and digests on startup. These reports do not change the unit and socket exit codes.
+It starts in setup until the engine is installed. Setup has three steps:
 
-| Exit | Meaning |
-|---|---|
-| 0 | Unit enabled and active, socket answers `hello` |
-| 1 | A tool is missing (while the runtime is missing, build packages count too; stderr prints the `pacman` line), or the unit is not installed or not enabled |
-| 2 | Unit enabled but not active |
-| 3 | Unit active but socket silent |
-| 4 | Daemon answers, but the venv is `missing`, `stale` or `unknown` |
-
-`status --json` returns these fields. It reads indexes without opening them for writes.
-
-| Field | Value |
-|---|---|
-| `unit` | `{enabled, active}` |
-| `socket` | `{path, answers}` |
-| `tools` | `{missing: [package]}`: missing runtime tools, plus the build packages while the runtime binary is missing |
-| `venv` | `{path, state}`; `state` is `ready`, `stale` (does not match `helper/uv.lock`, from `uv sync --check`), `missing` or `unknown` (uv not found or the venv unreadable) |
-| `runtime` | `{path, present}` |
-| `model` | `{path, files, verified}`; `files` maps pinned filenames to presence booleans; `verified` is the last daemon verdict, false before a report exists |
-| `volumes` | `[{uuid, label, files, online}]`; `files` counts rows with `indexed_at` |
-| `queue` | Total pending and partial file rows across volume indexes |
-| `permissions` | `[{path, expected, actual}]`, with modes such as `0700` and `0644` |
-| `recovery` | Last startup `{clean, mode, journal_retried}`, or `{}` before a report exists |
-| `problems` | Integrity rebuilds as `[{volume, problem, action, moved_to, at}]`, or `[]` |
-
-Text status prints `venv ready|stale|missing|unknown` (any state but `ready` also prints `next bin/omafind setup` on stderr, whatever the exit code), `permission <path> <actual> want <expected>`,
-`volume <label> <files> online|offline`, `queue <n>`, `recovery reconcile|none`
-and `problem <uuid> integrity rebuilt` when applicable.
-Unreadable or corrupt indexes retain a volume entry with zero counts until recovery rebuilds them.
-See [docs/ipc.md](docs/ipc.md) for the handshake.
-
-When the plugin code changes (a `git pull` in a dev checkout or a marketplace update), the plugin compares `bin/omafind fingerprint` with the `build` the daemon reports and reruns `bin/omafind setup` once, which syncs the venv and restarts the unit. A daemon that starts on a venv missing a dependency logs `omafindd cannot import <module>. Run bin/omafind setup.` to the unit journal and to `~/.local/share/omafind/cache/logs/omafindd-start.log`, and exits 1. A socket bind failure is logged the same way.
-
-Settings: see [docs/settings.md](docs/settings.md).
+1. Search engine. Install builds the embedding server (about 3 minutes), then downloads and verifies the model. You can close the window while it runs. Pause stops the job and Resume continues it.
+2. Folders. Pick what to search. Documents, Pictures, Videos, Music, Download and Desktop start checked.
+3. Index. The first index runs, and you choose the shortcut that opens omafind. Indexing keeps going after you close setup.
 
 ## Use
 
-The `shortcut` setting opens the overlay on an empty query. Type to search; start with `img:`, `pdf:`, `doc:`, `vid:` or `aud:` to search one kind.
+Press the shortcut you chose in setup (SUPER + E by default). Type to search. Start with a prefix to search one kind: `img:`, `pdf:`, `doc:`, `vid:` or `aud:`.
 
 | Key | Action |
 |---|---|
-| `Up` `Down`, `Ctrl J` `Ctrl K` | Move across results |
+| `Up` `Down`, `Ctrl J` `Ctrl K`, `Ctrl N` `Ctrl P` | Move across results |
 | `Enter` | Open the result at the match |
 | `Ctrl Enter` | Show the result in its folder |
 | `Ctrl Space` | Play or pause an audio or video preview |
 | `Ctrl C` | Copy the result's path |
 | `Ctrl I` | Show indexing progress |
-| `Ctrl ,` | Open Settings |
+| `Ctrl ,` | Open settings |
 | `Esc` | Clear the query, then close |
 
-Settings changes the shortcut (checked against your Hyprland binds, written as in setup), shows or hides the Find files row in the Omarchy menu, and opens setup at the Folders step through Change folders. `Esc` or Back returns to search.
+Settings changes the shortcut, adds or removes the Find files row in the Omarchy menu, and reopens the Folders step. Every setting key is listed in [docs/settings.md](docs/settings.md).
+
+## Update and remove
+
+```bash
+omarchy plugin update radimsem.omafind
+```
+
+omafind then brings its helper and daemon up to date on its own.
+
+To remove it, take out its Hyprland binding and menu row first, then stop the daemon:
+
+```bash
+~/.config/omarchy/plugins/radimsem.omafind/bin/omafind bindings remove
+~/.config/omarchy/plugins/radimsem.omafind/bin/omafind bindings menu remove
+systemctl --user disable --now omafind.service
+rm ~/.config/systemd/user/omafind.service
+omarchy plugin remove radimsem.omafind
+```
+
+The index, thumbnails and model stay in `~/.local/share/omafind`. Delete that folder to free the space.
 
 ## Troubleshooting
 
-Setup and search show every failure as a card: what happened, why, and what to do next. A card with a log offers Open log. [docs/ipc.md](docs/ipc.md#errors) lists every code. The logs live under `~/.local/share/omafind`:
+- Run `~/.config/omarchy/plugins/radimsem.omafind/bin/omafind status` to see what is missing. Exit code 0 means the daemon is up. The other codes are in [docs/development.md](docs/development.md#cli-reference).
+- Setup shows a card for every failure. A missing package has an Install packages button. From a terminal, run `sudo pacman -S --needed vulkan-headers shaderc gcc git uv`, then press Retry.
+- Results say they are keyword matches only: the embedding server is starting or did not start. Open the log from the card, or read `~/.local/share/omafind/cache/logs/llama-server.log`.
+- Indexing is paused because less than 2 GB of disk is free. It resumes by itself once you free space.
+- Another bind already uses your shortcut: press `Ctrl ,` in the overlay and record a different one.
 
-| Log | Holds |
-|---|---|
-| `cache/logs/build-runtime.log` | Full output of the last runtime build (CMake, ninja and the compiler), replaced at each build |
-| `cache/logs/llama-server.log` | Output of the embedding server since its last start, replaced at each start. The API key reaches the server only through its environment, so it never appears here. |
-| `cache/logs/omafindd-start.log` | A fatal daemon startup error, such as a failed import or socket bind |
-| `index/reindex.log` | Output of the last indexing run the daemon started, replaced at each run |
+[docs/development.md](docs/development.md#logs-and-build-errors) lists every log.
 
-`build-missing-packages` means the runtime build needs an Arch package that is not installed. `build-runtime` and the Install button check for `vulkan-headers` (`/usr/include/vulkan/vulkan_core.h`), `shaderc` (`glslc`), `gcc` (`c++`), `git` and `uv` before the build starts. `setup` only names the missing ones, because it also runs when the daemon updates; `status` lists them under `tools` and exits 1. A build that still stops on a missing `vulkan/`, `spirv/` or `shaderc/` header reports the same code with that header's package. The card names the packages. Install packages runs `omarchy-pkg-add` in a floating terminal and retries the build once they are present. To install every package the check looks for from a terminal:
+## Privacy
 
-```bash
-sudo pacman -S --needed vulkan-headers shaderc gcc git uv
-```
+Everything stays on your machine. The index, snippets, OCR text and thumbnails are stored unencrypted in your home folder, and omafind sends no telemetry. The network is used only for the engine build and the model download. The [threat model](docs/development.md#threat-model) has the details.
 
-Then press Retry or run `bin/omafind build-runtime`. Any other build error is `build-failed`, with the first error line as the cause; `build-runtime.log` has the full output.
+## More
 
-## Threat model
+- [docs/settings.md](docs/settings.md): every setting key
+- [docs/development.md](docs/development.md): dev checkout, checks, CLI, indexing and evals
+- [docs/ipc.md](docs/ipc.md): the socket messages between the overlay and the daemon
 
-The index, snippets, OCR text and thumbnails are stored unencrypted inside the user's home.
-The host's LUKS disk encryption protects them while the disk is locked.
-External-drive indexes and cached thumbnails live on the internal disk, so they stay after a drive is unplugged.
-A process running as the same user can read this data; omafind adds no encryption while the user is logged in.
-
-The data directory and its child directories use 0700. Databases, model files and the journal use 0600.
-The socket directory uses 0700 and the socket uses 0600. The daemon checks the connecting UID with `SO_PEERCRED`.
-The shared secrets filter runs at every indexing entry point. It excludes known secret names, but cannot identify every sensitive document.
-The daemon never logs file text or query text. It sends no telemetry.
-Network access is limited to user-started runtime builds and model downloads, plus the local embedding server on loopback.
-
-The daemon runs as the user and searches selected folders in `$HOME` and mounted volumes.
-It needs no root daemon or fanotify. Status reports permission problems without changing permissions or its exit code.
-
-## Check
-
-```bash
-uv sync --project helper --frozen
-uv run --project helper ruff check helper tests bin/omafind scripts
-uv run --project helper pytest
-node --test "tests/js/*.test.mjs"
-scripts/qmllint.sh
-```
-
-Tests use fakes. The runtime parity test carries the `manual` marker and is excluded by default. It needs the built runtime, the model files and ImageMagick (`magick`), which pre-resizes images to their token budget. Run it and the probe inside a memory cap with no swap (see AGENTS.md):
-
-```bash
-cap="systemd-run --user --scope --quiet --collect -p MemoryMax=8G -p MemorySwapMax=0 --"
-$cap uv run --project helper pytest -m manual tests/helper/test_parity.py
-$cap uv run --project helper python scripts/probe.py --stage parity,audio,budget,rates
-```
-
-`omarchy plugin validate .` rejects any symlink in the plugin folder, and uv puts one at `helper/.venv/bin/python`. Validate a clean clone, or remove `helper/.venv` first. The installed daemon uses `~/.local/share/omafind/venv` instead.
-
-## License and reference inputs
-
-omafind is [MIT licensed](LICENSE), copyright 2026 radimsem.
-
-The reference inputs `photo.jpg`, `screen.png` and `speech.wav` in `tests/fixtures/reference` come from [DigUp](https://github.com/ARahim3/DigUp), copyright 2026 Abdur Rahim, under the [MIT license](https://github.com/ARahim3/DigUp/blob/main/LICENSE).
-
-## Content indexing
-
-Required tools: fd 10+, rg, magick, pdfinfo, pdftotext, pdftoppm, git, findmnt,
-ffmpeg, ffprobe and tesseract.
-`omafind setup` checks them before installing the daemon. Missing tools produce
-one `sudo pacman -S --needed ...` command. Missing build packages do not stop
-setup: while the runtime is missing, setup names them on stderr. With `--json`,
-setup prints `{"ok":true,"build_missing":[...]}` or `{"ok":false,"error":{...}}`
-as its last stdout line instead (see [Errors](docs/ipc.md#errors)).
-
-```bash
-systemd-run --user --scope --quiet --collect -p MemoryMax=8G -p MemorySwapMax=0 -- bin/omafind reindex --root "$HOME/Documents"
-bin/omafind search --json --limit 40 "invoice 4412"
-```
-
-`bin/omafind discover --json [--volume UUID]` prints the first level of the Folders step (roots and folders) as JSON.
-It exits 0 with JSON, 1 with one error line on stderr, or 2 without `--json`.
-The optional volume UUID lists only that mounted non-system volume.
-The overlay requests children on expansion and receives streamed file counts.
-Git worktrees are left out: they are unchecked and tagged "worktree", because the main repository already covers their files.
-
-`reindex --incremental` keeps unchanged files and their vectors. The setup view
-starts this command after saving selected folders; progress remains available
-while you search. The daemon writes its child log to `index/reindex.log`.
-
-Without `--root`, reindex reads the plugin's `roots` setting. With no configured
-roots it exits 2. `--volume UUID` limits reindexing to selected roots on that volume.
-A `--root` matching a configured root keeps that root's excludes and volume.
-Search accepts `img:`, `pdf:`, `vid:`, `aud:` and `doc:`. Text, PDFs, images,
-video frames and audio windows are indexed.
-Results are a flat list in score order, with page, source-line or second locations
-and a `weak` flag. Missing
-models degrade to keyword results. CLI search exits 0 for a reply (even empty),
-1 for no index or a service error, 2 for invalid arguments, and 3 for a silent socket.
-
-Manage the overlay shortcut and optional menu row with:
-
-```bash
-bin/omafind bindings check [--chord "SUPER + E"]
-bin/omafind bindings write [--chord "SUPER + E"]
-bin/omafind bindings remove
-bin/omafind bindings menu add
-bin/omafind bindings menu remove
-```
-
-`check` reports whether the shortcut is free, bound by omafind or taken, and by what. `check` and `write`
-use the `shortcut` setting when `--chord` is omitted. `write` and `remove`
-manage only omafind's marked block in `$XDG_CONFIG_HOME/hypr/bindings.lua` and
-reload Hyprland when it changes. The menu commands manage a marked Find files
-row in `$XDG_CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc`.
-
-Images use `imageBudget`; screenshots use 280 tokens and video frames use 70.
-Screenshot names (Screenshot, Screen Shot, CleanShot or SCR-, case-insensitive)
-and common screen dimensions enable OCR. OCR reads English only (`-l eng`), since
-only `eng` and `osd` traineddata ship by default, so non-English screenshot text
-reads badly.
-OCR text is searchable without a vector. JPEG thumbnails live in `thumbs/<uuid>/`.
-Video and audio results open through `mpv --start=<seconds>`.
-
-Audio uses 30 s windows with a 25 s hop, skips RMS at or below 0.003, and keeps
-tails with at least 2 s of new audio. `audio:false` skips audio files with code
-`audio-off` and indexes videos as frames only. Silent files are skipped.
-Video frames are extracted and committed in passes of at most 16 frames before
-the soundtrack starts. Long audio is extracted and committed in batches of at most
-16 windows, keeping decoded payload memory bounded as well as streaming PCM one
-window at a time.
-A failed soundtrack leaves successfully embedded frames in a `partial` video.
-Size caps are 8 GiB for video, 2 GiB for audio, 512 MiB for PDF and 16 MiB otherwise.
-
-Indexes live in `$XDG_DATA_HOME/omafind/index/<uuid>.sqlite` (default
-`~/.local/share/omafind/index`), mode 0600. Paths are relative to each filesystem's
-mount point (the home mount for its UUID, otherwise the shortest target).
-A CLI reindex holds `index.lock`; completed PDF windows commit atomically,
-and the journal retries interrupted batches. The daemon reloads changed indexes
-before searching. During reindex it serves words-only results with a
-`degraded` error of code `index-running` and rejects `warm` with the same error.
-A reindex that finds the daemon's server warm prints `waiting index.lock`; the daemon
-stops that server within half a second.
-Incremental reindexes the daemon starts itself, after a file change or a drive
-returns, reuse the daemon's server, so search keeps its meaning results while
-they run.
-
-The shared fd rules exclude hidden files, ignored paths, heavy directories and
-DigUp's secret-name patterns, including encrypted key stores. Media folders with at least 300 files of one kind and 70% machine names
-are visible dataset proposals. Checked folders are indexed, including datasets. Text is capped at 16 MiB and PDFs at 512 MiB. HTML and Office
-line numbers describe extracted text; their openers omit the line argument.
-
-Offline fixture evals use FakeEmbedder and never start a model:
-
-```bash
-uv run --project helper python evals/run.py --queries evals/fixture.json
-```
-
-`--index <sqlite-file-or-index-directory>` uses the installed embedding model
-for manual evals with DigUp's `{base, queries:[{q, expect, tag}]}` shape. The owner
-maintains `evals/personal.json` over their own files.
-CI provides a `magick` wrapper around `convert`/`identify` when Ubuntu supplies
-ImageMagick 6. Product code always invokes `magick`.
+omafind is [MIT licensed](LICENSE).
