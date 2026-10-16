@@ -16,6 +16,9 @@ FocusScope {
   property var proposed: []
   property var proposedCode: []
   property bool seeded: false
+  // Seeded from a finished setup: the saved choices already decided every worktree, dataset and
+  // repo the user saw, so nothing is skipped or given code on its own.
+  property bool fromSaved: false
   property bool picking: false
 
   signal backRequested()
@@ -44,7 +47,9 @@ FocusScope {
 
   function seed() {
     if (seeded || !discover || !Array.isArray(discover.folders)) return
-    choices = Tree.initial(discover.folders)
+    var saved = service ? service.settings : null
+    fromSaved = !!saved && saved.setupDone && (saved.roots.length > 0 || saved.codeRoots.length > 0)
+    choices = fromSaved ? Tree.fromSettings(saved.roots, saved.codeRoots) : Tree.initial(discover.folders)
     seeded = true
     offerDatasets()
     offerRepos()
@@ -59,6 +64,10 @@ FocusScope {
       return owner.on || owner.path === path
     }).map(path => found[path])
     if (!list.length) return
+    if (fromSaved) {
+      proposed = proposed.concat(list.map(entry => entry.path))
+      return
+    }
     var next = Tree.addDatasets(choices, list, proposed)
     proposed = proposed.concat(list.map(entry => entry.path))
     choices = next
@@ -85,6 +94,10 @@ FocusScope {
       return walkDone(path)
     }).map(path => service.repos[path])
     if (!list.length) return
+    if (fromSaved) {
+      proposedCode = proposedCode.concat(list.map(entry => entry.path))
+      return
+    }
     var next = Tree.addCode(choices, list, proposedCode, Object.keys(service.worktrees || {}))
     proposedCode = proposedCode.concat(list.map(entry => entry.path))
     choices = next

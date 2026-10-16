@@ -6,7 +6,7 @@ import { load } from './load.mjs';
 const plain = value => JSON.parse(JSON.stringify(value));
 
 function folders(values = {}) {
-  const ctx = vm.createContext({ Tree: load('tree.js'), seeded: true, proposed: [], proposedCode: [], discover: null,
+  const ctx = vm.createContext({ Tree: load('tree.js'), seeded: true, fromSaved: false, proposed: [], proposedCode: [], discover: null,
     choices: { chosen: [], skipped: [], code: [] },
     service: { worktrees: {}, repos: {}, datasets: { '/h/Photos/data': { path: '/h/Photos/data' } } }, ...values });
   ctx.root = ctx;
@@ -116,4 +116,29 @@ test('start indexing saves code only for searched repos', () => {
       startIndexing(roots, code) { saved.push(plain(code)); } } });
   ctx.startIndexing();
   assert.deepEqual(saved, [[{ path: '/h/p/main', excludes: ['docs'] }]]);
+});
+
+test('a finished setup reopens on the saved folders and keeps its worktree and code choices', () => {
+  const ctx = folders({ seeded: false, discover: { folders: [{ path: '/h/Docs', xdg: true }] },
+    service: { settings: { setupDone: true,
+      roots: [{ path: '/h/p', volume: 'u', excludes: ['skip'] }],
+      codeRoots: [{ path: '/h/p/main', excludes: ['docs'] }] },
+    datasets: {}, walks: { '/h': { done: true } },
+    worktrees: { '/h/p/wt': { path: '/h/p/wt' } },
+    repos: { '/h/p/main': { path: '/h/p/main' }, '/h/p/other': { path: '/h/p/other' } } } });
+  ctx.seed();
+  assert.deepEqual(plain(ctx.choices), { chosen: ['/h/p'], skipped: ['/h/p/skip', '/h/p/main/docs'],
+    code: ['/h/p/main'] });
+  ctx.service.worktrees['/h/p/later'] = { path: '/h/p/later' };
+  ctx.offerDatasets(); ctx.offerRepos();
+  assert.deepEqual(plain(ctx.choices.skipped), ['/h/p/skip', '/h/p/main/docs']);
+  assert.deepEqual(plain(ctx.choices.code), ['/h/p/main']);
+});
+
+test('a setup that is not finished starts from the XDG folders', () => {
+  const ctx = folders({ seeded: false, discover: { folders: [{ path: '/h/Docs', xdg: true }] },
+    service: { settings: { setupDone: false, roots: [{ path: '/h/p', volume: 'u', excludes: [] }], codeRoots: [] },
+      datasets: {}, worktrees: {}, repos: {}, walks: {} } });
+  ctx.seed();
+  assert.deepEqual(plain(ctx.choices), { chosen: ['/h/Docs'], skipped: [], code: [] });
 });

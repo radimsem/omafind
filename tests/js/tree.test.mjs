@@ -166,3 +166,11 @@ test('code roots carry the skipped folders below each repo as relative excludes'
   assert.deepEqual(plain(t.toCodeRoots(['/h/p/a', '/h/p/b'], ['/h/p/a/docs', '/h/p/a/x/y', '/h/p/c', '/h/p/a'])), [
     { path: '/h/p/a', excludes: ['docs', 'x/y'] }, { path: '/h/p/b', excludes: [] }]);
 });
+
+test('saved roots and code roots turn back into choices', () => {
+  const next = t.fromSettings(freeze([{ path: '/h/p', volume: 'u', excludes: ['wt', 'a/b', '/h/p/abs'] },
+    { path: '/h/Docs', volume: 'u', excludes: [] }]),
+  freeze([{ path: '/h/p/main', excludes: ['docs'] }, { path: '/h/p/old', excludes: [] }]));
+  assert.deepEqual(plain(next), { chosen: ['/h/p', '/h/Docs'],
+    skipped: ['/h/p/wt', '/h/p/a/b', '/h/p/abs', '/h/p/main/docs'], code: ['/h/p/main', '/h/p/old'] });
+});
