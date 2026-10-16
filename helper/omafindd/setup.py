@@ -20,6 +20,11 @@ def mounted_volumes():
     return resolve()
 
 HOME = Path.home()
+
+
+def default_menu_path(home=HOME):
+    config = os.environ.get("XDG_CONFIG_HOME")
+    return (Path(config) if config else home / ".config") / "omarchy/extensions/omarchy-menu.jsonc"
 KINDS = ("text", "pdf", "image", "video", "audio")
 
 
@@ -59,12 +64,15 @@ class SetupService:
         run=subprocess.run,
         clock=time.monotonic,
         home=HOME,
+        menu_path=None,
         model_ready=lambda: True,
         paused=lambda: False,
         check_disk=None,
         push_status=None,
     ):
         self.data_dir, self.plugin_root, self.home = data_dir, plugin_root, home
+        # The same file `bin/omafind bindings menu add|remove` edits.
+        self.menu_path = menu_path if menu_path is not None else default_menu_path(home)
         self.settings, self.broadcast, self.runtime = settings, broadcast, runtime
         self.top, self.walk, self.children = top, walk, children
         self.estimate_device, self.volume_of, self.list_dirs = estimate_device, volume_of, list_dirs
@@ -205,7 +213,7 @@ class SetupService:
             if not result.stdout.lstrip().startswith("["):
                 raise ValueError("hyprctl did not return a JSON array")
             items = bindings.binds_items(bindings.parse_binds(result.stdout))
-            return {"t": "binds", "binds": items}
+            return {"t": "binds", "binds": items, "menu": bindings.has_menu_row(self.menu_path)}
         except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
             reason = (f"{error.filename}: {error.strerror}"
                       if isinstance(error, OSError) and error.filename and error.strerror

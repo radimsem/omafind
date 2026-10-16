@@ -269,7 +269,7 @@ mtimes stay unchanged; the root count still follows current settings.
 | `discover_children` | `discover_children` | `path` absolute folder |
 | (broadcast) | `discover_counts` | sent while a walk runs |
 | `discover_stop` | `discover_stop` | stops this connection's discovery |
-| `binds_get` | `binds` | none; reads `hyprctl binds -j` |
+| `binds_get` | `binds` | none; reads `hyprctl binds -j` and the Omarchy menu file |
 | `fs_list` | `fs_list` | `path` absolute path or `~`/`~/...` |
 | `index_start` | `progress` | none; rereads current settings |
 | `index_progress` | `progress` | none; reads the stores and returns the latest snapshot without starting a run |
@@ -344,8 +344,9 @@ daemon: {"t":"fs_list","path":"~","abs":"/home/u","dirs":["Documents","Pictures"
 
 ```
 plugin: {"t":"binds_get"}
-daemon: {"t":"binds","binds":[{"chord":"Super Shift Space","description":"Launcher"},{"chord":"F9","description":""}]}
+daemon: {"t":"binds","binds":[{"chord":"Super Shift Space","description":"Launcher"},{"chord":"F9","description":""}],"menu":true}
 ```
+- `menu` is true when the "Find files" row (the `// omafind-menu-start` block that `bin/omafind bindings menu add` writes) is in `$XDG_CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc`. A missing file or broken markers read as false.
 - Live global binds, with modifiers ordered Super, Ctrl, Shift, Alt, then the key (`Space`, `Comma`, `Period`, `Return`, `Escape`, `Tab`, `F1` to `F35`, letters and digits). Submap binds, empty keys and omafind's own bind are left out. The first description per chord wins. A failure replies `error` with `for:"binds_get"` and `code:"binds-failed"`.
 
 ```

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from omafindd import discovery, errors
+from omafindd import bindings, discovery, errors
 from omafindd.ipc import IpcServer
 from omafindd.settings import Settings
 from omafindd.setup import SetupService
@@ -145,6 +145,7 @@ async def service(tmp_path, monkeypatch):
         volume_of=lambda path: ("u", Path("/h")),
         list_dirs=list_dirs,
         home=Path("/h"),
+        menu_path=tmp_path / "omarchy-menu.jsonc",
     )
     setup.test_calls, setup.test_pushes, setup.test_process = calls, pushes, process
     setup.test_walks = walks
@@ -853,8 +854,18 @@ async def test_binds_get_returns_live_binds(service):
 
     service.run = run
     assert await service.handle({"t": "binds_get"}) == {
-        "t": "binds", "binds": [{"chord": "Super D", "description": "Files"}]}
+        "t": "binds", "binds": [{"chord": "Super D", "description": "Files"}], "menu": False}
     assert calls[0][0] == ["hyprctl", "binds", "-j"] and calls[0][1]["timeout"] == 5
+
+
+async def test_binds_get_reports_the_find_files_menu_row(service):
+    import subprocess
+
+    service.run = lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "[]", "")
+    bindings.write_menu_row(service.menu_path)
+    assert (await service.handle({"t": "binds_get"}))["menu"] is True
+    bindings.remove_menu_row(service.menu_path)
+    assert (await service.handle({"t": "binds_get"}))["menu"] is False
 
 
 async def test_binds_get_failure_names_the_request(service):
