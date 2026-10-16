@@ -1,6 +1,6 @@
 # omafind
 
-omafind is an Omarchy 4 plugin for local content search across text, PDFs, images, video, audio and opt-in code repositories. It uses an overlay and a Python daemon, `omafindd`, with a local embedding runtime. This scaffold provides the daemon handshake and runtime setup; indexing and search arrive in later issues.
+omafind is an Omarchy 4 plugin for local content search across text, PDFs, images, video and audio. It uses an overlay and a Python daemon, `omafindd`, with a local embedding runtime. This scaffold provides the daemon handshake and runtime setup; indexing and search arrive in later issues.
 
 ## Develop
 
@@ -63,7 +63,6 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
 | `gpu` | `"auto"` or `"never"` | `"auto"` |
 | `audio` | bool | `true` |
 | `roots` | `[{path, volume, excludes: [path]}]` | `[]` |
-| `codeRoots` | `[{path, excludes: [path]}]`; a plain repository path still loads | `[]` |
 | `ignoredVolumes` | list of filesystem UUIDs the new-drive toast skips | `[]` |
 | `imageBudget` | 70, 140 or 280 | `140` |
 | `maxResults` | int, clamped to 10..200 | `40` |
@@ -72,7 +71,7 @@ Settings live inline on the `radimsem.omafind` entry in `~/.config/omarchy/shell
 
 ## Use
 
-The `shortcut` setting opens the overlay on an empty query. Type to search; start with `img:`, `pdf:`, `doc:`, `vid:`, `aud:` or `code:` to search one kind.
+The `shortcut` setting opens the overlay on an empty query. Type to search; start with `img:`, `pdf:`, `doc:`, `vid:` or `aud:` to search one kind.
 
 | Key | Action |
 |---|---|
@@ -167,8 +166,7 @@ bin/omafind search --json --limit 40 "invoice 4412"
 It exits 0 with JSON, 1 with one error line on stderr, or 2 without `--json`.
 The optional volume UUID lists only that mounted non-system volume.
 The overlay requests children on expansion and receives streamed file counts.
-Repositories under picked folders are indexed as code by default once their folder walk finishes; turn off a repository's Code toggle to leave it out.
-Git worktrees are left out: they are unchecked and tagged "worktree", because the main repository already covers their code.
+Git worktrees are left out: they are unchecked and tagged "worktree", because the main repository already covers their files.
 
 `reindex --incremental` keeps unchanged files and their vectors. The setup view
 starts this command after saving selected folders; progress remains available
@@ -177,10 +175,8 @@ while you search. The daemon writes its child log to `index/reindex.log`.
 Without `--root`, reindex reads the plugin's `roots` setting. With no configured
 roots it exits 2. `--volume UUID` limits reindexing to selected roots on that volume.
 A `--root` matching a configured root keeps that root's excludes and volume.
-Search accepts `img:`, `pdf:`, `vid:`, `aud:`, `doc:` and `code:`. Text, PDFs, images,
-video frames and audio windows are indexed. `codeRoots` selects git repositories
-indexed through `git ls-files`, less the folders in each one's `excludes`, searched
-only by `code:` queries, with `rg` reading the files live.
+Search accepts `img:`, `pdf:`, `vid:`, `aud:` and `doc:`. Text, PDFs, images,
+video frames and audio windows are indexed.
 Results are a flat list in score order, with page, source-line or second locations
 and a `weak` flag. Missing
 models degrade to keyword results. CLI search exits 0 for a reply (even empty),
