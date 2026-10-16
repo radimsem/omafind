@@ -175,5 +175,8 @@ test('a code search while the code index is being built says so', () => {
   const R = load('format.js', 'results.js');
   assert.equal(R.footerLeft({ phase: 'done', prefix: 'code:',
     reply: { total: 3, weaker: 0, items: [], notice: 'code-index-building' } }),
-    '3 results in your code · the code index is still being built');
+    '3 results in your code · code index building');
+  assert.equal(R.footerLeft({ phase: 'done', prefix: 'code:',
+    reply: { total: 3, weaker: 2, items: [], notice: 'code-index-building' } }),
+    '3 results in your code · 2 weaker · code index building');
 });
