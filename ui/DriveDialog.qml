@@ -38,7 +38,7 @@ FocusScope {
   readonly property bool anyChecked: choices.chosen.length > 0
   readonly property var progress: service ? service.progress : null
   readonly property var footer: Volumes.dialogFooter(progress, uuid, label)
-  readonly property string errorText: service ? service.setupError || service.driveError || (walk ? walk.error : "") : ""
+  readonly property var failure: driveFailure()
 
   readonly property real panelWidth: Style.space(1120)
   // The 4 covers the card border on both edges.
@@ -57,6 +57,18 @@ FocusScope {
     if (service && uuid) service.scanDrive(uuid)
   }
 
+  // The dialog's one error: its own request's, the drive walk's, then the drive's index run.
+  function driveFailure() {
+    if (!service) return null
+    return service.driveError || (walk && walk.failure ? walk.failure : null)
+      || (phase === "run" ? service.indexError : null)
+  }
+
+  function retry() {
+    if (phase === "run") startIndexing()
+    else begin()
+  }
+
   function focusFirst() {
     if (tree.focusFirst()) return
     if (start.enabled) start.forceActiveFocus()
@@ -73,14 +85,15 @@ FocusScope {
   // Every folder on the drive starts checked.
   function seed() {
     if (seeded || !folders.length) return
-    choices = {chosen: folders.map(folder => folder.path), skipped: [], code: []}
+    choices = {chosen: folders.map(folder => folder.path), skipped: []}
     seeded = true
     offerDatasets()
   }
 
   function offerDatasets() {
     if (!service || !seeded) return
-    var list = Object.keys(service.datasets).map(path => service.datasets[path])
+    var found = Object.assign({}, service.datasets, service.worktrees)
+    var list = Object.keys(found).map(path => found[path])
     choices = Tree.addDatasets(choices, list, proposed)
     proposed = proposed.concat(list.map(entry => entry.path).filter(path => proposed.indexOf(path) < 0))
   }
@@ -94,8 +107,7 @@ FocusScope {
     var fresh = Tree.toRoots(choices.chosen, choices.skipped, () => root.uuid)
     var paths = fresh.map(r => r.path)
     var roots = service.settings.roots.filter(r => paths.indexOf(r.path) < 0).concat(fresh)
-    var code = service.settings.codeRoots.filter(path => !Tree.isInside(path, mount)).concat(choices.code)
-    if (!service.startIndexing(roots, code, uuid)) return
+    if (!service.startIndexing(roots, uuid)) return
     sawProgress = false
     phase = "run"
   }
@@ -124,6 +136,7 @@ FocusScope {
     target: root.service
     ignoreUnknownSignals: true
     function onDatasetsChanged() { root.offerDatasets() }
+    function onWorktreesChanged() { root.offerDatasets() }
     function onProgressChanged() { if (root.phase === "run") root.sawProgress = true }
   }
 
@@ -228,15 +241,13 @@ FocusScope {
         tokens: [{k: "watch", v: "off · removable", tone: "plain"}, {k: "reconcile", v: "on mount", tone: "plain"}]
       }
 
-      Label {
-        visible: root.errorText !== ""
+      ErrorCard {
+        objectName: "omafindDriveError"
         width: parent.width
-        wrapMode: Text.Wrap
-        text: root.errorText
-        textFormat: Text.PlainText
-        color: Color.urgent
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
+        error: root.failure
+        visible: !!error
+        retryHere: true
+        onRetry: root.retry()
       }
 
       // `.fx-bot`: the totals and buttons cross-fade to the drive's progress over 180 ms.

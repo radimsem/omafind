@@ -15,7 +15,6 @@ Item {
   readonly property var paths: ({
     search: circle11 + "M20 20l-4-4",
     why: circle11 + "M20 20l-4-4M8 11h6M11 8v6",
-    code: "M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
     image: "M3 4h18v16H3zM11 10a2 2 0 1 1-4 0a2 2 0 1 1 4 0M21 16l-5-5-9 9",
     video: "M2 5h15v14H2zM17 10l5-3v10l-5-3",
     audio: "M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0M21 16a3 3 0 1 1-6 0a3 3 0 1 1 6 0",

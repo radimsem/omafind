@@ -1,6 +1,8 @@
 import asyncio
 import os
 
+from . import errors
+
 NEED_BYTES = 2_000_000_000
 
 
@@ -23,7 +25,8 @@ class DiskGuard:
             return None
         self.paused = low
         if low:
-            return {'t': 'paused', 'reason': 'disk', 'free_gb': round(free / 1e9, 1), 'need_gb': 2}
+            return {'t': 'paused', 'error': errors.disk_low().to_dict(),
+                    'free_gb': round(free / 1e9, 1), 'need_gb': 2}
         return {'t': 'resumed'}
 
 

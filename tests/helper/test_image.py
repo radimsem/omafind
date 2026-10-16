@@ -38,7 +38,27 @@ def test_exif_orientation_resize_and_thumbnail(tmp_path):
     assert result.info["width"] == 3000 and result.info["height"] == 4000
     thumb = tmp_path / "thumb.jpg"
     thumb.write_bytes(result.thumbnail)
-    assert command("magick", "identify", "-format", "%w %h", str(thumb)) == b"96 128"
+    assert command("magick", "identify", "-format", "%w %h", str(thumb)) == b"450 600"
+
+
+def test_thumbnail_is_at_most_600_and_quality_90(tmp_path):
+    from omafindd.extractors import _thumbnail
+
+    source = tmp_path / "big.png"
+    command("magick", "-size", "1600x1200", "xc:gray", str(source))
+    thumb = tmp_path / "thumb.jpg"
+    thumb.write_bytes(_thumbnail(str(source)))
+    assert command("magick", "identify", "-format", "%w %h %Q", str(thumb)) == b"600 450 90"
+
+
+def test_thumbnail_does_not_enlarge_small_images(tmp_path):
+    from omafindd.extractors import _thumbnail
+
+    source = tmp_path / "small.png"
+    command("magick", "-size", "80x60", "xc:gray", str(source))
+    thumb = tmp_path / "thumb.jpg"
+    thumb.write_bytes(_thumbnail(str(source)))
+    assert command("magick", "identify", "-format", "%w %h", str(thumb)) == b"80 60"
 
 
 @pytest.mark.parametrize("budget,expected", [(70, (432, 336)), (280, (912, 672))])

@@ -20,15 +20,18 @@ def command(item: Mapping, *, env: Mapping[str, str]) -> list[str]:
     kind = item["kind"]
     if kind in ("video", "audio"):
         return ["mpv", f"--start={int(item.get('loc') or 0)}", path]
-    if kind in ("text", "code") and shutil.which("omarchy-launch-editor", path=env.get("PATH")):
+    if kind == "text" and shutil.which("omarchy-launch-editor", path=env.get("PATH")):
         editor = editor_name(env=env)
-        line = (item.get("open_line") or item.get("loc")) if kind == "code" else item.get("loc")
-        if kind == "text" and (item.get("info", {}).get("extracted") or
-                               Path(path).suffix.lower() in (".html", ".docx", ".odt")):
+        line = item.get("loc")
+        if (item.get("info", {}).get("extracted") or
+                Path(path).suffix.lower() in (".html", ".docx", ".odt")):
             line = None
         if line is not None:
             line = max(1, int(line))
-            if editor in ("nvim", "vim", "nano", "micro"):
+            # Ghostty drops a "+N" argument after -e, so vim and nvim get the line as a command.
+            if editor in ("nvim", "vim"):
+                return ["omarchy-launch-editor", "-c", str(line), path]
+            if editor in ("nano", "micro"):
                 return ["omarchy-launch-editor", f"+{line}", path]
             if editor in ("helix", "hx"):
                 return ["omarchy-launch-editor", f"{path}:{line}"]
@@ -82,8 +85,8 @@ def description(item: Mapping, *, env=None, how="open") -> dict:
         at = f"{seconds // 60}:{seconds % 60:02}"
     elif kind == "pdf" and loc is not None:
         at = f"p. {max(1, int(loc))}"
-    elif kind in ("text", "code"):
-        line = item.get("open_line") or loc if kind == "code" else loc
+    elif kind == "text":
+        line = loc
         if line is not None:
             at = f"L{max(1, int(line))}"
         if argv[0] == "omarchy-launch-editor":

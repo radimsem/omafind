@@ -73,7 +73,7 @@ def _lines(item, query):
                 stream.write(text)
                 temporary = path = Path(stream.name)
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        words = re.findall(r"[^\W_]+", re.sub(r"^(?:img|pdf|doc|vid|aud|code):", "", query))
+        words = re.findall(r"[^\W_]+", re.sub(r"^(?:img|pdf|doc|vid|aud):", "", query))
         hits = set()
         if words:
             argv = ["rg", "-n", "--json", "-F", "-i"]
@@ -87,9 +87,7 @@ def _lines(item, query):
                     if (value := json.loads(line))["type"] == "match"}
         loc = max(1, int(item.get("loc") or 1))
         end = max(loc, int(item.get("loc_end") or loc + 8))
-        jump = (item.get("open_line") or loc) if item["kind"] == "code" else next(
-            (no for no in sorted(hits) if loc <= no <= end), loc
-        )
+        jump = next((no for no in sorted(hits) if loc <= no <= end), loc)
         jump = max(1, min(int(jump), len(lines) or 1))
         start, end = max(1, jump - 8), min(len(lines), jump + 8)
         return {"jump": jump, "range": [start, end],
@@ -157,11 +155,9 @@ def render(item, query="") -> dict:
     target = dict(item)
     if item.get("offline"):
         reply.update(mode="image", image=item.get("thumb"))
-    elif kind in ("text", "code"):
+    elif kind == "text":
         reply.update(_lines(item, query), mode="lines")
         target["loc"] = reply["jump"]
-        if kind == "code":
-            target["open_line"] = reply["jump"]
     elif kind == "image":
         path = Path(item["path"])
         image = path if path.suffix.lower() in QT_IMAGES else _still(path)
@@ -172,8 +168,9 @@ def render(item, query="") -> dict:
         path = Path(item["path"])
         jump = max(1, int(item.get("loc") or 1)) if kind == "pdf" else item.get("loc") or 0
         side = RENDER_SIDE if kind == "pdf" else 1024
+        key = side if kind == "pdf" else f"{side}q2"
         image = paths.preview_dir() / (
-            _cache_key(path, jump, side) + (".png" if kind == "pdf" else ".jpg"))
+            _cache_key(path, jump, key) + (".png" if kind == "pdf" else ".jpg"))
 
         def draw(temporary):
             if kind == "pdf":
@@ -181,12 +178,13 @@ def render(item, query="") -> dict:
                       "-singlefile", "-png", str(path), str(temporary.with_suffix(""))])
             else:
                 _run(["ffmpeg", "-v", "error", "-ss", str(jump), "-i", str(path),
-                      "-frames:v", "1", "-vf", f"scale={side}:-2", "-y", str(temporary)])
+                      "-frames:v", "1", "-vf", f"scale='min({side},iw)':-2", "-q:v", "2",
+                      "-y", str(temporary)])
             return temporary
 
         _publish(image, draw)
         reply.update(mode="image", jump=jump, image=str(image))
     reply["opener"] = opener.description(target)["opener"]
-    if kind in ("text", "code"):
+    if kind == "text":
         reply["editor"] = opener.editor_name(env=os.environ)
     return reply

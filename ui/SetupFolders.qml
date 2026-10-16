@@ -15,6 +15,9 @@ FocusScope {
   // Datasets already offered, so a later walk does not skip one the user checked.
   property var proposed: []
   property bool seeded: false
+  // Seeded from a finished setup: the saved choices already decided every worktree and dataset
+  // the user saw, so nothing is skipped on its own.
+  property bool fromSaved: false
   property bool picking: false
 
   signal backRequested()
@@ -22,6 +25,8 @@ FocusScope {
   readonly property var discover: service ? service.discover : null
   readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
   readonly property var rates: discover ? discover.rates : null
+  // Step 2 shows its own error, else a failed start of the first index.
+  readonly property var failure: service ? service.folderError || service.indexError : null
   readonly property string device: discover && discover.device ? discover.device : "gpu"
   readonly property var folders: (discover && Array.isArray(discover.folders) ? discover.folders : []).concat(added)
   // Drives mounted inside another root, such as a disk under $HOME.
@@ -29,7 +34,7 @@ FocusScope {
     .map(row => row.path).filter((path, index, all) => all.some(other => other !== path && Tree.isInside(path, other)))
   readonly property var roots: Tree.toRoots(choices.chosen, choices.skipped, volumeOf, mounts)
   readonly property bool ready: !!discover && !!service && !service.scanning
-    && (roots.length > 0 || choices.code.length > 0) && roots.every(r => r.volume !== "")
+    && roots.length > 0 && roots.every(r => r.volume !== "" && walkDone(r.path))
 
   function focusFirst() {
     if (!tree.focusFirst()) {
@@ -40,22 +45,43 @@ FocusScope {
 
   function seed() {
     if (seeded || !discover || !Array.isArray(discover.folders)) return
-    choices = Tree.initial(discover.folders)
+    var saved = service ? service.settings : null
+    fromSaved = !!saved && saved.setupDone && saved.roots.length > 0
+    choices = fromSaved ? Tree.fromSettings(saved.roots) : Tree.initial(discover.folders)
     seeded = true
     offerDatasets()
   }
 
   function offerDatasets() {
     if (!service || !seeded) return
-    var list = Object.keys(service.datasets).filter(path => {
+    var found = Object.assign({}, service.datasets, service.worktrees)
+    var list = Object.keys(found).filter(path => {
       if (proposed.indexOf(path) >= 0) return false
       var owner = Tree.owner(path, choices)
       return owner.on || owner.path === path
-    }).map(path => service.datasets[path])
+    }).map(path => found[path])
     if (!list.length) return
+    if (fromSaved) {
+      proposed = proposed.concat(list.map(entry => entry.path))
+      return
+    }
     var next = Tree.addDatasets(choices, list, proposed)
     proposed = proposed.concat(list.map(entry => entry.path))
     choices = next
+  }
+
+  function walkDone(path) {
+    var boundary = ""
+    ;(discover && discover.roots || []).forEach(root => {
+      if (Tree.isInside(path, root.path) && root.path.length > boundary.length) boundary = root.path
+    })
+    var found = false
+    for (var folder in (service && service.walks || {})) {
+      if (!Tree.isInside(path, folder) || !Tree.isInside(folder, boundary)) continue
+      if (!service.walks[folder].done) return false
+      found = true
+    }
+    return found
   }
 
   function volumeOf(path) {
@@ -75,13 +101,21 @@ FocusScope {
     if (!folders.some(row => Tree.isInside(absolute, row.path))) {
       added = added.concat([{path: absolute, name: absolute, xdg: false, repo: false, hasChildren: true, volume: ""}])
     }
-    if (!Tree.searched(absolute, choices)) choices = Tree.click(choices, absolute)
+    if (!Tree.searched(absolute, choices))
+      choices = Tree.click(choices, absolute, service ? Object.keys(Object.assign({}, service.datasets, service.worktrees)) : [])
     // The volume lookup must finish before the root can be saved.
     if (service) service.requestChildren(absolute)
   }
 
+  function retry() {
+    if (!service) return
+    if (service.folderError) service.scan()
+    else startIndexing()
+  }
+
   function startIndexing() {
-    service.startIndexing(roots, choices.code)
+    if (!ready) return
+    service.startIndexing(roots)
   }
 
   onDiscoverChanged: seed()
@@ -92,6 +126,7 @@ FocusScope {
     target: root.service
     ignoreUnknownSignals: true
     function onDatasetsChanged() { root.offerDatasets() }
+    function onWorktreesChanged() { root.offerDatasets() }
   }
 
   FolderTable {
@@ -162,12 +197,13 @@ FocusScope {
 
     Rectangle { width: parent.width; height: 1; color: Plugin.Tokens.sep }
 
-    Label {
-      visible: !!root.service && root.service.setupError !== ""
+    ErrorCard {
+      objectName: "omafindFolderError"
       width: parent.width
-      wrapMode: Text.Wrap
-      text: root.service ? root.service.setupError : ""
-      color: Color.urgent
+      error: root.failure
+      visible: !!error
+      retryHere: true
+      onRetry: root.retry()
     }
 
     Item {

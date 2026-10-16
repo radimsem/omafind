@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from .code import configured_roots
+from . import errors
 
 
 def mounted_volumes():
@@ -15,6 +15,11 @@ def mounted_volumes():
 def volume_for(path, **kwargs):
     from .store import volume_for as resolve
     return resolve(path, **kwargs)
+
+
+def _unavailable(error) -> errors.UserError:
+    return getattr(error, "user_error", None) or errors.embedding_unavailable(
+        str(error) or "the embedding server did not start")
 
 
 class SearchService:
@@ -54,8 +59,7 @@ class SearchService:
     def searcher(self):
         if self._searcher is None:
             from .search import Searcher
-            self._searcher = Searcher([], self.embedder, start=self._start_query,
-                                      code_directory=self.directory)
+            self._searcher = Searcher([], self.embedder, start=self._start_query)
         return self._searcher
 
     @searcher.setter
@@ -105,12 +109,13 @@ class SearchService:
                 try:
                     self._index_lock = self._probe_lock()
                 except BlockingIOError as error:
-                    raise EmbeddingError("indexing in progress") from error
+                    raise EmbeddingError("indexing in progress",
+                                         user_error=errors.index_running()) from error
             elif self._indexing():
                 self._cancel_idle()
                 await self._stop_locked()
                 await self.state.update(embedder="stopped")
-                raise EmbeddingError("indexing in progress")
+                raise EmbeddingError("indexing in progress", user_error=errors.index_running())
             try:
                 await self.embedder.start(mode)
             except BaseException:
@@ -206,7 +211,7 @@ class SearchService:
             await self._start(mode)
         except (EmbeddingError, OSError) as error:
             await self.state.update(embedder="stopped")
-            return str(error) or "the embedding server did not start"
+            return _unavailable(error)
         await self.state.update(embedder=self.embedder.mode or "stopped")
         if self.embedder.mode is not None:
             self._arm_idle()
@@ -216,16 +221,19 @@ class SearchService:
         from .embedder import EmbeddingError
 
         if self._warm_task is not None and self._warm_task.done():
-            if reason := self._warm_task.result():
+            if failure := self._warm_task.result():
                 self._warm_task = None
-                raise EmbeddingError(reason)
+                raise EmbeddingError(failure.title, user_error=failure)
+        if self.embedder.ready(mode):
+            return
         task = self._warming(mode)
         # An already warm server can finish in one turn; a cold load stays in the background.
         await asyncio.sleep(0)
         if not task.done():
-            raise EmbeddingError("the embedding server is starting")
-        if reason := task.result():
-            raise EmbeddingError(reason)
+            raise EmbeddingError("the embedding server is starting",
+                                 user_error=errors.server_starting())
+        if failure := task.result():
+            raise EmbeddingError(failure.title, user_error=failure)
 
     async def _stop_locked(self):
         stopping = asyncio.create_task(self.embedder.stop())
@@ -246,7 +254,7 @@ class SearchService:
 
     def current_mounts(self):
         mountinfo = Path("/proc/self/mountinfo").read_bytes()
-        files = set(self.directory.glob("*.sqlite")) - {self.directory / "code.sqlite"}
+        files = set(self.directory.glob("*.sqlite"))
         roots = self.settings().roots
         if (mountinfo != self._mountinfo or files != self._mount_files
                 or roots != self._mount_roots):
@@ -265,8 +273,7 @@ class SearchService:
     def _refresh(self):
         from .store import Store
 
-        self.searcher.code_roots = configured_roots(self.settings)
-        files = set(self.directory.glob("*.sqlite")) - {self.directory / "code.sqlite"}
+        files = set(self.directory.glob("*.sqlite"))
         mounts = self.current_mounts()
         for path in self._databases.keys() - files:
             self._databases.pop(path).close()
@@ -318,16 +325,13 @@ class SearchService:
         if message["t"] == "warm":
             try:
                 if indexing:
-                    raise EmbeddingError("indexing in progress")
-                if reason := await asyncio.shield(self._warming("text")):
-                    raise EmbeddingError(reason)
+                    raise EmbeddingError("indexing in progress", user_error=errors.index_running())
+                if failure := await asyncio.shield(self._warming("text")):
+                    raise EmbeddingError(failure.title, user_error=failure)
                 return self.state.message()
             except (EmbeddingError, OSError) as error:
                 await self.state.update(embedder="stopped")
-                return {
-                    "t": "warm_failed",
-                    "reason": str(error) or "the embedding server did not start",
-                }
+                return {"t": "warm_failed", "error": _unavailable(error).to_dict()}
         seq = message.get("seq")
         q, legs = message.get("q"), message.get("legs", ["words", "meaning"])
         limit = message.get("limit", self.settings().max_results)
@@ -344,12 +348,8 @@ class SearchService:
                 or any(not isinstance(kind, str) or kind not in PREFIXES.values()
                        for kind in kinds)))
         ):
-            return {
-                "t": "error",
-                "seq": seq,
-                "code": "bad-request",
-                "reason": "Invalid search arguments",
-            }
+            return {"t": "error", "seq": seq,
+                    **errors.bad_request("Invalid search arguments").to_dict()}
         try:
             self._refresh()
             if not indexing and self._indexing():
@@ -360,23 +360,25 @@ class SearchService:
                 q, legs=["words"] if indexing or unverified else legs, limit=limit, seq=seq,
                 kinds=kinds
             )
+            code = (reply["degraded"] or {}).get("code")
             if unverified:
                 reply["legs"] = ["words"]
-                reply["degraded"] = "embedding model failed verification"
-            elif indexing or reply["degraded"] == "indexing in progress":
+                reply["degraded"] = errors.embedding_unavailable(
+                    "embedding model failed verification").to_dict()
+            elif indexing or code == "index-running":
                 if "words" not in reply["legs"]:
                     reply = await self.searcher.search(q, legs=["words"], limit=limit, seq=seq,
                                                        kinds=kinds)
                 reply["legs"] = ["words"]
-                reply["degraded"] = "indexing in progress"
-            elif reply["degraded"] == "the embedding server is starting":
+                reply["degraded"] = errors.index_running().to_dict()
+            elif code == "server-starting":
                 if "words" not in reply["legs"]:
                     reply = await self.searcher.search(q, legs=["words"], limit=limit, seq=seq,
                                                        kinds=kinds)
                 reply["legs"] = ["words"]
-                reply["degraded"] = "the embedding server is starting"
-        except FileNotFoundError as error:
-            return {"t": "error", "seq": seq, "code": "no-index", "reason": str(error)}
+                reply["degraded"] = errors.server_starting().to_dict()
+        except FileNotFoundError:
+            return {"t": "error", "seq": seq, **errors.no_index().to_dict()}
         return reply
 
     async def stop(self):

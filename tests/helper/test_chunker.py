@@ -34,3 +34,28 @@ def test_empty_text_has_no_chunks():
     from omafindd.extractors import chunks
 
     assert chunks("") == []
+
+
+def test_dense_text_splits_below_token_cap():
+    from omafindd.extractors import TOKEN_CAP, chunks, estimated_tokens
+
+    text = "∑∫√≈ 数学 " * 400
+    segments = chunks(text)
+    assert len(segments) > 1
+    assert all(estimated_tokens(segment.text) <= TOKEN_CAP for segment in segments)
+
+
+def test_ascii_text_estimate_is_one_token_per_character():
+    from omafindd.extractors import estimated_tokens
+
+    assert estimated_tokens("abcd") == 4
+    assert estimated_tokens("数") == 3
+
+
+def test_four_byte_characters_stay_below_server_batch():
+    from omafindd.extractors import TOKEN_CAP, chunks, estimated_tokens
+
+    assert estimated_tokens("\U0001D465") == 4
+    segments = chunks(("\U0001D465" * 3 + " ") * 600)
+    assert len(segments) > 1
+    assert all(len(segment.text.encode()) <= TOKEN_CAP for segment in segments)

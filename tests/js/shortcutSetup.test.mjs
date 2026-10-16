@@ -16,29 +16,34 @@ function functions(path, values) {
 test('Service requests live binds and routes replies and errors', () => {
   const sent = [];
   const { ctx } = functions('Service.qml', {
-    binds: [], bindsReady: true, bindsError: 'old', Protocol: { decode: JSON.parse },
+    binds: [], bindsReady: true, bindsError: { code: 'unknown', title: 'old', detail: '' }, driveScanning: false,
+    Protocol: { decode: JSON.parse }, Errors: load('errors.js'),
     send(message) { sent.push(message); return true; }, setupFailed() {},
   });
   ctx.getBinds();
   assert.equal(sent[0].t, 'binds_get');
   assert.equal(ctx.bindsReady, false);
-  assert.equal(ctx.bindsError, '');
+  assert.equal(ctx.bindsError, null);
   ctx.receive(JSON.stringify({ t: 'binds', binds: [{ chord: 'F9', description: 'Menu' }] }));
   assert.equal(ctx.bindsReady, true);
   assert.equal(ctx.binds[0].chord, 'F9');
   ctx.getBinds();
-  ctx.receive(JSON.stringify({ t: 'error', for: 'binds_get', reason: 'Cannot read binds.' }));
+  ctx.receive(JSON.stringify({ t: 'error', for: 'binds_get', code: 'binds-failed',
+    title: 'Your Hyprland bindings could not be read.', detail: 'Hyprland is not running. The shortcut was not saved.',
+    fix: { kind: 'retry' } }));
   assert.equal(ctx.bindsReady, false);
-  assert.equal(ctx.bindsError, 'Cannot read binds.');
+  assert.equal(ctx.bindsError.code, 'binds-failed');
+  ctx.receive(JSON.stringify({ t: 'error', for: 'binds_get', reason: 'Cannot read binds.' }));
+  assert.equal(ctx.bindsError.title, 'Cannot read binds.');
   ctx.send = () => false;
   ctx.getBinds();
-  assert.match(ctx.bindsError, /not running/);
+  assert.match(ctx.bindsError.title, /not running/);
 });
 
 test('Index step checks any saved chord and preserves the save workflow', () => {
   const calls = [];
   const { ctx, source } = functions('ui/SetupIndex.qml', {
-    chosen: '', saving: false, saveError: '', menuRow: true,
+    chosen: '', saving: false, saveError: '', menuRow: true, menuTouched: false, followMenu: false,
     service: { settings: { shortcut: 'SUPER + SHIFT + H' }, getBinds() { calls.push('binds'); },
       saveShortcut(chord, menuRow, done) { calls.push([chord, menuRow]); done(true, ''); } },
     searchRequested() { calls.push('search'); },
@@ -81,7 +86,7 @@ test('the shortcut row captures Space and Return, cancels on focus loss and leav
 function index(values = {}) {
   const { ctx, source } = functions('ui/SetupIndex.qml', {
     chosen: 'F9', saving: false, Keycombo: load('keycombo.js'),
-    service: { binds: [], bindsReady: true, bindsError: '' },
+    service: { binds: [], bindsReady: true, bindsError: null },
     recorder: { active: false, operation: '', pendingLeave: false, conflict: '', lost: false, exposed: false },
     ...values,
   });
@@ -99,9 +104,10 @@ test('saving allows unknown binds after an error but waits for cleanup', () => {
   const { ctx, rowValue, saveEnabled } = index();
   ctx.service.bindsReady = false;
   assert.equal(saveEnabled(), false);
-  ctx.service.bindsError = 'Could not read bindings.';
+  ctx.service.bindsError = { code: 'binds-failed', title: 'Your Hyprland bindings could not be read.', detail: '' };
   assert.equal(saveEnabled(), true);
-  assert.match(rowValue('note'), /not been checked for conflicts/);
+  // The binds card shows the failure, so the shortcut note stays empty.
+  assert.equal(rowValue('note'), '');
   ctx.recorder.operation = 'leave';
   assert.equal(saveEnabled(), false);
   ctx.recorder.operation = '';
@@ -147,10 +153,44 @@ test('Change stays enabled during leave so the row keeps keyboard focus', () => 
 
 test('reopening the Index step retries the binds read without replacing the chosen chord', () => {
   let requests = 0;
-  const { ctx } = functions('SetupView.qml', { back: false, step: 3,
+  const { ctx } = functions('SetupView.qml', { back: false, step: 3, pickFolders: false, indexPage: {},
     service: { getBinds() { requests++; } } });
   ctx.reset();
   assert.equal(requests, 1);
+});
+
+test('a setup reopened from Settings keeps the menu row as it is', () => {
+  const calls = [];
+  const service = { settings: { shortcut: 'SUPER + R' }, menuRow: null, getBinds() {},
+    saveShortcut(chord, menuRow, done) { calls.push(menuRow); done(true, ''); } };
+  const { ctx } = functions('ui/SetupIndex.qml', { chosen: '', saving: false, saveError: '',
+    menuRow: true, menuTouched: false, followMenu: true, service, searchRequested() {} });
+  ctx.begin();
+  assert.equal(ctx.menuRow, true);
+  service.menuRow = false;
+  ctx.syncMenuRow();
+  assert.equal(ctx.menuRow, false);
+  ctx.saveShortcut();
+  assert.deepEqual(calls, [false]);
+  ctx.menuTouched = true;
+  ctx.menuRow = true;
+  ctx.syncMenuRow();
+  assert.equal(ctx.menuRow, true);
+  ctx.followMenu = false;
+  ctx.begin();
+  assert.equal(ctx.menuRow, true);
+});
+
+test('only Change folders makes the Index step follow the menu row', () => {
+  const page = {};
+  const { ctx, source } = functions('SetupView.qml', { back: false, step: 2, pickFolders: true, indexPage: page,
+    service: null, ensureScan() {} });
+  ctx.reset();
+  assert.equal(page.followMenu, true);
+  ctx.pickFolders = false;
+  ctx.reset();
+  assert.equal(page.followMenu, false);
+  assert.match(source, /onPickFoldersChanged: if \(pickFolders\) indexPage.followMenu = true/);
 });
 
 for (const action of ['close', 'dismiss', 'toggle', 'showSearch']) {
@@ -159,7 +199,7 @@ for (const action of ['close', 'dismiss', 'toggle', 'showSearch']) {
     const page = functions('ui/SetupIndex.qml', { recorder: { stop() { stops++; } } }).ctx;
     const setup = functions('SetupView.qml', { indexPage: page }).ctx;
     const { ctx } = functions('Overlay.qml', {
-      opened: true, view: 'setup', pendingOpen: null, setup: { item: setup },
+      opened: true, view: 'setup', pendingOpen: null, setup: { item: setup }, settingsView: { item: null },
       service: null, shell: null, manifest: null,
       closeTimer: { stop() {} }, unmap: { restart() {} },
       searchView: { stopPlayback() {}, reset() {}, flash: '' }, Qt: { callLater() {} },
@@ -169,3 +209,20 @@ for (const action of ['close', 'dismiss', 'toggle', 'showSearch']) {
     if (action !== 'showSearch') assert.equal(ctx.opened, false);
   });
 }
+
+
+test('binds Retry starts an offline service and otherwise requests binds', () => {
+  const calls = [];
+  const { ctx, source } = functions('ui/SetupIndex.qml', {
+    service: { bindsError: { code: 'daemon-offline' },
+      installHelper() { calls.push('install'); }, getBinds() { calls.push('binds'); } },
+  });
+  const handler = source.match(/id: bindsCard[^]*?onRetry: \{([^]*?)^      \}/m)[1];
+  vm.runInContext('(function() {' + handler + '})()', ctx);
+  assert.deepEqual(calls, ['install']);
+  ctx.service.bindsError = { code: 'binds-failed' };
+  vm.runInContext('(function() {' + handler + '})()', ctx);
+  ctx.service.bindsError = null;
+  vm.runInContext('(function() {' + handler + '})()', ctx);
+  assert.deepEqual(calls, ['install', 'binds', 'binds']);
+});

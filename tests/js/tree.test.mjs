@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { load } from './load.mjs';
 import { plain, freeze } from './fixtures.mjs';
 const t = load('tree.js');
-const state = (chosen, skipped = [], code = []) => freeze({ chosen, skipped, code });
+const state = (chosen, skipped = []) => freeze({ chosen, skipped });
 const ZERO = { text: 0, pdf: 0, image: 0, video: 0, audio: 0 };
 const c = (text, image = 0) => ({ ...ZERO, text, image });
 
@@ -30,18 +30,18 @@ test('marks compare choices at any depth below a folder', () => {
 test('a click sets the folder and clears every choice below it', () => {
   const s = state(['/h/Docs', '/h/Docs/a/b'], ['/h/Docs/a', '/h/Docs/x']);
   const whole = t.click(s, '/h/Docs');
-  assert.deepEqual(plain(whole), { chosen: ['/h/Docs'], skipped: [], code: [] });
-  assert.deepEqual(plain(t.click(whole, '/h/Docs')), { chosen: [], skipped: [], code: [] });
+  assert.deepEqual(plain(whole), { chosen: ['/h/Docs'], skipped: [] });
+  assert.deepEqual(plain(t.click(whole, '/h/Docs')), { chosen: [], skipped: [] });
   const child = t.click(state(['/h/Docs']), '/h/Docs/a');
-  assert.deepEqual(plain(child), { chosen: ['/h/Docs'], skipped: ['/h/Docs/a'], code: [] });
-  assert.deepEqual(plain(t.click(child, '/h/Docs/a')), { chosen: ['/h/Docs'], skipped: [], code: [] });
+  assert.deepEqual(plain(child), { chosen: ['/h/Docs'], skipped: ['/h/Docs/a'] });
+  assert.deepEqual(plain(t.click(child, '/h/Docs/a')), { chosen: ['/h/Docs'], skipped: [] });
   assert.deepEqual(plain(t.click(state([], ['/h/Docs/a']), '/h/Docs/a/b')),
-    { chosen: ['/h/Docs/a/b'], skipped: ['/h/Docs/a'], code: [] });
+    { chosen: ['/h/Docs/a/b'], skipped: ['/h/Docs/a'] });
 });
 
 test('XDG folders start chosen and datasets start skipped under a searched parent', () => {
   const s = t.initial(freeze([{ path: '/h/Docs', xdg: true }, { path: '/h/code', xdg: false }]));
-  assert.deepEqual(plain(s), { chosen: ['/h/Docs'], skipped: [], code: [] });
+  assert.deepEqual(plain(s), { chosen: ['/h/Docs'], skipped: [] });
   const next = t.addDatasets(s, freeze([{ path: '/h/Docs/frames' }, { path: '/h/code/frames' },
     { path: '/h/Docs/kept' }]), ['/h/Docs/kept']);
   assert.deepEqual(plain(next.skipped), ['/h/Docs/frames']);
@@ -59,13 +59,6 @@ test('value counts searched files from rolled-up counts and waits for missing on
   assert.deepEqual(plain(t.value('/h/Pictures', s, () => c(3))), ZERO);
   assert.equal(t.value('/h/Docs', s, path => path === '/h/Docs/a/b' ? null : counts[path]), null);
   assert.equal(t.value('/h/Docs', state(['/h/Docs']), () => null), null);
-});
-
-test('the code toggle keeps its own set through clicks', () => {
-  const s = t.toggleCode(state(['/h/Docs']), '/h/omaone');
-  assert.deepEqual(plain(s.code), ['/h/omaone']);
-  assert.deepEqual(plain(t.toggleCode(s, '/h/omaone').code), []);
-  assert.deepEqual(plain(t.click(s, '/h/omaone').code), ['/h/omaone']);
 });
 
 test('toRoots turns the sets into roots with relative excludes', () => {
@@ -91,4 +84,47 @@ test('a drive mounted below a searched folder is its own root and adds to its pa
   assert.deepEqual(plain(t.value('/h/Media', off, countOf, mounts)), c(2));
   assert.deepEqual(plain(t.toRoots(off.chosen, off.skipped, () => 'u', mounts)),
     [{ path: '/h/Media', volume: 'u', excludes: ['USB'] }]);
+});
+
+test('rows sort by known total, then unknown, then zero, then name', () => {
+  const Tree = load('tree.js');
+  const counts = { '/h/a': { text: 1, pdf: 0, image: 0, video: 0, audio: 0 },
+    '/h/b': { text: 0, pdf: 0, image: 9, video: 0, audio: 0 },
+    '/h/z': { text: 0, pdf: 0, image: 0, video: 0, audio: 0 } };
+  const rows = ['/h/z', '/h/Unknown', '/h/a', '/h/b', '/h/c'].map(path => (
+    { path, name: path.slice(3) }));
+  const sorted = Tree.byCount(rows, path => counts[path] || null);
+  assert.deepEqual(plain(sorted.map(row => row.path)), ['/h/b', '/h/a', '/h/c', '/h/Unknown', '/h/z']);
+});
+
+test('a parent click keeps known worktrees and datasets below it left out', () => {
+  const defaults = ['/h/personal/projects/aside-11', '/h/personal/frames'];
+  const on = t.click(state(['/h/Documents']), '/h/personal', defaults);
+  assert.deepEqual(plain(on), { chosen: ['/h/Documents', '/h/personal'],
+    skipped: ['/h/personal/frames', '/h/personal/projects/aside-11'] });
+  assert.equal(t.mark('/h/personal', on), 'mixed');
+  // The parent is mixed only through the defaults, so the next click turns it off.
+  const off = t.click(on, '/h/personal', defaults);
+  assert.deepEqual(plain(off), { chosen: ['/h/Documents'], skipped: [] });
+  assert.deepEqual(plain(t.click(off, '/h/personal', defaults)), plain(on));
+});
+
+test('a parent click over a user skip searches the parent without its worktrees', () => {
+  const defaults = ['/h/p/wt'];
+  const s = state(['/h/p'], ['/h/p/wt', '/h/p/junk']);
+  assert.deepEqual(plain(t.click(s, '/h/p', defaults)), { chosen: ['/h/p'], skipped: ['/h/p/wt'] });
+});
+
+test('ticking a worktree row itself still searches it', () => {
+  const defaults = ['/h/p/wt'];
+  const s = state(['/h/p'], ['/h/p/wt']);
+  assert.deepEqual(plain(t.click(s, '/h/p/wt', defaults)), { chosen: ['/h/p'], skipped: [] });
+  const nested = t.click(state([]), '/h/p/wt', ['/h/p/wt', '/h/p/wt/frames']);
+  assert.deepEqual(plain(nested), { chosen: ['/h/p/wt'], skipped: ['/h/p/wt/frames'] });
+});
+
+test('saved roots turn back into choices', () => {
+  const next = t.fromSettings(freeze([{ path: '/h/p', volume: 'u', excludes: ['wt', 'a/b', '/h/p/abs'] },
+    { path: '/h/Docs', volume: 'u', excludes: [] }]));
+  assert.deepEqual(plain(next), { chosen: ['/h/p', '/h/Docs'], skipped: ['/h/p/wt', '/h/p/a/b', '/h/p/abs'] });
 });

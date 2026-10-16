@@ -106,6 +106,20 @@ def test_menu_preserves_comments_and_existing_lines(tmp_path, original):
     assert path.read_text() == original
 
 
+def test_has_menu_row_reads_the_marked_block(tmp_path):
+    path = tmp_path / "menu.jsonc"
+    assert not bindings.has_menu_row(path)
+    path.write_text('{\n  // omafind-menu-start mentioned in a comment\n}\n')
+    assert not bindings.has_menu_row(path)
+    path.write_text('{\n// omafind-menu-start\n}\n')
+    assert not bindings.has_menu_row(path)
+    path.write_text('{}\n')
+    bindings.write_menu_row(path)
+    assert bindings.has_menu_row(path)
+    bindings.remove_menu_row(path)
+    assert not bindings.has_menu_row(path)
+
+
 @pytest.mark.parametrize("chord", ["SUPER + mouse:272", "SUPER + XF86AudioMute",
                                     "SUPER + code:10", "SUPER + e", "E"])
 def test_lua_skips_unsupported_chords(chord):

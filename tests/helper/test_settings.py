@@ -17,7 +17,7 @@ def test_example_has_exact_defaults():
     assert json.loads((ROOT / "settings.example.json").read_text()) == {
         "setupDone": False, "gpu": "auto", "audio": True,
         "roots": [], "maxResults": 40, "warmMinutes": 5,
-        "codeRoots": [], "imageBudget": 140, "shortcut": "SUPER + E", "ignoredVolumes": [],
+        "imageBudget": 140, "shortcut": "SUPER + E", "ignoredVolumes": [],
     }
 
 
@@ -144,21 +144,25 @@ def test_roots_keep_valid_path_volume_and_excludes(tmp_path):
 
 @pytest.mark.parametrize("budget,expected", [(70, 70), (140, 140), (280, 280),
                                              (71, 140), (True, 140), ("280", 140)])
-def test_media_and_code_settings(tmp_path, budget, expected):
+def test_image_budget_setting(tmp_path, budget, expected):
     path = tmp_path / "shell.json"
-    write_settings(path, imageBudget=budget, codeRoots=["/repo", "relative", None, 42])
+    write_settings(path, imageBudget=budget)
     assert load(path).image_budget == expected
-    assert load(path).code_roots == ("/repo",)
 
 
-def test_roots_code_roots_and_setup_done_round_trip(tmp_path):
+def test_roots_and_setup_done_round_trip(tmp_path):
     path = tmp_path / 'shell.json'
     root = {'path': '/h/Documents', 'volume': 'u', 'excludes': ['tax/2024']}
-    write_settings(path, setupDone=True, roots=[root], codeRoots=['/h/p/omaone'])
+    write_settings(path, setupDone=True, roots=[root])
     settings = load(path)
     assert settings.setup_done is True
     assert settings.roots == [root]
-    assert settings.code_roots == ('/h/p/omaone',)
+
+
+def test_legacy_code_roots_are_ignored(tmp_path):
+    path = tmp_path / 'shell.json'
+    write_settings(path, codeRoots=['/h/p/omaone', {'path': '/h/p/x', 'excludes': []}])
+    assert load(path) == Settings()
 
 
 @pytest.mark.parametrize('fields', [
@@ -166,7 +170,7 @@ def test_roots_code_roots_and_setup_done_round_trip(tmp_path):
     {'roots': [{'path': '/h/Documents', 'excludes': []}]},
     {'roots': [{'path': '/h/Documents', 'volume': 'u', 'excludes': 'tax/2024'}]},
     {'roots': [{'path': 'Documents', 'volume': 'u', 'excludes': []}]},
-    {'codeRoots': ['relative']}, {'setupDone': 'true'},
+    {'setupDone': 'true'},
 ])
 def test_bad_root_shapes_give_defaults(tmp_path, fields):
     path = tmp_path / 'shell.json'

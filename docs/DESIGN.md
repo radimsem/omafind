@@ -15,7 +15,7 @@ Canvas title: "omafind desktop designs". Boards in canvas order, as `File: title
 - Audio: "3 · Audio moment on top"
 - Typing: "4 · PDF page on top, while typing"
 - Docs: "5 · Document on top"
-- Code: "6 · Code on top (code: prefix)"
+- Code: "6 · Code on top (code: prefix)". v1 has no code search; the board stays as the source of the `.wk` fold row.
 - Degraded: "7 · Keyword-only and offline drive"
 - Empty: "8 · Opened, no query yet"
 - Anatomy: "9 · Result states and keys"
@@ -35,7 +35,7 @@ The Folders step follows `docs/superpowers/specs/2026-10-14-setup-and-search-ref
 
 - omafind looks like the Omarchy shell. It reads the current theme, follows the user's font and corner rounding, and adds no palette of its own. The canvas is rendered in Catppuccin, which is one Omarchy theme.
 - Flat surfaces. A 2 px border, no shadow, no blur. Tone and borders separate parts.
-- The accent means "this is the selection or the match". Yellow means a hit word, an offline drive or a dataset proposal. Red means a failure. Green means done, kept or protected.
+- The accent means "this is the selection or the match". Yellow means a hit word, an offline drive, a dataset proposal or a degraded state. Red means a failure. Green means done, kept or protected.
 - Square corners by default, as Omarchy is. Corners follow Hyprland `decoration:rounding` (0 by default, 8 on the author's machine).
 - The overlay is summoned, never parked. It opens on an empty query and closes after Enter or Esc.
 - Facts, not prose. omafind computes every status, so it shows the computed values as key/value tokens and keeps sentences for instructions, errors with a fix, and titles.
@@ -51,14 +51,14 @@ The canvas tokens live in `:root` of `omaone.css`. The plugin never holds a hex 
 | Canvas token | Mocha | Meaning | Omarchy property |
 |---|---|---|---|
 | `--base` | `#1e1e2e` | Overlay fill, text on a filled button or accent chip | `Color.popups.background`, `Color.background` |
-| `--mantle` | `#181825` | Code and text excerpt well, desktop behind the boards | `Color.menu.background`. Desktop is the user's wallpaper. |
+| `--mantle` | `#181825` | Text excerpt well, desktop behind the boards | `Color.menu.background`. Desktop is the user's wallpaper. |
 | `--crust` | `#11111b` | Chip on a thumbnail (at 0.85), drive window well | `Util.alpha(Color.background, n)` with the same `n` |
 | `--surface0` | `#313244` | Thumbnail well, player card, waveform well | none, derived: `Util.alpha(Color.foreground, 0.11)` over the overlay (computed from Mocha, check by screenshot) |
 | `--fg` | `#cdd6f4` | Primary text, file names, hit words in a list row | `Color.foreground`, `Color.popups.text` |
 | `--fg2` | `#b2bad4` | Secondary text, paths, snippets, key cap text | `Util.alpha(Color.foreground, 0.85)` |
 | `--dim` | `#9298ae` | Captions, fact keys, folders, footer, badges at rest | `Util.alpha(Color.foreground, 0.66)` (the value `Color.lock.placeholder` defaults to) |
 | `--placeholder` | `#808598` | Placeholder in the query field | `Util.alpha(Color.foreground, 0.55)` |
-| `--muted` | `#585b70` | Line numbers in text and code excerpts | `Color.muted` |
+| `--muted` | `#585b70` | Line numbers in text excerpts | `Color.muted` |
 | `--accent` | `#89b4fa` | Selected row, focus border, prefix, hit facts, progress, waveform match | `Color.accent` |
 | `--red` | `#f38ba8` | Failures | `Color.urgent` |
 | `--yellow` | `#f9e2af` | Hit words, offline, dataset tag | none, see below |
@@ -93,7 +93,8 @@ Other values with no theme token, derived in QML from the roles above:
 - Caption chips on images and frames `rgba(17,17,27,.85)`: `Util.alpha(Color.background, 0.85)`. The player play button uses 0.78.
 - Hit wash behind a word `rgba(249,226,175,.18)`: `Util.alpha(Palette.yellow, 0.18)`, text in `Palette.yellow`.
 - Offline badge fill: `Palette.yellow` at 0.12. Done step fill: `Palette.green` at 0.16. Running step fill: accent at 0.12.
-- Rule tag borders: accent for repos and yellow for datasets.
+- Error card wash: `Color.urgent` at 0.08 for a failure, `Palette.yellow` at 0.08 for a degraded or paused state (`server-starting`, `index-running`, `embedding-unavailable`, `disk-low`, `update-running`). The glyph takes the same color. `tone()` in `lib/errors.js` maps the code to the tone; views never pick it.
+- Rule tag borders: accent for repos, cyan for worktrees and yellow for datasets.
 - Rendered PDF page `#e6e9ef` with text `#4c4f69`, and its hit highlight `rgba(223,142,29,.35)`: these draw page content, not shell chrome. They stay fixed in every theme.
 - Placeholder image tints `#2c3a52`, `#3a3346`, `#2f3f3d`, `#403a33`, `#33364a`: mock photo content. The real thumbnail replaces them.
 - Popup 0.97 alpha: `Color.popups.background` is opaque by default. Use the theme value. Do not force 0.97.
@@ -145,12 +146,12 @@ Spacing (px, at base size 12):
 | Section header | 10 px bold, 12 above and 6 below, 30 high in the motion layout |
 | Weaker-matches row | 36 high on the Code board (`.wk`), 10 side padding |
 | Preview pane | Padding 26 top, 32 sides, 24 bottom, 18 gap. Media area 420 high |
-| Preview media | Image 600 by 400, video frame 600 by 400, player card 600 by 340, PDF page 330 by 410, text and code well 640 by 400 |
+| Preview media | Image 600 by 400, video frame 600 by 400, player card 600 by 340, PDF page 330 by 410, text well 640 by 400 |
 | Preview actions | Buttons 32 high, 8 gap, 16 side padding on the primary |
 | Footer | 40 high, 18 side padding, 16 gap, keys right-aligned |
 | Setup panel | 1120 wide (760 for step 1, 920 for step 3), 18 padding, 14 gap |
 | Setup panel sizes in M3 | 760 by 474, 1120 by 992, 920 by 574 |
-| Folder table columns | 28, flexible, 64, 56, 64, 56, 56, 84, 72, 32 with a 10 gap and 10 side padding |
+| Folder table columns | 28, flexible, 64, 56, 64, 56, 56, 84, 72 with a 10 gap and 10 side padding |
 | Table header | 30 high |
 | Table row | 44 high in the shared lazy folder tree |
 | Toast | 380 wide, 12 and 14 padding, at the top right, 36 below the top and 10 from the edge |
@@ -179,7 +180,7 @@ The easing is `cubic-bezier(0.33, 1, 0.68, 1)` unless a row says `ease` or `line
 | Preview cross-fade | 120 ms opacity. The media area rises 6 px over 120 ms (160 ms in). | M1, M2 |
 | Empty to results | 140 ms opacity, results delayed 30 ms | M1 |
 | Open | Overlay closes, then the opener window fades in over 250 ms | M2 |
-| Toast | 180 ms in from 12 px right and 12 px up, stays 2.8 s | M1, M2, M4 |
+| Toast | 180 ms in from 12 px right and 12 px up, stays 2.8 s. An error toast with a fix stays until Retry or Dismiss. | M1, M2, M4 |
 | Progress | 300 ms linear on width, 200 ms on color | M3, M4 |
 | Setup panel resize | 240 ms on width and height | M3 |
 | Setup step swap | Out 120 ms, in 160 ms after a 120 ms delay | M3 |
@@ -200,7 +201,7 @@ Each row names the class in `omafind.css` and the boards where it appears.
 | Component | Class | Properties | Boards |
 |---|---|---|---|
 | Search overlay | `.sp`, `.sp-q`, `.sp-main`, `.sp-f` | Surface, 1280 by 800. Query row, list pane, preview pane, footer. | Main to Empty, Anatomy, M1, M2, M4 |
-| Query row | `.sp-q`, `.q`, `.pref`, `.st` | Search icon (a code icon with `code:`). Query at 22, prefix in accent, status on the right at 11 ("ready", "38 ms", "matching by meaning" with a spinner). | every search board |
+| Query row | `.sp-q`, `.q`, `.pref`, `.st` | Search icon. Query at 22, prefix in accent, status on the right at 11 ("ready", "38 ms", "matching by meaning" with a spinner). | every search board |
 | Result row | `.it`, `.th`, `.tx`, `.nm`, `.dir`, `.bd` | See below. | every search board |
 | Section header | `.sec-h`, `.n`, `.more` | Uppercase name, count, and "2 more" aligned right in dim. | Main, Moments, Audio, Docs, Code |
 | Weaker-matches fold | `.wk`, `.sp-weak`, `.ln` | A chevron row "5 weaker matches" (Code) or a caption with a hairline (Anatomy). Hits under half the top score fold into it. Enter expands them. | Code, Anatomy |
@@ -209,15 +210,15 @@ Each row names the class in `omafind.css` and the boards where it appears.
 | Preview, audio | `.pcard`, `.wf`, `.pbtn`, `.trk`, `.capt` | Player card with waveform, 46 px accent play button, progress bar with the matched window in accent, caption "7:55 – 8:25 of 13:43". | Audio, M2 |
 | Preview, PDF | `.pv-page`, `.pg` | Rendered page, hit words highlighted, page chip bottom left. | Typing, M1, M2 |
 | Preview, text | `.pv-text`, `.l`, `.no`, `.hit`, `.chip` | Excerpt with line numbers in `--muted`, hit lines at accent 0.10, hit words in yellow, line-range chip bottom right. | Docs, M1, M2 |
-| Preview, code | `.pv-text`, `.chip` | Same well as text, with a code icon in the query row. | Code |
 | Preview info | `.pv-name`, `.pv-path`, `.pv-meta` | Name at 18 bold, folder at 12, meta line `Kind · date · size facts` in dim. | every search board |
 | Why line | `.pv-why`, `.fx`, `.f`, `.k`, `.v` | See Why line below. | every search board |
 | Preview actions | `.pv-act`, `.btn-acc`, `.btn-sec` | Primary in accent fill with base text, "Show in folder" secondary. Offline: "Open" disabled and "Copy path". | every search board |
 | Footer | `.sp-f` | Result count left ("17 results · 3 weaker"), key hints right. With no query: indexing progress, watched folders, offline drives. | every search board |
-| Banner | `.ban`, `.act` | Yellow wash at 0.08, glyph, bold lead, "Retry" button right. | Degraded |
-| Empty state | `.empty`, `.hints`, `.hint` | Headline, one sentence, prefix chips (`img:`, `pdf:`, `doc:`, `vid:`, `aud:`, `code:`) with the prefix in accent. | Empty, M1 |
+| Banner | `.ban`, `.act` | A thin wrapper around `ErrorCard` for the fact-token form (the disk banner). Yellow wash at 0.08, glyph, bold lead, fact tokens. | Degraded |
+| Error card | `ErrorCard` (`.ban` anatomy) | Glyph, bold title, detail wrapped and capped at three lines, buttons right: "Install packages" (install fix), "Open log" (log), "Retry" (a retry or install fix, only where the view has no retry control of its own; step 1 uses its footer). An install fix adds `sudo pacman -S --needed <packages>` in mono with "Copy", and shows "Installing in the terminal" next to the still pressable "Install packages" while it waits for the packages. The open toast adds "Dismiss" under the card. Red wash for a failure, yellow for a degraded or paused state. The compact form (preview pane, open toast) drops the pacman line and caps the detail at two lines. Shows nothing when its error is null. | Degraded. Not drawn on the setup, preview and toast boards. |
+| Empty state | `.empty`, `.hints`, `.hint` | Headline, one sentence, prefix chips (`img:`, `pdf:`, `doc:`, `vid:`, `aud:`) with the prefix in accent. | Empty, M1 |
 | Steps | `.steps`, `.step`, `.no`, `.dash` | 20 px number box, done in green wash, current in accent. | Setup to Indexing, M3 |
-| Lazy folder tree | `FolderTree`, `FolderTable`, `FolderRow` | Check, disclosure, path, repo or dataset tag, five kind counts, index size, time, and code toggle. One ListView shared by setup and the drive dialog. | Folders step, NewDrive |
+| Lazy folder tree | `FolderTree`, `FolderTable`, `FolderRow` | Check, disclosure, path, repo or dataset tag, five kind counts, index size and time. One ListView shared by setup and the drive dialog. | Folders step, NewDrive |
 | Task row | `.task`, `.mk`, `.t`, `.d`, `.v` | 22 px marker (ok in green wash, running in accent wash, waiting in a 1 px outline), title 13 bold, detail 11 dim, value right. | Setup, M3 |
 | Kind progress | `.kp`, `.bar2` | Name, 6 px bar (accent, green when done), count text right. | Indexing, M3 |
 | Toast | `.ntf`, `.tst`, `.h`, `.b`, `.a` | Surface with accent border, glyph and bold title, body, buttons right. | NewDrive, M1, M2, M4 |
@@ -236,12 +237,12 @@ Each row names the class in `omafind.css` and the boards where it appears.
 
 - A row of fact tokens: dim key, value, 14 gap, 11 px. Values are `--fg2`, a hit is accent, a warning is yellow, an emphasized value is `--fg` bold.
 - Keys in order: `leg`, `part`, `at`, `hits`, `z`. A PDF or text hit adds the quoted snippet under it, led by an `Aa` glyph.
-- Examples: `leg meaning · part image · z 3.4`, `leg meaning · part frame + speech · at 14:32 · z 3.1`, `leg words · part text · at p. 12 · hits they`, `leg meaning + words · part code · at L1–47 · hits retry, backoff · z 2.9`.
+- Examples: `leg meaning · part image · z 3.4`, `leg meaning · part frame + speech · at 14:32 · z 3.1`, `leg words · part text · at p. 12 · hits they`, `leg meaning + words · part text · at L1–47 · hits retry, backoff · z 2.9`.
 
 ### Lazy folder tree
 
 - One flat ListView model contains the visible rows. Expanding requests one level and caches it in Service; collapsing removes visible descendants while retaining their cache and expansion state. Adding a folder or rescanning preserves expanded paths that still exist.
-- Rows show a tri-state checkbox, disclosure chevron, name and tag, then Text, PDF, Images, Video, Audio, Index, and Time. A repo also has a code toggle. Top rows use `~/name`; deeper rows use the basename. Indent is 18 per level with a 1 px guide at 0.24.
+- Rows show a tri-state checkbox, disclosure chevron, name and tag, then Text, PDF, Images, Video, Audio, Index, and Time. Top rows use `~/name`; deeper rows use the basename. Indent is 18 per level with a 1 px guide at 0.24.
 - On is accent fill with a base-colored check, mixed is an accent wash with an accent dash, and off is an empty outline. A checked row has an accent wash at 0.06. Checking a parent searches its descendants; unchecking a child creates an exclude for that path.
 - Unknown counts show dim placeholders and one row spinner. A finished or failed walk stops its spinners. Failures show a reason and a next step, without a scan-time fact.
 - XDG folders start checked. Other home folders and extra volume rows start unchecked. Dataset proposals under searched parents start unchecked unless the user already chose them. A yellow `dataset` tag has evidence such as `images 1,418 · named 96%`; checking it queues its files normally.
@@ -253,20 +254,21 @@ Global (Hyprland, an owned block in the bindings written by setup):
 
 | Key | Action |
 |---|---|
-| `Super E` | Open or close omafind (default of the `shortcut` setting). Setup offers `Super D` or `Super U` when it is taken. |
+| `Super E` | Open or close omafind (default of the `shortcut` setting). It opens setup until the search engine is installed, also after a finished setup lost its runtime or model. Setup offers `Super D` or `Super U` when it is taken. |
 
 In the overlay:
 
 | Key | Applies | Action |
 |---|---|---|
 | Typing | Query | The words leg answers after 50 ms. The meaning leg re-ranks after 200 ms without typing. |
-| `img:` `pdf:` `doc:` `vid:` `aud:` `code:` | Start of query | Limit the search to one kind. The prefix stays in the row in accent. `code:` searches the code index only. |
+| `img:` `pdf:` `doc:` `vid:` `aud:` | Start of query | Limit the search to one kind. The prefix stays in the row in accent. |
 | `↑` `↓` or `Ctrl J` `Ctrl K` | Any | Move across sections. |
 | `Enter` | Result | Open at the match. |
 | `Enter` | Weaker-matches row | Expand the folded hits. |
 | `Ctrl Enter` | Result | Show in folder. |
 | `Ctrl Space` | Audio or video | Play or pause the preview from the matched second. Other kinds show no hint. |
 | `Ctrl C` | Result | Copy the path. |
+| `Ctrl ,` | Any | Open Settings: the shortcut, the Find files menu row and Change folders. `Esc` or Back returns to search. The idle footer shows the hint. |
 | `Esc` | Any | Clear the query, then close. |
 | Click a row | Any | Select it. |
 
@@ -279,7 +281,7 @@ What Enter opens:
 | PDF | Default browser at `#page=N` through `omarchy-launch-browser` |
 | Video, audio | `mpv --start=<seconds>` |
 | Image | `xdg-open` |
-| Text, code | The `editor` setting at the line, in a terminal |
+| Text | The `editor` setting at the line, in a terminal |
 
 Footer hint text follows the selection: "open at 14:32", "open at page 1", "open at line 212", "open in Neovim at line 8", "play at 7:55", "preview".
 
@@ -291,7 +293,7 @@ Setup:
 | `Space` | Folder checkbox | Toggle the folder. |
 | `Esc` | Empty state | Close. |
 
-Setup buttons, by step: "Pause" and "Next: pick folders"; "Back" and "Start indexing"; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The boards define no other setup key (see Open questions).
+Setup buttons, by step: "Install", "Pause" while it runs, "Retry" after a failure or "Resume" when paused, then "Next: pick folders"; "Back" and "Start indexing"; "Close" and "Save shortcut and open search"; "Not this drive" and "Scan"; "Cancel" and "Index this drive". The Setup board shows only "Pause"; the other step 1 labels come from the error handling spec. The boards define no other setup key (see Open questions).
 
 ## Copy
 
@@ -301,7 +303,7 @@ Every string comes verbatim from the boards. A string the canvas lacks follows t
 - No em or en dashes in prose. Use a comma, a colon, a period or parentheses. A dash used as a placeholder glyph, a range inside a fact token (`L1–47`, `7:55–8:25`) or the separator inside a composed label is typography and stays. The middle dot in `Photos2024 · /2019/lisbon` and in meta lines is the separator.
 - Terse and technical. A label or subtitle can be a fragment. A banner, toast or error is a full sentence.
 - A control says what it does ("Open", "Show in folder", "Copy path", "Retry", "Scan", "Index this drive"). A state is one word or a fact ("ready", "offline", "new").
-- An error says what happened, why, and what to do next, in that order. Example: "Semantic search unavailable: the embedding server did not start (Vulkan device lost). Showing keyword matches." with a "Retry" button.
+- An error says what happened, why, and what to do next, in that order. The title says what happened. The detail says why, then what to do next, and names a control ("press Retry"), never a CLI command. Example: title "The embedding server did not start.", detail "It did not answer within 60 s. Showing keyword matches until it starts.", with a "Retry" button. The daemon writes error copy in `helper/omafindd/errors.py`; the plugin writes only `daemon-offline` and `unknown` in `lib/errors.js`, and `update-running` and `update-failed` in `lib/Update.js` (see `docs/ipc.md`, Errors).
 - Avoid seamless, leverage, robust, comprehensive, delve, showcase, vibrant, crucial, pivotal, streamline, empower, foster, testament, landscape, tapestry, journey, unlock and elevate.
 
 ### Facts, not prose
@@ -310,7 +312,7 @@ Any line that explains a result, a scan or a skip is a row of fact tokens: a dim
 
 | Where | Keys, in order |
 |---|---|
-| Why line of a result | `leg` (`meaning`, `words`, `meaning + words`), `part` (`image`, `ocr`, `frame`, `speech`, `audio`, `text`, `code`; the boards also join them as `frame + speech`), `at`, `hits`, `z` |
+| Why line of a result | `leg` (`meaning`, `words`, `meaning + words`), `part` (`image`, `ocr`, `frame`, `speech`, `audio`, `text`; the boards also join them as `frame + speech`), `at`, `hits`, `z` |
 | Folder tree rows | Five kind counts; dataset evidence uses `images`, `videos`, or `audio`, then `named` (percent). Errors use `error`. |
 | Progress and totals | `selected`, `index`, `time`, `device`, `vram`, `skipped`, `failed`, `queued` |
 
@@ -319,8 +321,8 @@ Keys the boards use that spec 7.4 does not list: `dataset`, `searchable`, `mount
 What stays a sentence:
 
 - Titles: "Set up omafind", "Pick the folders to search", "Indexing your files", "New drive found".
-- Instructions: "Type a description in any language. Start with a prefix to search one kind only." and "You can close this. The download keeps going."
-- Errors with a fix: "Photos2024 is not connected. Connect it to open this file."
+- Instructions: "Type a description in any language. Start with a prefix to search one kind only.", "Install builds the server (about 3 min) and downloads the model (865 MB)." and "You can close this. Installing keeps going."
+- Errors with a fix: "Photos2024 is not connected." with "Connect it, then press Retry."
 - Prompts: "Photos2024 (exFAT, 1.8 TB) is connected. Scan it for photos, videos and documents to search?"
 - Setup explanation: "omafind writes its own block in your Hyprland bindings and reloads Hyprland. Nothing else in your config changes."
 - Toasts: a short sentence, or a title plus fact tokens (`Opening <name>` with `opener` and `at`).
@@ -340,12 +342,12 @@ Name things as the spec does: result, section, weaker matches, volume, drive, ro
 
 - Esc: Anatomy and spec 7.1 say it clears the query, then closes. M1 and M2 close the overlay at once with results showing. This file follows Anatomy.
 - `Super E`: Anatomy says "Open or close". In M2 the key only reopens a closed overlay and does nothing while it is open. M1 shows it only as a hint chip. This file follows Anatomy.
-- Badge and open line: Docs shows `L212` (one line) and opens "at line 212" while the chip says `lines 205–222`. Code shows `L1–47` (a range), its button reads "Open in Neovim" with no line, and its footer says "at line 8". Spec 7.1 expects `Open in <editor> at line 8`. Text and code badges differ in kind.
+- Badge and open line: Docs shows `L212` (one line) and opens "at line 212" while the chip says `lines 205–222`.
 - Weaker matches: Anatomy and spec fold them into one row. Main and M1 count them in the footer ("3 weaker", "2 weaker") but show no fold row, and M1 leaves them in the list at 0.6 opacity. Code uses a different fold row (`.wk`) from Anatomy (`.sp-weak`).
 - Open toast: M1 shows "Opened <name>", a sentence. M2 shows "Opening <name>" with `opener` and `at` tokens. Spec 7.4 favors the second.
 - New drive toast: spec 4.4 reads "New drive Photos2024 found. Scan it for content?". The boards read "New drive found" with a longer body. The canvas wins.
 - `Ctrl Space`: audio and video play from the matched second. The footer shows the hint only for audio and video.
 - Section icons: the brief expects kind colors on section icons. The boards color only the composition bar and its legend. The fallback color for cyan is also undefined.
-- Folder tree keys: Tab moves between controls, Space toggles a checkbox or code action, and Right and Left expand and collapse the focused folder.
+- Folder tree keys: Tab moves between controls, Space toggles a checkbox, and Right and Left expand and collapse the focused folder.
 - Type sizes 15, 18 and 22 have no exact `Style.font` token.
 - Why line `hits`: spec 7.1 omits `hits` on the text row while the Docs board shows `hits picked, vulkan, cuda`. Spec 7.4 appears before 7.3 in the file.

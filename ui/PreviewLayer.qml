@@ -35,15 +35,22 @@ Item {
   readonly property real playhead: mine ? player.position : (entry.loc || 0)
   readonly property bool playingHere: mine && player.playing
   // The daemon's preview picks the line the opener jumps to; actions name that line.
-  readonly property var jump: preview && (kind === "text" || kind === "code") ? preview.jump : null
+  readonly property var jump: preview && kind === "text" ? preview.jump : null
+  // A preview error from the daemon (`{id, error}`), shown in place of the media.
+  readonly property var failure: preview && preview.error ? preview.error : null
   // Set when Qt cannot decode the full image (for example a missing image plugin).
   property bool fullFailed: false
   onPreviewChanged: fullFailed = false
+  onItemChanged: fullFailed = false
   readonly property string imageSource: {
+    var direct = kind === "image" && !offline && !fullFailed && Format.qtImage(entry.path) ? entry.path : ""
     var full = preview && preview.image && !fullFailed ? preview.image : ""
-    var path = full || entry.thumb || (kind === "image" ? entry.path : "")
+    var path = direct || full || entry.thumb || ""
     return path ? Util.fileUrl(path) : ""
   }
+  readonly property bool mediaReady: imageSource === "" || kind === "audio"
+    || kind === "text" || (kind === "pdf" ? page.status !== Image.Loading
+      : frame.status !== Image.Loading)
 
   function folder(value) {
     var dir = value.dir || ""
@@ -63,6 +70,7 @@ Item {
 
   Item {
     id: media
+    visible: !root.failure
     anchors.top: parent.top
     anchors.topMargin: Style.space(26)
     anchors.left: parent.left
@@ -86,7 +94,7 @@ Item {
 
       Icon {
         anchors.centerIn: parent
-        visible: frame.status !== Image.Ready && root.kind !== "video"
+        visible: (frame.status === Image.Error || root.imageSource === "") && root.kind !== "video"
         name: "image"
         size: Style.space(40)
         strokeWidth: 1.1
@@ -101,12 +109,13 @@ Item {
         source: root.imageSource
         fillMode: Image.PreserveAspectFit
         asynchronous: true
+        retainWhileLoading: root.shown
         // The box has stable dimensions; changing the decode size reloads the image.
         sourceSize: Qt.size(Math.round(width * Screen.devicePixelRatio), Math.round(height * Screen.devicePixelRatio))
-        mipmap: true
+        mipmap: false
         smooth: true
         opacity: root.offline ? 0.5 : 1
-        onStatusChanged: if (status === Image.Error && root.preview && source == Util.fileUrl(root.preview.image)) root.fullFailed = true
+        onStatusChanged: if (status === Image.Error && String(source) !== Util.fileUrl(root.entry.thumb || "")) root.fullFailed = true
       }
 
       VideoOutput {
@@ -398,13 +407,15 @@ Item {
       clip: true
 
       Image {
+        id: page
         anchors.fill: parent
         source: root.kind === "pdf" ? root.imageSource : ""
         fillMode: Image.PreserveAspectFit
         asynchronous: true
+        retainWhileLoading: root.shown
         // The box has stable dimensions; changing the decode size reloads the image.
         sourceSize: Qt.size(Math.round(width * Screen.devicePixelRatio), Math.round(height * Screen.devicePixelRatio))
-        mipmap: true
+        mipmap: false
         smooth: true
       }
 
@@ -434,7 +445,7 @@ Item {
     Rectangle {
       id: well
       anchors.centerIn: parent
-      visible: (root.kind === "text" || root.kind === "code") && !root.offline
+      visible: root.kind === "text" && !root.offline
       width: Style.space(640)
       height: Style.space(400)
       radius: Style.cornerRadius
@@ -536,6 +547,15 @@ Item {
     }
   }
 
+  ErrorCard {
+    objectName: "omafindPreviewError"
+    anchors.centerIn: media
+    width: Style.space(600)
+    compact: true
+    error: root.failure
+    visible: !!error
+  }
+
   Column {
     id: info
     anchors.top: media.bottom
@@ -613,7 +633,7 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       leftPadding: Style.space(6)
       visible: !root.offline && !!(root.preview && root.preview.opener)
-        && ["video", "pdf", "text", "code"].indexOf(root.kind) >= 0
+        && ["video", "pdf", "text"].indexOf(root.kind) >= 0
       tokens: root.preview && root.preview.opener ? [{k: "opener", v: root.preview.opener, tone: "plain"}] : []
       fontSize: Style.font.bodySmall
     }

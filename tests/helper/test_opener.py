@@ -17,8 +17,8 @@ def env(tmp_path):
 @pytest.mark.parametrize(
     "editor,tail",
     [
-        ("nvim", ["+41", "/tmp/a.txt"]),
-        ("vim", ["+41", "/tmp/a.txt"]),
+        ("nvim", ["-c", "41", "/tmp/a.txt"]),
+        ("vim", ["-c", "41", "/tmp/a.txt"]),
         ("nano", ["+41", "/tmp/a.txt"]),
         ("micro", ["+41", "/tmp/a.txt"]),
         ("helix", ["/tmp/a.txt:41"]),
@@ -116,22 +116,6 @@ def test_media_opens_at_second(env, kind, loc, expected):
     ]
 
 
-@pytest.mark.parametrize("editor", ["nvim", "vim", "nano", "micro", "helix"])
-@pytest.mark.parametrize("target", [8, None])
-def test_code_editor_jump(env, editor, target):
-    from pathlib import Path
-
-    from omafindd.opener import command
-
-    default = Path(env["HOME"]) / ".local/state/omarchy/defaults/editor"
-    default.parent.mkdir(parents=True)
-    default.write_text(editor)
-    line = target or 41
-    tail = [f"/tmp/a.html:{line}"] if editor == "helix" else [f"+{line}", "/tmp/a.html"]
-    assert command({"kind": "code", "path": "/tmp/a.html", "loc": 41,
-                    "open_line": target}, env=env) == ["omarchy-launch-editor", *tail]
-
-
 @pytest.mark.parametrize("uwsm", [True, False])
 @pytest.mark.parametrize("kind,how,tail", [
     ("audio", "open", ["mpv", "--start=12", "/tmp/media"]),
@@ -160,7 +144,7 @@ def test_helix_path_with_colon_and_no_line_does_not_raise(tmp_path):
     state = tmp_path / ".local/state/omarchy/defaults"
     state.mkdir(parents=True)
     (state / "editor").write_text("hx\n")
-    item = {"kind": "text", "path": "/notes/a:b.txt", "loc": None, "open_line": None, "info": {}}
+    item = {"kind": "text", "path": "/notes/a:b.txt", "loc": None, "info": {}}
     from omafindd.opener import description
 
     assert description(item, env={"HOME": str(tmp_path)})["at"] is None

@@ -25,6 +25,10 @@ def cli():
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
+    from omafindd import tools
+
+    # Build packages differ per host; tests that check them patch missing_build again.
+    monkeypatch.setattr(tools, "missing_build", lambda **kwargs: [])
     values = {"HOME": str(tmp_path / "home"), "XDG_CONFIG_HOME": str(tmp_path / "config"),
               "XDG_DATA_HOME": str(tmp_path / "data"), "XDG_RUNTIME_DIR": str(tmp_path / "run")}
     for key, value in values.items():
@@ -99,6 +103,7 @@ def test_setup_twice_installs_unit_and_restarts_active_service(cli, env, capsys)
             ["uv", "sync", "--project", str(ROOT / "helper"), "--frozen", "--no-dev"],
             ["systemctl", "--user", "daemon-reload"],
             ["systemctl", "--user", "is-active", "omafind.service"],
+            ["systemctl", "--user", "reset-failed", "omafind.service"],
             ["systemctl", "--user", "enable", "--now", "omafind.service"],
         ]
         if active == "active":
@@ -113,6 +118,22 @@ def test_setup_twice_installs_unit_and_restarts_active_service(cli, env, capsys)
         assert "runtime missing\n" in output
         assert "model missing\n" in output
         assert "bin/omafind build-runtime" in output
+
+
+@pytest.mark.parametrize("reset_code", [0, 1])
+def test_setup_resets_failed_unit_before_starting_and_ignores_reset_failure(cli, env, reset_code):
+    fake = FakeRun(active="failed")
+
+    def run(command, **kwargs):
+        result = fake(command, **kwargs)
+        if command == ["systemctl", "--user", "reset-failed", "omafind.service"]:
+            return subprocess.CompletedProcess(command, reset_code, "", "Unit was not failed.")
+        return result
+
+    assert cli.main(["setup"], env, run=run, probe=lambda path, timeout: True) == 0
+    commands = [command for command, _ in fake.calls]
+    reset = commands.index(["systemctl", "--user", "reset-failed", "omafind.service"])
+    assert commands[reset + 1] == ["systemctl", "--user", "enable", "--now", "omafind.service"]
 
 
 @pytest.fixture
@@ -296,6 +317,51 @@ def test_setup_socket_timeout_reports_journal(cli, env, capsys):
     assert "socket silent" in capsys.readouterr().err
 
 
+def test_setup_json_ends_with_ok(cli, env, capsys):
+    assert cli.main(["setup", "--json"], env, run=FakeRun(active="inactive"),
+                    probe=lambda path, timeout: True) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[:2] == ["unit active", "socket answering"]
+    assert json.loads(lines[-1]) == {"ok": True, "build_missing": []}
+
+
+def test_setup_json_carries_the_failed_step_output(cli, env, capsys):
+    def run(command, **kwargs):
+        if command == ["fd", "--version"]:
+            return subprocess.CompletedProcess(command, 0, "fd 10.5.0\n", "")
+        return subprocess.CompletedProcess(command, int(command[0] == "uv"), "",
+                                           "error: no network\n")
+
+    assert cli.main(["setup", "--json"], env, run=run) == 1
+    error = json.loads(capsys.readouterr().out.splitlines()[-1])["error"]
+    assert error["code"] == "helper-install-failed"
+    assert error["detail"].startswith("error: no network. ")
+    assert error["fix"] == {"kind": "retry"}
+
+
+def test_setup_json_reports_a_silent_socket(cli, env, capsys):
+    now = [0.0]
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    assert cli.setup(env, run=FakeRun(active="inactive"), probe=lambda path, timeout: False,
+                     clock=lambda: now[0], sleep=sleep, as_json=True) == 1
+    error = json.loads(capsys.readouterr().out.splitlines()[-1])["error"]
+    assert error["code"] == "helper-install-failed"
+    assert error["detail"].startswith("The omafind service did not answer on its socket. ")
+
+
+def test_setup_json_reports_an_os_error_as_the_last_line(cli, env, capsys):
+    del env["XDG_RUNTIME_DIR"]
+    assert cli.main(["setup", "--json"], env, run=FakeRun()) == 1
+    output = capsys.readouterr()
+    assert "XDG_RUNTIME_DIR is unset" in output.err
+    error = json.loads(output.out.splitlines()[-1])["error"]
+    assert error["code"] == "helper-install-failed"
+    assert error["detail"].startswith("XDG_RUNTIME_DIR is unset")
+
+
 def test_failed_runtime_build_does_not_download(cli, env):
     python = Path(env["HOME"]) / ".local/share/omafind/venv/bin/python"
     python.parent.mkdir(parents=True)
@@ -361,6 +427,21 @@ def test_discover_failure_exits_1_with_one_stderr_line(cli, env, monkeypatch, ca
     monkeypatch.setattr(discovery, 'snapshot', snapshot)
     assert cli.main(['discover', '--json'], env) == 1
     assert capsys.readouterr().err.splitlines() == ['scan failed more details']
+
+
+def test_discover_user_failure_prints_title_and_detail(cli, env, monkeypatch, capsys):
+    from omafindd import discovery, errors
+
+    python = Path(env['HOME']) / '.local/share/omafind/venv/bin/python'
+    monkeypatch.setattr(sys, 'prefix', str(python.parent.parent))
+
+    def snapshot(**kwargs):
+        raise errors.UserFailure(errors.drive_not_mounted('Photos2024'))
+
+    monkeypatch.setattr(discovery, 'snapshot', snapshot)
+    assert cli.main(['discover', '--json', '--volume', 'usb'], env) == 1
+    assert capsys.readouterr().err == (
+        'Photos2024 is not connected. Connect it, then press Retry.\n')
 
 
 def test_reindex_incremental_passes_force_false(cli, env, monkeypatch):
@@ -440,7 +521,7 @@ def test_status_volumes_queue_and_health_are_read_only(cli, env, venv, capsys):
     data = Path(env['XDG_DATA_HOME']) / 'omafind'
     index = data / 'index'
     index.mkdir(parents=True)
-    for uuid, label in (('u', 'Photos2024'), ('v', 'Backup'), ('code', 'code')):
+    for uuid, label in (('u', 'Photos2024'), ('v', 'Backup')):
         with sqlite3.connect(index / f'{uuid}.sqlite') as db:
             db.execute('CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)')
             db.execute("INSERT INTO meta VALUES('volume_label', ?)", (label,))

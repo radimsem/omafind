@@ -19,7 +19,7 @@ test('group sections follow best hit order and retain flat order within each kin
   const reordered = group([items[4], items[6], items[0]], { expanded: false });
   assert.deepEqual(plain(reordered.sections.map(section => section.kind)), ['pdf', 'text', 'image']);
   for (const [kind, title] of [['image', 'Images'], ['video', 'Video'], ['audio', 'Audio'],
-    ['pdf', 'PDFs'], ['text', 'Documents'], ['code', 'Code']]) assert.equal(sectionTitle(kind), title);
+    ['pdf', 'PDFs'], ['text', 'Documents']]) assert.equal(sectionTitle(kind), title);
 });
 
 test('weak results fold once at the end or expand without section headers', () => {
@@ -44,7 +44,7 @@ test('badge comes from offline field before location for each kind', () => {
   const { badge, group } = load('format.js', 'results.js');
   assert.equal(badge(fixture('offline').items[0]), 'offline');
   for (const [kind, want] of [['image', ''], ['video', '14:32'], ['audio', '7:55'],
-    ['pdf', 'p. 12'], ['text', 'L41'], ['code', 'L8']]) {
+    ['pdf', 'p. 12'], ['text', 'L41']]) {
     const item = fixture(kind).items[0];
     assert.equal(badge(item), want);
     assert.equal(group([item], { expanded: false }).rows[1].badge, want);
@@ -95,16 +95,17 @@ test('meaning replies win in either arrival order, stale sequences drop, and cur
   assert.equal(merge(meaning, { ...error, seq: 6 }, 7), meaning);
 });
 
-test('footer copy uses daemon totals, weaker counts, phases, and code prefix', () => {
+test('footer copy uses daemon totals, weaker counts and phases', () => {
   const { footerLeft } = load('format.js', 'results.js');
   assert.equal(footerLeft({ reply: fixture('main'), phase: 'done' }), '17 results · 3 weaker');
   assert.equal(footerLeft({ reply: fixture('main'), phase: 'words' }), 'Matching words…');
-  assert.equal(footerLeft({ reply: fixture('degraded'), phase: 'degraded', prefix: 'code' }),
-    '6 results · keyword matches only');
-  assert.equal(footerLeft({ reply: { total: 4, weaker: 5 }, prefix: 'code' }), '4 results in your code · 5 weaker');
-  assert.equal(footerLeft({ reply: { total: 4, weaker: 5 }, prefix: 'code:' }), '4 results in your code · 5 weaker');
+  assert.equal(footerLeft({ reply: fixture('degraded'), phase: 'degraded' }), '6 results · keyword matches only');
+  assert.equal(footerLeft({ reply: { total: 4, weaker: 5 } }), '4 results · 5 weaker');
   assert.equal(footerLeft({ reply: { total: 1, weaker: 0 } }), '1 result');
   assert.equal(footerLeft({ reply: { total: 1204, weaker: 0 } }), '1,204 results');
+  assert.equal(footerLeft({ reply: { total: 2, weaker: 0, degraded: { code: 'server-starting',
+    title: 'The embedding server is starting.', detail: 'Showing keyword matches until it is ready.' } },
+  phase: 'degraded' }), '2 results · keyword matches only');
 });
 
 test('idle footer uses offline labels and only shows incomplete indexing progress', () => {
@@ -131,4 +132,25 @@ test('jump moves by selectable rows and clamps at both ends', () => {
   assert.equal(jump(rows, indexes[2], -Infinity), indexes[0]);
   assert.equal(jump(rows, -1, 1), indexes[0]);
   assert.equal(jump([], 0, 1), -1);
+});
+
+test('the banner slot shows one error and names what its Retry does', () => {
+  const R = load('format.js', 'errors.js', 'results.js');
+  const update = { code: 'update-failed', title: 'omafindd did not update.',
+    detail: 'uv sync failed. Press Retry to try again.', fix: { kind: 'retry' } };
+  const offline = R.offline('');
+  const degraded = fixture('degraded');
+  const warm = { code: 'server-start-failed', title: 'The embedding server did not start.',
+    detail: 'It exited with code 1. Showing keyword matches until it starts.', fix: { kind: 'retry' } };
+  assert.equal(R.bannerFor({ reply: fixture('main') }), null);
+  assert.deepEqual(plain(R.bannerFor({ update, offline, reply: degraded })), { error: update, retry: 'update' });
+  assert.equal(R.bannerFor({ offline, reply: degraded }).retry, 'connect');
+  assert.deepEqual(plain(R.bannerFor({ reply: degraded, warm })), { error: plain(degraded.degraded), retry: 'warm' });
+  assert.deepEqual(plain(R.bannerFor({ reply: fixture('main'), warm })), { error: warm, retry: 'warm' });
+  assert.deepEqual(plain(R.bannerFor({ reply: { t: 'error', seq: 4, code: 'no-index',
+    title: 'Nothing is indexed yet.', detail: 'Open setup and start the first index.' } })),
+  { error: { code: 'no-index', title: 'Nothing is indexed yet.', detail: 'Open setup and start the first index.' },
+    retry: 'search' });
+  assert.deepEqual(plain(R.bannerFor({ reply: { ...fixture('main'), degraded: 'Vulkan device lost' } })),
+    { error: { code: 'unknown', title: 'Vulkan device lost', detail: '' }, retry: 'search' });
 });

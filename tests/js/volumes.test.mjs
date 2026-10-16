@@ -148,17 +148,29 @@ test('settings replace ignored UUIDs and suppress pending prompts for those driv
 
 test('paused shows the disk banner and resumed clears it', () => {
   const v = volumes();
+  const diskLow = {code: 'disk-low', title: 'Indexing is paused.',
+    detail: 'Free some disk space and indexing resumes by itself.'};
   assert.equal(v.diskBanner(v.initial()), null);
   const result = v.reduce(freeze(v.initial()), {type: 'paused',
-    message: freeze({t: 'paused', reason: 'disk', free_gb: 1.4, need_gb: 2})});
-  assert.deepEqual(plain(result.state.disk), {free_gb: 1.4, need_gb: 2});
-  assert.deepEqual(plain(v.diskBanner(result.state)), {title: 'Indexing paused',
-    tokens: [{k: 'free', v: '1.4 GB'}, {k: 'needed', v: '2 GB'}],
-    text: 'Free some disk space and indexing resumes.'});
+    message: freeze({t: 'paused', error: diskLow, free_gb: 1.4, need_gb: 2})});
+  assert.deepEqual(plain(result.state.disk), {free_gb: 1.4, need_gb: 2, error: diskLow});
+  assert.deepEqual(plain(v.diskBanner(result.state)), {error: diskLow,
+    tokens: [{k: 'free', v: '1.4 GB'}, {k: 'needed', v: '2 GB'}]});
   const resumed = v.reduce(freeze(result.state), {type: 'resumed'});
   assert.equal(resumed.state.disk, null);
   assert.equal(v.diskBanner(resumed.state), null);
   assert.deepEqual(plain(resumed.effects), []);
+});
+
+test('an older daemon disk pause still explains why indexing is paused', () => {
+  const v = volumes();
+  const { state } = v.reduce(freeze(v.initial()), {type: 'paused',
+    message: {t: 'paused', reason: 'disk', free_gb: 1.4, need_gb: 2}});
+  assert.deepEqual(plain(v.diskBanner(state)), {
+    error: {code: 'unknown', title: 'Indexing is paused.',
+      detail: 'The disk does not have enough free space. Free some space and indexing continues.'},
+    tokens: [{k: 'free', v: '1.4 GB'}, {k: 'needed', v: '2 GB'}],
+  });
 });
 
 test('fsName uses display casing without changing unknown filesystems', () => {

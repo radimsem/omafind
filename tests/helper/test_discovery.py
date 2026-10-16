@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 
 import pytest
-from omafindd import discovery
+from omafindd import discovery, errors
+from omafindd.errors import UserFailure
 
 
 class Process:
@@ -46,8 +47,10 @@ def test_list_dirs_hides_dot_and_heavy_and_reports_missing(tmp_path):
     (tmp_path / 'file').touch()
     assert discovery.list_dirs('~', home=tmp_path) == {
         'path': '~', 'abs': str(tmp_path), 'dirs': ['apple', 'Zebra'], 'error': None}
-    assert discovery.list_dirs('~/missing', home=tmp_path)['error'] == 'missing'
-    assert discovery.list_dirs('~/file', home=tmp_path)['error'] == 'not-a-directory'
+    assert discovery.list_dirs('~/missing', home=tmp_path)['error'] == errors.scan_failed(
+        str(tmp_path / 'missing'), 'No such file or directory').to_dict()
+    assert discovery.list_dirs('~/file', home=tmp_path)['error'] == errors.scan_failed(
+        str(tmp_path / 'file'), 'Not a directory').to_dict()
 
 
 def test_list_dirs_reports_an_unreadable_directory(tmp_path, monkeypatch):
@@ -56,7 +59,8 @@ def test_list_dirs_reports_an_unreadable_directory(tmp_path, monkeypatch):
 
     monkeypatch.setattr(discovery.os, 'scandir', denied)
     assert discovery.list_dirs('/root', home=tmp_path) == {
-        'path': '/root', 'abs': '/root', 'dirs': [], 'error': 'denied'}
+        'path': '/root', 'abs': '/root', 'dirs': [],
+        'error': errors.scan_failed('/root', 'Permission denied').to_dict()}
 
 
 def test_xdg_dirs_reads_home_and_omits_home_itself(tmp_path):
@@ -99,8 +103,9 @@ def test_folders_hide_symlinks_hidden_heavy_and_secrets(tmp_path):
     (tmp_path / "file.txt").write_text("x")
     rows = discovery.folders(tmp_path)
     assert rows == [
-        {"path": str(tmp_path / "code"), "name": "code", "repo": True, "hasChildren": False},
-        {"path": str(tmp_path / "Documents"), "name": "Documents", "repo": False,
+        {"path": str(tmp_path / "code"), "name": "code", "repo": True, "worktree": False,
+         "hasChildren": False},
+        {"path": str(tmp_path / "Documents"), "name": "Documents", "repo": False, "worktree": False,
          "hasChildren": True},
     ]
 
@@ -131,8 +136,25 @@ def test_top_for_a_volume_lists_the_mount(tmp_path):
     assert body["roots"] == [{"path": str(drive), "volume": "usb"}]
     assert [(r["name"], r["volume"], r["xdg"]) for r in body["folders"]] == [
         ("Photos", "usb", False)]
-    with pytest.raises(ValueError):
+    with pytest.raises(UserFailure) as raised:
         discovery.top(home=tmp_path / "home", volume="gone", lsblk=lsblk)
+    assert raised.value.error == errors.drive_not_mounted("The drive")
+
+
+def test_top_for_an_unmounted_volume_names_the_drive(tmp_path):
+    lsblk = {"blockdevices": [{"uuid": "disk", "children": [
+        {"uuid": "usb", "label": "Photos2024", "mountpoints": [None]}]}]}
+    with pytest.raises(UserFailure) as raised:
+        discovery.top(home=tmp_path / "home", volume="usb", lsblk=lsblk)
+    assert raised.value.error == errors.drive_not_mounted("Photos2024")
+
+
+def test_top_of_an_unreadable_home_names_the_folder(tmp_path):
+    with pytest.raises(UserFailure) as raised:
+        discovery.top(home=tmp_path / "gone", lsblk={"blockdevices": []}, xdg={},
+                      volume_of=lambda path: ("root", path))
+    assert raised.value.error == errors.scan_failed(str(tmp_path / "gone"),
+                                                    "No such file or directory")
 
 
 def test_top_caps_rows_at_limit(tmp_path, monkeypatch):
@@ -160,6 +182,7 @@ def test_walk_rolls_counts_up_in_batches(tmp_path):
     assert len(batches) >= 2
     final = batches[-1]
     assert final["root"] == str(tmp_path) and final["datasets"] == []
+    assert final["repos"] == [] and final["worktrees"] == []
     assert isinstance(final["seconds"], float)
     both = ZERO | {"text": 1, "pdf": 1, "image": 1}
     assert walk.count(str(tmp_path)) == both | {"dirs": 3}
@@ -189,7 +212,9 @@ def test_walk_of_a_missing_root_ends_with_error(tmp_path):
     walk = discovery.Walk(tmp_path / "gone")
     batches = []
     walk.run(batches.append)
-    assert batches[-1]["done"] is True and batches[-1]["error"]
+    assert batches[-1]["done"] is True
+    assert batches[-1]["error"] == errors.scan_failed(
+        str(tmp_path / "gone"), "No such file or directory").to_dict()
     assert walk.snapshot()["error"] == batches[-1]["error"]
 
 
@@ -221,7 +246,8 @@ def test_children_mark_datasets_with_evidence(tmp_path):
 def test_children_of_unreadable_folder_report_error(tmp_path):
     body = discovery.children(tmp_path / "missing")
     assert body == {"path": str(tmp_path / "missing"), "dirs": [],
-                    "error": "No such file or directory"}
+                    "error": errors.scan_failed(str(tmp_path / "missing"),
+                                                "No such file or directory").to_dict()}
 
 
 def test_stop_terminates_and_reaps_the_fd_process(tmp_path):
@@ -274,7 +300,8 @@ def test_folders_tolerate_an_untraversable_child(tmp_path):
     child.chmod(0)
     try:
         assert discovery.folders(tmp_path) == [
-            {"path": str(child), "name": "denied", "repo": False, "hasChildren": False}]
+            {"path": str(child), "name": "denied", "repo": False, "worktree": False,
+             "hasChildren": False}]
     finally:
         child.chmod(0o700)
 
@@ -329,3 +356,75 @@ def test_walk_uses_media_tallies_instead_of_retaining_paths(tmp_path, monkeypatc
     walk.run(lambda batch: None)
     assert seen == [{(str(folder), "image"): [300, 300]}]
     assert walk.dataset(str(folder)) == {"kind": "image", "files": 300, "named": 100}
+
+
+def _repo(path):
+    (path / ".git").mkdir(parents=True)
+
+
+def _linked(path, gitdir, *, worktree):
+    path.mkdir(parents=True)
+    gitdir.mkdir(parents=True)
+    if worktree:
+        (gitdir / "commondir").write_text("../..\n")
+    (path / ".git").write_text(f"gitdir: {gitdir}\n")
+
+
+def test_git_kind_tells_repo_worktree_submodule_and_plain(tmp_path):
+    _repo(tmp_path / "main")
+    _linked(tmp_path / "wt", tmp_path / "main/.git/worktrees/wt", worktree=True)
+    _linked(tmp_path / "main/sub", tmp_path / "main/.git/modules/sub", worktree=False)
+    (tmp_path / "plain").mkdir()
+    (tmp_path / "odd").mkdir()
+    (tmp_path / "odd/.git").write_text("not a gitdir line")
+    assert [discovery.git_kind(str(tmp_path / name)) for name in
+            ("main", "wt", "main/sub", "plain", "odd")] == [
+        "repo", "worktree", "repo", None, None]
+
+
+def test_relative_gitdir_resolves_against_the_folder(tmp_path):
+    _repo(tmp_path / "main")
+    (tmp_path / "main/.git/worktrees/wt").mkdir(parents=True)
+    (tmp_path / "main/.git/worktrees/wt/commondir").write_text("../..\n")
+    (tmp_path / "wt").mkdir()
+    (tmp_path / "wt/.git").write_text("gitdir: ../main/.git/worktrees/wt\n")
+    assert discovery.git_kind(str(tmp_path / "wt")) == "worktree"
+
+
+def test_rows_and_walk_report_repos_and_worktrees(tmp_path):
+    _repo(tmp_path / "proj/main")
+    (tmp_path / "proj/main/a.md").write_text("a")
+    _linked(tmp_path / "proj/wt", tmp_path / "proj/main/.git/worktrees/wt", worktree=True)
+    (tmp_path / "proj/wt/b.md").write_text("b")
+    (tmp_path / "proj/code-only").mkdir()
+    (tmp_path / "proj/code-only/.git").mkdir()
+    (tmp_path / "proj/code-only/x.py").write_text("x")
+    rows = {row["name"]: row for row in discovery.folders(tmp_path / "proj")}
+    assert (rows["main"]["repo"], rows["main"]["worktree"]) == (True, False)
+    assert (rows["wt"]["repo"], rows["wt"]["worktree"]) == (False, True)
+    walk = discovery.Walk(tmp_path)
+    batches = []
+    walk.run(batches.append)
+    assert batches[-1]["repos"] == [str(tmp_path / "proj/code-only"), str(tmp_path / "proj/main")]
+    assert batches[-1]["worktrees"] == [str(tmp_path / "proj/wt")]
+    assert walk.snapshot()["worktrees"] == [str(tmp_path / "proj/wt")]
+
+
+def test_walk_leaves_source_files_of_repos_uncounted(tmp_path):
+    _repo(tmp_path / "proj/main")
+    for name in ("app.py", "README.md", "Makefile", "build/out.py", "data.bin"):
+        (tmp_path / "proj/main" / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "proj/main" / name).write_text("x")
+    _linked(tmp_path / "proj/wt", tmp_path / "proj/main/.git/worktrees/wt", worktree=True)
+    (tmp_path / "proj/wt/app.py").write_text("x")
+    (tmp_path / "proj/loose.py").write_text("x")
+    process = Process([tmp_path / "proj/main" / name for name in
+                       ("app.py", "README.md", "Makefile", "build/out.py", "data.bin")]
+                      + [tmp_path / "proj/wt/app.py", tmp_path / "proj/loose.py"])
+    walk = discovery.Walk(tmp_path, popen=lambda *args, **kwargs: process)
+    walk.run(lambda batch: None)
+    assert walk.count(str(tmp_path / "proj/main")) == ZERO | {"text": 1, "dirs": 1}
+    assert walk.count(str(tmp_path / "proj")) == ZERO | {"text": 1, "dirs": 2}
+    assert walk.count(str(tmp_path / "proj/wt")) == ZERO
+    assert walk.repos == [str(tmp_path / "proj/main")]
+    assert walk.worktrees == [str(tmp_path / "proj/wt")]

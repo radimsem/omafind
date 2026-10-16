@@ -9,7 +9,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from . import build, health, paths, permissions, recovery
+from . import build, health, paths, permissions, recovery, startlog
 from .diskguard import DiskGuard
 from .install import RuntimeJob
 from .ipc import AlreadyRunning, IpcServer
@@ -55,6 +55,9 @@ class _LazyEmbedder:
     def connection_env(self):
         return self.instance.connection_env if self.instance is not None else {}
 
+    def ready(self, mode) -> bool:
+        return self.instance is not None and self.instance.ready(mode)
+
     async def start(self, mode):
         if self.instance is None:
             self.instance = Adapter(Embedder(
@@ -70,8 +73,17 @@ class _LazyEmbedder:
         return await self.instance.embed_query(text)
 
 
+def _drop_code_index(directory):
+    """Deletes the code index an older omafindd left in `directory/index`, if any."""
+    for name in ('code.sqlite', 'code.sqlite-wal', 'code.sqlite-shm'):
+        try:
+            (directory / 'index' / name).unlink()
+        except OSError:
+            pass
+
+
 def _repair(directory):
-    paths_to_check = [p for p in (directory / 'index').glob('*.sqlite') if p.name != 'code.sqlite']
+    paths_to_check = list((directory / 'index').glob('*.sqlite'))
     if not paths_to_check:
         return []
     from .store import Store, mounted_volumes, quarantine, quick_check
@@ -408,6 +420,7 @@ async def _serve(manifest: Path | None = None, *, interval: float = 0.5) -> int:
     settings = SettingsReader(paths.shell_json_path())
     verifier = Verifier()
     detected = await asyncio.to_thread(State.detect, verifier)
+    await asyncio.to_thread(_drop_code_index, directory)
     problems = await asyncio.to_thread(_repair, directory)
     report = health.read(directory / 'index/health.json')
     report.update(started=time.time(), recovery={
@@ -448,6 +461,7 @@ async def _serve(manifest: Path | None = None, *, interval: float = 0.5) -> int:
     clean = False
     try:
         await server.start()
+        startlog.clear()
         try:
             await asyncio.to_thread(freshness.volumes.snapshot)
         except (OSError, ValueError, subprocess.SubprocessError):
@@ -506,6 +520,7 @@ def run() -> int:
         return asyncio.run(_serve())
     except (OSError, ValueError) as error:
         logger.error('%s', error)
+        startlog.write(str(error))
         return 1
     except KeyboardInterrupt:
         return 0

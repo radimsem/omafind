@@ -1,6 +1,8 @@
 import asyncio
+import contextlib
 import ctypes
 import os
+import re
 import secrets
 import signal
 import socket
@@ -15,6 +17,7 @@ from typing import Literal
 import httpx
 import numpy as np
 
+from omafindd import errors
 from omafindd.models import FILES
 
 Mode = Literal["text", "full"]
@@ -38,7 +41,15 @@ def loopback_url(url):
 
 
 class EmbeddingError(Exception):
-    pass
+    user_error = None
+
+    def __init__(self, *args, user_error=None):
+        super().__init__(*args)
+        self.user_error = user_error
+
+
+class EmbeddingRejected(EmbeddingError):
+    """The server answered with an error status; the input, not the server, is at fault."""
 
 
 @dataclass(frozen=True)
@@ -134,6 +145,57 @@ def _parent_death_signal(parent, sig=signal.SIGTERM):
         os.kill(os.getpid(), sig)
 
 
+REQUEST_SLOTS = 2
+SERVER_LOG = "llama-server.log"
+_LOG_CAUSE = re.compile(r"error|failed|no devices", re.IGNORECASE)
+
+
+def _open_log():
+    from omafindd import paths
+
+    try:
+        path = paths.logs_dir() / SERVER_LOG
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+            return path, os.fdopen(fd, "wb")
+        except OSError:
+            os.close(fd)
+            raise
+    except OSError:
+        return None, None
+
+
+def _log_cause(path) -> str | None:
+    """The last line of a server log that names an error, cut to 100 characters."""
+    if path is None:
+        return None
+    try:
+        tail = Path(path).read_bytes()[-65536:].decode(errors="replace")
+    except OSError:
+        return None
+    line = next((line.strip() for line in reversed(tail.splitlines())
+                 if _LOG_CAUSE.search(line)), None)
+    if not line:
+        return None
+    line = line.rstrip(".")
+    return line if len(line) <= 100 else line[:99].rstrip() + "…"
+
+
+def _attempt_cause(error, log_path) -> str:
+    clause = (str(error) if isinstance(error, EmbeddingError)
+              else f"It could not be started ({error.strerror or error})")
+    line = _log_cause(log_path)
+    return clause if line is None else f"{clause} ({line})"
+
+
+def _start_cause(causes) -> str:
+    if len(causes) == 1:
+        return causes[0][1]
+    return "; ".join(f"{device.upper()}: {cause[:1].lower()}{cause[1:]}"
+                     for device, cause in causes)
+
+
 class Embedder:
     def __init__(self, *, binary=None, model_dir=None, runner=subprocess.run,
                  spawner=asyncio.create_subprocess_exec, startup_timeout=60.0,
@@ -150,6 +212,12 @@ class Embedder:
         self._process = None
         self._client = None
         self._lock = asyncio.Lock()
+        self._requests = asyncio.Semaphore(REQUEST_SLOTS)
+
+    def ready(self, mode: Mode) -> bool:
+        if self._client is None or not (self.mode == mode or self.mode == "full"):
+            return False
+        return self.shared or self._process is not None and self._process.returncode is None
 
     @property
     def connection_env(self):
@@ -164,7 +232,8 @@ class Embedder:
                     self.shared or self._process is not None
                     and self._process.returncode is None):
                 return
-            await self._stop()
+            async with self._drained():
+                await self._stop()
             if self.shared:
                 self._client = httpx.AsyncClient(
                     base_url=self._base_url,
@@ -191,20 +260,30 @@ class Embedder:
             free_mib = await asyncio.to_thread(free_vram, self.runner)
             device = choose_device(mode, free_mib)
             devices = [device, "cpu"] if free_mib is None else [device]
+            causes = []
             for attempt, device in enumerate(devices):
+                log_path = None
                 try:
                     with socket.socket() as sock:
                         sock.bind(("127.0.0.1", 0))
                         port = sock.getsockname()[1]
                     api_key = secrets.token_urlsafe(32)
                     self._api_key = api_key
-                    self._process = await self.spawner(
-                        *build_command(binary, directory, mode, device, port),
-                        env={**os.environ, "LLAMA_API_KEY": api_key},
-                        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-                        preexec_fn=partial(_parent_death_signal, os.getpid())
-                        if sys.platform == "linux" else None,
-                    )
+                    # Truncated per attempt, so after a GPU then CPU failure it holds the CPU run.
+                    log_path, log = _open_log()
+                    try:
+                        # The key goes only in the environment, never in argv.
+                        self._process = await self.spawner(
+                            *build_command(binary, directory, mode, device, port),
+                            env={**os.environ, "LLAMA_API_KEY": api_key},
+                            stdout=asyncio.subprocess.DEVNULL if log is None else log,
+                            stderr=asyncio.subprocess.STDOUT,
+                            preexec_fn=partial(_parent_death_signal, os.getpid())
+                            if sys.platform == "linux" else None,
+                        )
+                    finally:
+                        if log is not None:
+                            log.close()
                     self._client = httpx.AsyncClient(
                         base_url=f"http://127.0.0.1:{port}",
                         headers={"Authorization": f"Bearer {api_key}"},
@@ -213,8 +292,12 @@ class Embedder:
                     await self._wait_ready(self._process, self._client)
                 except (OSError, EmbeddingError) as error:
                     await self._stop()
+                    causes.append((device, _attempt_cause(error, log_path)))
                     if attempt == len(devices) - 1:
-                        raise EmbeddingError("Embedding server failed to start") from error
+                        raise EmbeddingError(
+                            "Embedding server failed to start",
+                            user_error=errors.server_start_failed(_start_cause(causes), log_path),
+                        ) from error
                 except BaseException:
                     await self._stop()
                     raise
@@ -234,12 +317,28 @@ class Embedder:
                         pass
                     await asyncio.sleep(0.01)
         except TimeoutError as error:
-            raise EmbeddingError("Embedding server start timed out") from error
-        raise EmbeddingError("Embedding server exited during start")
+            raise EmbeddingError(f"It did not answer within {self.startup_timeout:g} s") from error
+        code = process.returncode
+        raise EmbeddingError(f"It was stopped by signal {-code}" if code < 0
+                             else f"It exited with code {code}")
 
     async def stop(self) -> None:
-        async with self._lock:
+        async with self._lock, self._drained():
             await self._stop()
+
+    @contextlib.asynccontextmanager
+    async def _drained(self):
+        # embed holds a request slot rather than the lock, so take every slot before a stop
+        # kills the server or closes the client under an in-flight request.
+        taken = 0
+        try:
+            while taken < REQUEST_SLOTS:
+                await self._requests.acquire()
+                taken += 1
+            yield
+        finally:
+            for _ in range(taken):
+                self._requests.release()
 
     async def _stop(self) -> None:
         process, client = self._process, self._client
@@ -263,7 +362,7 @@ class Embedder:
                 await client.aclose()
 
     async def embed(self, parts: Sequence[Part]) -> list[np.ndarray]:
-        async with self._lock:
+        async with self._requests:
             process, client = self._process, self._client
             if (self.mode is None or client is None or not self.shared
                     and (process is None or process.returncode is not None)):
@@ -276,6 +375,15 @@ class Embedder:
                 try:
                     response = await client.post("/v1/embeddings", json=build_request(batch))
                     response.raise_for_status()
+                except httpx.HTTPStatusError as error:
+                    try:
+                        message = str(error.response.json()["error"]["message"])
+                    except (ValueError, KeyError, TypeError):
+                        message = error.response.reason_phrase
+                    status = error.response.status_code
+                    # llama-server answers 500 when the input is over its batch size.
+                    rejection = EmbeddingRejected if status in (400, 413, 500) else EmbeddingError
+                    raise rejection(f"HTTP {status}: {message[:200]}") from error
                 except (httpx.HTTPError, RuntimeError) as error:
                     raise EmbeddingError("Embedding request failed") from error
                 if process is not None and process.returncode is not None:

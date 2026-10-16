@@ -8,12 +8,11 @@ const search = () => load('format.js', 'results.js', 'searchState.js');
 test('prefixes are lowercase, anchored, and strip only leading spaces from the remaining query', () => {
   const { parse } = search();
   for (const [prefix, kind] of [['img:', 'image'], ['pdf:', 'pdf'], ['doc:', 'text'],
-    ['vid:', 'video'], ['aud:', 'audio'], ['code:', 'code']]) {
-    assert.deepEqual(plain(parse(prefix + '  router ')),
-      { prefix, kind, text: 'router ', code: kind === 'code' });
+    ['vid:', 'video'], ['aud:', 'audio']]) {
+    assert.deepEqual(plain(parse(prefix + '  router ')), { prefix, kind, text: 'router ' });
   }
-  for (const query of ['IMG: router', ' img: router', 'find img: router', 'router']) {
-    assert.deepEqual(plain(parse(query)), { prefix: null, kind: null, text: query, code: false });
+  for (const query of ['IMG: router', ' img: router', 'find img: router', 'router', 'code: router']) {
+    assert.deepEqual(plain(parse(query)), { prefix: null, kind: null, text: query });
   }
 });
 
@@ -179,4 +178,18 @@ test('latency shows whole milliseconds', () => {
   const reply = freeze({ ...fixture('main'), seq: 1, ms: { total: 17.418 } });
   const done = reduce(freeze(typed), { type: 'reply', reply });
   assert.deepEqual(plain(status(done.state, reply)), { text: '17 ms', spinner: false });
+});
+
+
+test('an early meaning tick reports the time left and a later tick sends once', () => {
+  const { initial, reduce, remaining } = search();
+  let state = reduce(initial(), { type: 'typed', query: 'router', now: 1000 }).state;
+  state = reduce(state, { type: 'words-due', now: 1050 }).state;
+  const early = reduce(state, { type: 'meaning-due', now: 1199 });
+  assert.equal(early.send, null);
+  assert.equal(remaining(state, 'meaning-due', 1199), 1);
+  const late = reduce(early.state, { type: 'meaning-due', now: 1200 });
+  assert.deepEqual(plain(late.send.legs), ['words', 'meaning']);
+  assert.equal(remaining(late.state, 'meaning-due', 1300), 0);
+  assert.equal(reduce(late.state, { type: 'meaning-due', now: 1300 }).send, null);
 });

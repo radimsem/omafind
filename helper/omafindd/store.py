@@ -6,6 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from . import failures
 from .models import REVISION
 from .search_text import normalized
 
@@ -284,11 +285,18 @@ class Store:
         path.chmod(0o600)
         return str(path)
 
-    def fail(self, file: int, detail: str):
+    def fail(self, file: int, code: str, detail: str = ""):
         self._thumbnail_path(file).unlink(missing_ok=True)
         with self.db:
             self.clear_segments(file, keeping_name=True)
-            self.db.execute("UPDATE files SET state='failed',detail=? WHERE id=?", (detail, file))
+            self.db.execute("UPDATE files SET state='failed',detail=? WHERE id=?",
+                            (failures.encode(code, detail), file))
+
+    def halt(self, file: int, code: str, detail: str = ""):
+        """Stops a partial file where it is: its segments stay and it leaves the queue."""
+        with self.db:
+            self.db.execute("UPDATE files SET detail=? WHERE id=? AND state='partial'",
+                            (failures.encode(code, detail), file))
 
     @classmethod
     def open_existing(cls, path: Path, mount: Path):

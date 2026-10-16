@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import ".." as Plugin
+import "../lib/errors.js" as Errors
 
 // The "Add folder" picker inside the overlay (plan D11): a path field completed from `fs_list`.
 // A portal or FolderDialog window would open beneath the exclusive-focus overlay layer.
@@ -27,7 +28,7 @@ Item {
     var low = stem.toLowerCase()
     return listing.dirs.filter(name => name.toLowerCase().indexOf(low) === 0).slice(0, 6)
   }
-  readonly property string error: listing && listing.path === parentPath && listing.error ? listing.error : ""
+  readonly property string error: listing && listing.path === parentPath && listing.error ? Errors.wrap(listing.error).title : ""
 
   function focusField() {
     input.forceActiveFocus()

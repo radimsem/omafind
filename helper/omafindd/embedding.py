@@ -9,6 +9,7 @@ from .extractors import ImagePart
 
 
 class Embedder(Protocol):
+    def ready(self, mode: str) -> bool: ...
     async def start(self, mode: str) -> None: ...
     async def stop(self) -> None: ...
     async def embed_query(self, text: str) -> np.ndarray: ...
@@ -32,6 +33,9 @@ class Adapter:
     @property
     def connection_env(self):
         return self.runtime.connection_env
+
+    def ready(self, mode) -> bool:
+        return self.runtime.ready(mode)
 
     async def start(self, mode):
         await self.runtime.start(mode)

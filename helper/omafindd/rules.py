@@ -195,12 +195,13 @@ def fd_args(
 
 
 def walk(
-    root: Path, *, excludes: Sequence[str], run=subprocess.Popen, only: Sequence[Path] | None = None
+    root: Path, *, excludes: Sequence[str], run=subprocess.Popen,
+    only: Sequence[Path] | None = None, kinds: Iterable[str] = INDEXED_KINDS,
 ) -> Iterator[Path]:
     if only is not None:
         # The --full-path pattern holds resolved paths, so fd must see the resolved root too.
         root = root.resolve()
-    args = fd_args(root, excludes=excludes, kinds=INDEXED_KINDS, only=only)
+    args = fd_args(root, excludes=excludes, kinds=kinds, only=only)
     # fd can fill a stderr pipe before it closes stdout, blocking both readers.
     with tempfile.TemporaryFile() as errors, run(
         args, stdout=subprocess.PIPE, stderr=errors, cwd=root

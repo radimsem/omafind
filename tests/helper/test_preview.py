@@ -34,11 +34,10 @@ def test_docs_jump_and_rg_hits(environment):
     assert reply["mode"] == "lines"
 
 
-def test_code_uses_open_line_and_empty_query(environment):
-    path = environment / "a.py"
+def test_empty_query_jumps_to_the_chunk_start(environment):
+    path = environment / "a.txt"
     path.write_text("\n".join(["pass"] * 25))
-    reply = preview.render({"id": "code", "kind": "code", "path": str(path),
-                            "loc": 1, "open_line": 20}, "")
+    reply = preview.render({"id": "text", "kind": "text", "path": str(path), "loc": 20}, "")
     assert reply["jump"] == 20
     assert reply["range"] == [12, 25]
     assert not any(line["hit"] for line in reply["lines"])
@@ -126,10 +125,17 @@ def test_video_frame_command_and_cache(environment, monkeypatch):
 
     monkeypatch.setattr(preview.subprocess, "run", run)
     item = {"id": "video", "kind": "video", "path": str(path), "loc": 872}
-    assert preview.render(item)["jump"] == 872
+    legacy = preview.paths.preview_dir() / (preview._cache_key(path, 872, 1024) + ".jpg")
+    legacy.write_bytes(b"old frame")
+    reply = preview.render(item)
+    assert reply["jump"] == 872
+    assert Path(reply["image"]) != legacy
+    assert Path(reply["image"]).read_bytes() == b"frame"
     preview.render(item)
     assert len(calls) == 1
     assert calls[0][:5] == ["ffmpeg", "-v", "error", "-ss", "872"]
+    assert calls[0][calls[0].index("-vf") + 1] == "scale='min(1024,iw)':-2"
+    assert calls[0][calls[0].index("-q:v"):calls[0].index("-q:v") + 2] == ["-q:v", "2"]
     assert "-y" in calls[0]
 
 
@@ -152,7 +158,7 @@ def test_failed_concurrent_render_preserves_finished_image(environment, monkeypa
     path = environment / "source"
     path.touch()
     jump = 1
-    key = preview._cache_key(path, jump, preview.RENDER_SIDE if kind == "pdf" else 1024)
+    key = preview._cache_key(path, jump, preview.RENDER_SIDE if kind == "pdf" else "1024q2")
     image = preview.paths.preview_dir() / (key + (".png" if kind == "pdf" else ".jpg"))
     outputs = []
 

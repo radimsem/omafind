@@ -1,0 +1,3 @@
+[3/298] Generating shaders
+FAILED: ggml/src/ggml-vulkan/ggml-vulkan-shaders.hpp
+ninja: build stopped: subcommand failed.

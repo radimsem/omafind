@@ -78,6 +78,19 @@ FocusScope {
     return walk && walk.done ? {text: 0, pdf: 0, image: 0, video: 0, audio: 0} : null
   }
 
+  function cellsOf(shown) {
+    return Setup.KINDS.map(kind => ({n: shown[kind] || 0, cut: false}))
+  }
+
+  // Known worktrees and datasets: a click that turns a folder on leaves them out again.
+  function skipDefaults() {
+    return service ? Object.keys(Object.assign({}, service.datasets, service.worktrees)) : []
+  }
+
+  function clickRow(path) {
+    root.choicesEdited(Tree.click(root.choices, path, skipDefaults()))
+  }
+
   function evidenceOf(path) {
     return datasets[path] || (meta[path] && meta[path].evidence) || null
   }
@@ -95,7 +108,7 @@ FocusScope {
 
   function insert(index, path, depth) {
     var reply = cached[path]
-    var dirs = reply ? reply.dirs : []
+    var dirs = Tree.byCount(reply ? reply.dirs : [], countOf)
     remember(dirs)
     var at = index + 1
     for (var i = 0; i < dirs.length; i++) {
@@ -140,7 +153,7 @@ FocusScope {
     }
     expanded = next
     rows.clear()
-    folders.forEach(folder => {
+    Tree.byCount(folders, countOf).forEach(folder => {
       var index = rows.count
       rows.append({path: folder.path, depth: 0})
       if (!expanded[folder.path]) return
@@ -159,6 +172,35 @@ FocusScope {
       if (i + 1 < rows.count && rows.get(i + 1).depth > depth) continue
       insert(i, path, depth)
     }
+  }
+
+  property var finished: ({})
+
+  function focusedPath() {
+    for (var i = 0; i < rows.count; i++) {
+      var item = list.itemAtIndex(i)
+      if (item && item.holdsFocus) return rows.get(i).path
+    }
+    return ""
+  }
+
+  onWalksChanged: {
+    var next = {}
+    var changed = false
+    for (var walkRoot in walks) {
+      if (!walks[walkRoot].done) continue
+      next[walkRoot] = true
+      if (!finished[walkRoot]) changed = true
+    }
+    finished = next
+    if (!changed) return
+    var path = focusedPath()
+    reload()
+    var index = path ? indexOf(path) : -1
+    if (index < 0) return
+    list.positionViewAtIndex(index, ListView.Contain)
+    var item = list.itemAtIndex(index)
+    if (item) item.focusCheck()
   }
 
   onFoldersChanged: reload()
@@ -184,6 +226,7 @@ FocusScope {
       readonly property var found: root.countOf(path)
       readonly property var evidence: root.evidenceOf(path)
       readonly property var kept: Tree.value(path, root.choices, root.countOf, root.mounts)
+      // An unsearched row shows what it holds.
       readonly property var shown: check === "off" ? found : kept
       readonly property var estimate: check !== "off" && kept ? Setup.estimate(kept, root.rates, root.device) : null
       objectName: "omafindFolderRow"
@@ -194,22 +237,18 @@ FocusScope {
       checkLabel: "Include " + (info.name || path)
       twisty: info.hasChildren ? (root.expanded[path] ? "open" : "closed") : "leaf"
       name: root.label(info, depth)
-      rule: evidence ? "dataset" : info.repo ? "repo" : ""
+      rule: evidence ? "dataset" : info.worktree ? "worktree" : info.repo ? "repo" : ""
       facts: root.cached[path] && root.cached[path].error
         ? [Setup.token("error", root.cached[path].error, "fail")]
         : evidence ? Setup.datasetFacts(evidence) : []
       dash: !shown
       pending: !found
-      cells: shown ? Setup.KINDS.map(kind => ({n: shown[kind] || 0, cut: false})) : []
+      cells: shown ? root.cellsOf(shown) : []
       indexText: estimate ? Setup.mb(estimate.bytes) : ""
       timeText: estimate ? Setup.minutes(estimate.seconds) : ""
-      action: info.repo ? "code" : ""
-      actionActive: root.choices.code.indexOf(path) >= 0
-      actionLabel: "Index the code in " + (info.name || path)
       fill: check === "on" ? "on" : ""
-      onToggled: root.choicesEdited(Tree.click(root.choices, path))
+      onToggled: root.clickRow(path)
       onTwistyClicked: root.toggle(index)
-      onActionClicked: root.choicesEdited(Tree.toggleCode(root.choices, path))
       onFocusedChanged: if (focused) ListView.view.positionViewAtIndex(index, ListView.Contain)
       Keys.onRightPressed: if (info.hasChildren && !root.expanded[path]) root.toggle(index)
       Keys.onLeftPressed: if (root.expanded[path]) root.toggle(index)

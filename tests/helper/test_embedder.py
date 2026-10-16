@@ -1,5 +1,7 @@
 import asyncio
+import os
 import subprocess
+import sys
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -9,6 +11,7 @@ import pytest
 from fakes.embedder import FakeEmbedder
 from fakes.llama_server import FakeSpawner, MemoryLlamaServer
 from omafindd import embedder as embedder_module
+from omafindd import errors, paths
 from omafindd.embedder import (
     Embedder,
     EmbeddingError,
@@ -32,6 +35,41 @@ def inline_runner(monkeypatch):
         return function(*args, **kwargs)
 
     monkeypatch.setattr(embedder_module.asyncio, 'to_thread', to_thread)
+
+
+@pytest.fixture(autouse=True)
+def data_home(tmp_path, monkeypatch):
+    # The server log goes under the data directory.
+    monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path / 'data'))
+
+
+# Stands in for llama-server as a real child: prints its argv and whether it got the key,
+# then exits with an error line or hangs, chosen per device by FAKE_LLAMA_GPU / FAKE_LLAMA_CPU.
+FAKE_SERVER = """\
+import os
+import sys
+import time
+
+argv = sys.argv[1:]
+print("argv:", *argv, flush=True)
+print("LLAMA_API_KEY set:", "LLAMA_API_KEY" in os.environ, flush=True)
+device = "CPU" if argv[argv.index("-ngl") + 1] == "0" else "GPU"
+if os.environ.get("FAKE_LLAMA_" + device) == "exit":
+    print("ggml_vulkan: No devices found.", file=sys.stderr, flush=True)
+    print("main: cleaning up", file=sys.stderr, flush=True)
+    sys.exit(1)
+time.sleep(30)
+"""
+KEY = 'fixture-secret-key-0123456789'
+
+
+@pytest.fixture
+def fake_binary(tmp_path, monkeypatch):
+    monkeypatch.setattr(embedder_module.secrets, 'token_urlsafe', lambda size: KEY)
+    path = tmp_path / 'fake-llama-server'
+    path.write_text(f'#!{sys.executable} -S\n{FAKE_SERVER}')
+    path.chmod(0o755)
+    return path
 
 
 @pytest.mark.parametrize(('mode', 'free_mib', 'expected'), [
@@ -393,8 +431,10 @@ async def test_unknown_vram_retries_failed_gpu_once_on_cpu(tmp_path):
 async def test_known_vram_start_failure_does_not_retry(runtime):
     embedder, spawner = runtime
     spawner.server_options['health_status'] = 503
-    with pytest.raises(EmbeddingError, match='start'):
+    with pytest.raises(EmbeddingError, match='start') as caught:
         await embedder.start('text')
+    assert caught.value.user_error == errors.server_start_failed(
+        'It did not answer within 0.2 s', paths.logs_dir() / 'llama-server.log')
     assert len(spawner.commands) == 1
     assert spawner.servers[0].terminated
 
@@ -536,3 +576,196 @@ def test_shared_server_url_accepts_daemon_loopback():
     from omafindd.embedder import loopback_url
 
     assert loopback_url('http://127.0.0.1:42065') == 'http://127.0.0.1:42065'
+
+
+async def test_http_error_raises_rejected_with_server_message(monkeypatch):
+    import httpx
+    from omafindd.embedder import Embedder, EmbeddingRejected, Text
+
+    def handler(request):
+        if request.url.path == "/health":
+            return httpx.Response(200)
+        return httpx.Response(500, json={"error": {"message": "input (3359 tokens) is too large"}})
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kwargs: client(**kwargs, transport=httpx.MockTransport(handler)))
+    embedder = Embedder(base_url="http://test", api_key="k")
+    await embedder.start("full")
+    try:
+        with pytest.raises(
+                EmbeddingRejected, match=r"HTTP 500: input \(3359 tokens\) is too large"):
+            await embedder.embed([Text("x")])
+    finally:
+        await embedder.stop()
+
+
+async def test_ready_reads_mode_without_the_lock():
+    from omafindd.embedder import Embedder
+
+    embedder = Embedder(base_url="http://test", api_key="k")
+    assert not embedder.ready("text")
+    embedder.mode, embedder._client = "full", object()
+    async with embedder._lock:
+        assert embedder.ready("text") and embedder.ready("full")
+
+
+async def test_mode_switch_waits_for_inflight_embedding(memory_runtime):
+    embedder, spawner = memory_runtime
+    await embedder.start('text')
+    server = spawner.servers[0]
+    server.embedding_release.clear()
+    embedding = asyncio.create_task(embedder.embed([Text('hello')]))
+    switching = None
+    try:
+        await asyncio.wait_for(server.embedding_requested.get(), 1)
+        switching = asyncio.create_task(embedder.start('full'))
+        await asyncio.sleep(0)
+        assert not server.terminated
+        server.embedding_release.set()
+        assert len(await asyncio.wait_for(embedding, 1)) == 1
+        await asyncio.wait_for(switching, 1)
+        assert server.terminated and embedder.mode == 'full'
+    finally:
+        server.embedding_release.set()
+        tasks = [task for task in (embedding, switching) if task is not None]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await embedder.stop()
+
+
+@pytest.mark.parametrize(('status', 'rejected'), [
+    (400, True), (413, True), (500, True),
+    (401, False), (403, False), (429, False), (503, False),
+])
+async def test_only_input_errors_reject_the_file(monkeypatch, status, rejected):
+    from omafindd.embedder import EmbeddingRejected
+
+    def handler(request):
+        if request.url.path == "/health":
+            return httpx.Response(200)
+        return httpx.Response(status, json={"error": {"message": "nope"}})
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kwargs: client(**kwargs, transport=httpx.MockTransport(handler)))
+    embedder = Embedder(base_url="http://test", api_key="k")
+    await embedder.start("full")
+    try:
+        with pytest.raises(EmbeddingError, match=rf"^HTTP {status}: nope$") as caught:
+            await embedder.embed([Text("x")])
+        assert isinstance(caught.value, EmbeddingRejected) is rejected
+    finally:
+        await embedder.stop()
+
+
+def test_embedding_error_carries_an_optional_error_object():
+    from omafindd import errors
+
+    failure = errors.server_starting()
+    error = EmbeddingError("the embedding server is starting", user_error=failure)
+    assert error.user_error is failure
+    assert str(error) == "the embedding server is starting"
+    assert EmbeddingError("Embedding server is not running").user_error is None
+
+
+@pytest.mark.parametrize('existing', [False, True])
+def test_server_log_is_private_and_truncated(existing):
+    path = paths.logs_dir() / 'llama-server.log'
+    if existing:
+        path.write_bytes(b'previous run')
+        path.chmod(0o644)
+    opened_path, log = embedder_module._open_log()
+    assert opened_path == path
+    with log:
+        assert path.stat().st_mode & 0o777 == 0o600
+        log.write(b'new run')
+    assert path.read_bytes() == b'new run'
+
+
+def test_server_log_open_failure_returns_no_log(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths, 'logs_dir', lambda: tmp_path / 'missing')
+    assert embedder_module._open_log() == (None, None)
+
+
+async def test_start_sends_server_output_to_a_fresh_log(memory_runtime):
+    embedder, spawner = memory_runtime
+    log = paths.logs_dir() / 'llama-server.log'
+    log.write_text('previous run\n')
+    options = []
+
+    async def spawn(*argv, **kwargs):
+        assert os.path.samefile(log, kwargs['stdout'].fileno())
+        options.append(kwargs)
+        return await spawner(*argv, **kwargs)
+
+    embedder.spawner = spawn
+    try:
+        await embedder.start('text')
+        assert options[0]['stdout'].closed
+        assert options[0]['stderr'] == asyncio.subprocess.STDOUT
+        assert log.read_bytes() == b''
+    finally:
+        await embedder.stop()
+
+
+async def test_start_runs_without_a_log_it_cannot_open(memory_runtime, monkeypatch, tmp_path):
+    embedder, spawner = memory_runtime
+    monkeypatch.setattr(paths, 'logs_dir', lambda: tmp_path / 'missing')
+    options = []
+
+    async def spawn(*argv, **kwargs):
+        options.append(kwargs)
+        return await spawner(*argv, **kwargs)
+
+    embedder.spawner = spawn
+    try:
+        await embedder.start('text')
+        assert options[0]['stdout'] == asyncio.subprocess.DEVNULL
+    finally:
+        await embedder.stop()
+
+
+async def test_server_exit_keeps_its_cause_and_a_log_without_the_key(
+        fake_binary, monkeypatch, tmp_path):
+    monkeypatch.setenv('FAKE_LLAMA_GPU', 'exit')
+    embedder = Embedder(binary=fake_binary, model_dir=tmp_path, startup_timeout=5,
+                        runner=lambda *a, **kw: subprocess.CompletedProcess(a, 0, '4096'))
+    with pytest.raises(EmbeddingError, match='^Embedding server failed to start$') as caught:
+        await embedder.start('text')
+    log = paths.logs_dir() / 'llama-server.log'
+    assert caught.value.user_error == errors.server_start_failed(
+        'It exited with code 1 (ggml_vulkan: No devices found)', log)
+    text = log.read_text()
+    assert '--port' in text and '-ngl 99' in text
+    assert 'LLAMA_API_KEY set: True' in text
+    assert KEY not in text
+
+
+async def test_gpu_and_cpu_failures_are_both_named(fake_binary, monkeypatch, tmp_path):
+    monkeypatch.setenv('FAKE_LLAMA_GPU', 'exit')
+
+    def runner(*args, **kwargs):
+        raise FileNotFoundError('nvidia-smi')
+
+    embedder = Embedder(binary=fake_binary, model_dir=tmp_path, runner=runner,
+                        startup_timeout=1, stop_timeout=1)
+    with pytest.raises(EmbeddingError) as caught:
+        await embedder.start('text')
+    assert caught.value.user_error.detail.startswith(
+        'GPU: it exited with code 1 (ggml_vulkan: No devices found); '
+        'CPU: it did not answer within 1 s. ')
+    text = (paths.logs_dir() / 'llama-server.log').read_text()
+    assert '-ngl 0' in text
+    assert '-ngl 99' not in text and 'No devices' not in text
+    assert KEY not in text
+
+
+async def test_missing_binary_names_the_os_error(tmp_path):
+    embedder = Embedder(binary=tmp_path / 'absent', model_dir=tmp_path,
+                        runner=lambda *a, **kw: subprocess.CompletedProcess(a, 0, '4096'))
+    with pytest.raises(EmbeddingError) as caught:
+        await embedder.start('text')
+    assert caught.value.user_error.detail.startswith(
+        'It could not be started (No such file or directory). ')

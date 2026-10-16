@@ -10,6 +10,7 @@ import "lib/results.js" as Results
 import "lib/searchState.js" as SearchState
 import "lib/Update.js" as Update
 import "lib/volumes.js" as Volumes
+import "lib/errors.js" as Errors
 
 // The search overlay body: query row, banner, result list, preview and footer.
 Item {
@@ -45,20 +46,42 @@ Item {
   readonly property bool daemonDown: !service || (!service.ready && !!connection
     && (connection.unit === "missing" || connection.failures > 0))
   // Set while Service.qml brings the daemon to the plugin's build (issue #16).
-  readonly property var updateBanner: service && service.update ? Update.banner(service.update) : null
-  readonly property string degradedReason: reply && reply.degraded ? String(reply.degraded)
-    : service && service.warmFailure ? service.warmFailure : ""
+  readonly property var updateError: service && service.update ? Update.banner(service.update) : null
+  readonly property var bannerView: Results.bannerFor({update: updateError,
+    offline: daemonDown ? (Errors.setupFailure(service ? service.engineError : null)
+      || Errors.offline(startLog.loaded ? startLog.path : "")) : null,
+    reply: reply, warm: service ? service.searchError : null})
 
-  // The daemon sends either a phrase ("indexing in progress", "embedding model unavailable",
-  // "the embedding server did not start") or the bare cause of a server failure.
-  function degradedClause(reason) {
-    if (/^(the embedding server|embedding model|indexing)/.test(reason)) return reason
-    return "the embedding server did not start (" + reason + ")"
+  function retryBanner() {
+    if (!service || !bannerView) return
+    switch (bannerView.retry) {
+    case "update":
+      service.retryUpdate()
+      break
+    case "connect":
+      startLog.reload()
+      service.installHelper()
+      break
+    case "warm":
+      service.warm()
+      break
+    default:
+      search = SearchState.reduce(search, {type: "typed", query: search.query, now: Date.now()}).state
+      arm(meaningTimer, SearchState.meaningDelay)
+    }
+  }
+
+  // A preview error stands in for the preview of its row, so the pane shows it as a card.
+  function previewFailed(message) {
+    if (message.for !== undefined || !selectedItem || message.id !== selectedItem.id) return
+    preview = {id: message.id, error: Errors.from(message)}
   }
 
   signal closeRequested()
+  signal settingsRequested()
   signal toastRequested(string title, var tokens, bool error)
-  signal openStarted(var item, string how)
+  // `message` is the open request, kept so the failure toast can send it again.
+  signal openStarted(var item, string how, var message)
 
   function reset() {
     previewTimer.stop()
@@ -106,17 +129,25 @@ Item {
       list.reset()
       return
     }
-    wordsTimer.restart()
-    meaningTimer.restart()
+    arm(wordsTimer, SearchState.wordsDelay)
+    arm(meaningTimer, SearchState.meaningDelay)
+  }
+
+  function arm(timer, delay) {
+    timer.interval = delay
+    timer.restart()
   }
 
   function due(type) {
-    var next = SearchState.reduce(search, {type: type, now: Date.now()})
+    var now = Date.now()
+    var next = SearchState.reduce(search, {type: type, now: now})
     if (next.send && (!service || !service.send(next.send))) {
       next.state.sentWords = search.sentWords
       next.state.sentMeaning = search.sentMeaning
     }
+    var left = next.send ? 0 : SearchState.remaining(search, type, now)
     search = next.state
+    if (left > 0) arm(type === "meaning-due" ? meaningTimer : wordsTimer, left)
   }
 
   function received(message) {
@@ -197,15 +228,13 @@ Item {
     focusQuery()
   }
 
-  // Footer hints from lib/keys.js, with the editor named for code and the play label following playback.
+  // Footer hints from lib/keys.js, with the play label following playback.
   function hintsFor(row) {
     var hints = KeyMap.hints(row, row && row.type === "item" ? jumpFor(row.item) : null)
     if (!row || row.type !== "item") return hints
     var item = row.item
     for (var i = 0; i < hints.length; i++) {
       var hint = hints[i]
-      if (hint.keys.length === 1 && hint.keys[0] === "Enter" && item.kind === "code")
-        hint.label = hint.label.replace(/^open at line/, "open in " + editorName + " at line")
       if (hint.keys.join(" ") === "Ctrl Space" && player.playback.id === item.id)
         hint.label = player.playing ? "pause" : "resume"
     }
@@ -215,7 +244,7 @@ Item {
   // The preview names the line the opener jumps to, so labels use it once it arrives.
   function jumpFor(item) {
     if (!item || !preview || preview.id !== item.id) return null
-    return item.kind === "text" || item.kind === "code" ? preview.jump : null
+    return item.kind === "text" ? preview.jump : null
   }
 
   function folder(item) {
@@ -254,7 +283,7 @@ Item {
     if (pending || !service || !service.send(message)) return
     player.stop()
     flash = how === "open" ? "acc" : "sec"
-    openStarted(item, how)
+    openStarted(item, how, message)
   }
 
   function toggleProgress() {
@@ -314,6 +343,9 @@ Item {
     case "progress":
       toggleProgress()
       break
+    case "settings":
+      settingsRequested()
+      break
     case "copy":
       act("copy")
       break
@@ -338,6 +370,7 @@ Item {
     if (previewKey) previewTimer.restart()
     else previewTimer.stop()
   }
+  onDaemonDownChanged: if (daemonDown) startLog.reload()
 
   Connections {
     target: root.service
@@ -349,6 +382,7 @@ Item {
         if (message.editor) root.editorCommand = message.editor
       }
     }
+    function onItemFailed(message) { root.previewFailed(message) }
     function onStatusReceived(message) {
       var files = typeof message.files === "number" ? message.files : -1
       var before = root.lastFiles
@@ -372,6 +406,16 @@ Item {
       var first = text().split("\n")[0].trim().split(/\s+/)[0]
       if (first) root.editorCommand = first
     }
+  }
+
+  // The daemon's startup log. The offline card links it once it exists.
+  FileView {
+    id: startLog
+    path: (Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") || "") + "/.local/share")
+      + "/omafind/cache/logs/omafindd-start.log"
+    printErrors: false
+    watchChanges: true
+    onFileChanged: reload()
   }
 
   Timer {
@@ -412,57 +456,38 @@ Item {
     anchors.left: parent.left
     anchors.right: parent.right
     prefix: root.parsed.prefix || ""
-    code: root.parsed.code
     status: SearchState.status(root.search, root.reply).text
     spinning: SearchState.status(root.search, root.reply).spinner
     onTextChanged: root.typed(text)
     onKeyPressed: event => root.handleKey(event)
   }
 
-  Parts.Banner {
+  Parts.ErrorCard {
     id: banner
+    objectName: "omafindSearchError"
     anchors.top: query.bottom
     anchors.left: parent.left
     anchors.right: parent.right
-    visible: !!root.updateBanner || root.daemonDown || root.degradedReason !== ""
-      || (!!root.reply && root.reply.t === "error")
+    error: root.bannerView ? root.bannerView.error : null
+    visible: !!error
     height: visible ? implicitHeight : 0
-    action: root.updateBanner ? root.updateBanner.action : "Retry"
-    lead: root.updateBanner ? root.updateBanner.lead
-      : root.daemonDown ? "" : root.degradedReason !== "" ? "Semantic search unavailable:" : ""
-    text: root.updateBanner ? root.updateBanner.text
-      : root.daemonDown ? "omafindd is not running. Run systemctl --user start omafind, then retry."
-      : root.degradedReason !== "" ? root.degradedClause(root.degradedReason) + ". Showing keyword matches."
-      : root.reply && root.reply.reason ? String(root.reply.reason) : ""
-    onTriggered: {
-      if (root.updateBanner) {
-        root.service.retryUpdate()
-      } else if (root.daemonDown) {
-        if (root.service) {
-          root.service.checkUnit()
-          root.service.connectSocket()
-        }
-      } else if (root.degradedReason !== "") {
-        root.service.warm()
-      } else {
-        root.search = SearchState.reduce(root.search, {type: "typed", query: root.search.query, now: Date.now()}).state
-        meaningTimer.restart()
-      }
-    }
+    retryHere: true
+    onRetry: root.retryBanner()
   }
 
   // Spec 6.5: indexing waits for disk space. The banner has no action; it clears on `resumed`.
   Parts.Banner {
     id: diskBanner
+    objectName: "omafindDiskBanner"
     readonly property var info: root.service && root.service.volumes ? Volumes.diskBanner(root.service.volumes) : null
     anchors.top: banner.bottom
     anchors.left: parent.left
     anchors.right: parent.right
     visible: !!info
     height: visible ? implicitHeight : 0
-    lead: info ? info.title : ""
+    lead: info && info.error ? info.error.title : ""
     tokens: info ? info.tokens.map(t => ({k: t.k, v: t.v, tone: "plain"})) : []
-    text: info ? info.text : ""
+    text: info && info.error ? info.error.detail : ""
     action: ""
   }
 
@@ -562,7 +587,7 @@ Item {
 
     text: root.idle ? (idleFacts ? idleFacts.text : "")
       : root.noText ? ""
-      : Results.footerLeft({reply: root.reply, query: root.search.query, prefix: root.parsed.prefix,
+      : Results.footerLeft({reply: root.reply, query: root.search.query,
         phase: root.reply ? root.search.phase : "words"})
     offline: root.idle && root.service && root.service.status && root.service.status.offline
       ? root.service.status.offline : []
@@ -570,8 +595,7 @@ Item {
     indexed: !root.idle && root.service && root.service.status && typeof root.service.status.files === "number"
       ? root.service.status.files : -1
     reconcile: root.service && root.service.volumes ? Volumes.footer(root.service.volumes, root.service.clock) : null
-    hints: root.idle || !root.reply
-      ? (idleFacts && idleFacts.progress ? [{keys: ["Ctrl", "I"], label: "progress"}] : []).concat([{keys: ["Esc"], label: "close"}])
+    hints: root.idle || !root.reply ? KeyMap.idleHints(!!(idleFacts && idleFacts.progress))
       : root.hintsFor(root.selectedRow)
     onProgressClicked: root.toggleProgress()
   }

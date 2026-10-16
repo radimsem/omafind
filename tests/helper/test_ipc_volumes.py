@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from omafindd import errors
 from omafindd.ipc import IpcServer
 from omafindd.service import SearchService
 from omafindd.settings import Settings
@@ -103,7 +104,7 @@ async def test_volume_and_paused_replayed_after_hello(tmp_path):
     server = IpcServer(tmp_path / 'ui.sock', State(), peer_uid=lambda _: __import__('os').getuid())
     volume = {'t': 'volume', 'uuid': 'usb', 'label': 'Photos2024', 'fs': 'exfat',
               'size': 123, 'mount': '/media/Photos2024', 'online': True, 'known': False}
-    paused = {'t': 'paused', 'reason': 'disk', 'free_gb': 1.4, 'need_gb': 2}
+    paused = {'t': 'paused', 'error': errors.disk_low().to_dict(), 'free_gb': 1.4, 'need_gb': 2}
     server.replay = lambda: [volume, paused]
     reader, writer = memory_client(server)
     try:
@@ -229,7 +230,7 @@ async def test_disk_transitions_are_broadcast_and_replayed(freshness, monkeypatc
     await freshness.check_disk()
     await freshness.check_disk()
     assert freshness.test_pushes == [
-        {'t': 'paused', 'reason': 'disk', 'free_gb': 1.4, 'need_gb': 2}]
+        {'t': 'paused', 'error': errors.disk_low().to_dict(), 'free_gb': 1.4, 'need_gb': 2}]
     assert freshness.replay() == freshness.test_pushes
     monkeypatch.setattr(freshness.guard, 'free_bytes', lambda: 2_100_000_000)
     await freshness.check_disk()
@@ -281,17 +282,28 @@ def test_startup_integrity_check_quarantines_and_records_problem(tmp_path, monke
     index = directory / 'index'
     index.mkdir(parents=True)
     (index / 'usb.sqlite').write_text('corrupt database')
-    (index / 'code.sqlite').write_text('leave code alone')
     monkeypatch.setattr('omafindd.store.mounted_volumes', lambda: {'usb': Path('/media/drive')})
     problems = _repair(directory)
     assert len(problems) == 1
     assert problems[0]['volume'] == 'usb'
     assert problems[0]['action'] == 'rebuilt'
     assert Path(problems[0]['moved_to']).read_text() == 'corrupt database'
-    assert (index / 'code.sqlite').read_text() == 'leave code alone'
     store = Store.open_existing(index / 'usb.sqlite', Path('/media/drive'))
     assert store.db.execute('SELECT count(*) FROM files').fetchone()[0] == 0
     store.close()
+
+
+def test_startup_deletes_a_leftover_code_index(tmp_path):
+    from omafindd.main import _drop_code_index
+
+    index = tmp_path / 'data/index'
+    index.mkdir(parents=True)
+    for name in ('code.sqlite', 'code.sqlite-wal', 'code.sqlite-shm', 'usb.sqlite'):
+        (index / name).write_text(name)
+    _drop_code_index(tmp_path / 'data')
+    assert sorted(path.name for path in index.iterdir()) == ['usb.sqlite']
+    _drop_code_index(tmp_path / 'data')
+    _drop_code_index(tmp_path / 'missing')
 
 
 async def test_startup_reuses_verifier_and_cleans_marker_on_normal_exit(tmp_path, monkeypatch):
@@ -372,7 +384,8 @@ async def test_unverified_meaning_only_search_returns_words(tmp_path):
         result = await service.handle({'t': 'search', 'seq': 1, 'q': 'note',
                                        'legs': ['meaning']})
         assert result['legs'] == ['words']
-        assert result['degraded'] == 'embedding model failed verification'
+        assert result['degraded'] == errors.embedding_unavailable(
+            'embedding model failed verification').to_dict()
         assert result['items'][0]['name'] == 'note.txt'
     finally:
         await service.stop()

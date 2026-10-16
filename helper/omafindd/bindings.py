@@ -160,6 +160,18 @@ def write_menu_row(path) -> bool:
     return _write(path, contents, changed)
 
 
+def has_menu_row(path) -> bool:
+    path = Path(path).expanduser()
+    if not path.exists():
+        return False
+    try:
+        span = _span(path.read_bytes(), b"\n// omafind-menu-start", b"// omafind-menu-end\n")
+    except ValueError:
+        # Broken markers: `menu add` refuses the file, so the row is not there to show.
+        return False
+    return span is not None
+
+
 def remove_menu_row(path) -> bool:
     path = Path(path).expanduser().resolve()
     if not path.exists():

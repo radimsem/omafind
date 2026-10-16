@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+from omafindd import errors
+
 
 def guard_at(free):
     from omafindd.diskguard import DiskGuard
@@ -10,7 +12,8 @@ def guard_at(free):
 def test_1_9_gb_pauses_with_need_gb_2():
     guard = guard_at(1_900_000_000)
     assert guard.low()
-    assert guard.check() == {'t': 'paused', 'reason': 'disk', 'free_gb': 1.9, 'need_gb': 2}
+    assert guard.check() == {'t': 'paused', 'error': errors.disk_low().to_dict(),
+                             'free_gb': 1.9, 'need_gb': 2}
     assert guard.check() is None
 
 

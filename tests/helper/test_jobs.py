@@ -107,7 +107,7 @@ async def test_nan_vector_fails_file(store, tmp_path):
     await Jobs(store, Invalid(), journal=tmp_path / "journal").drain()
     assert tuple(store.db.execute("SELECT state,detail FROM files").fetchone()) == (
         "failed",
-        "embedding precision fault",
+        "embedding-precision-fault",
     )
     assert store.db.execute("SELECT count(*) FROM segments WHERE kind!='name'").fetchone()[0] == 0
 
@@ -131,7 +131,6 @@ async def test_batches_are_at_most_16_and_file_is_atomic(store, tmp_path):
 
     embedder = Observe()
     jobs = Jobs(store, embedder, journal=tmp_path / "journal")
-    assert jobs.queue.maxsize == 64
     await jobs.drain()
     assert len(embedder.sizes) > 1 and max(embedder.sizes) <= 16
     assert store.db.execute("SELECT state FROM files").fetchone()[0] == "done"
@@ -199,7 +198,7 @@ async def test_runtime_precision_fault_fails_file(store, tmp_path):
     await Jobs(store, Invalid(), journal=tmp_path / "journal").drain()
     assert tuple(store.db.execute("SELECT state,detail FROM files").fetchone()) == (
         "failed",
-        "embedding precision fault",
+        "embedding-precision-fault",
     )
 
 
@@ -230,14 +229,18 @@ async def test_invalid_office_member_fails_only_its_file(store, tmp_path):
 @pytest.mark.parametrize(
     "error,detail",
     [
-        (zlib.error("fixture"), "extract-failed"),
-        (NotImplementedError("fixture"), "extract-failed"),
-        (RuntimeError("fixture"), "extract-failed"),
-        (ValueError("bad image dimensions"), "extract-failed"),
-        (subprocess.TimeoutExpired("pdfinfo", 60), "timeout"),
-        (ExtractionError("timeout"), "timeout"),
+        (zlib.error("fixture"), "extract-failed: fixture"),
+        (NotImplementedError("fixture"), "extract-failed: fixture"),
+        (RuntimeError(), "extract-failed: RuntimeError"),
+        (ValueError("bad image dimensions"), "extract-failed: bad image dimensions"),
+        (subprocess.TimeoutExpired("pdfinfo", 60),
+         "timeout: Command 'pdfinfo' timed out after 60 seconds"),
+        (ExtractionError("timeout", "pdfinfo"), "timeout: pdfinfo"),
         (ExtractionError("encrypted-pdf"), "encrypted-pdf"),
-        (ExtractionError("pdftoppm failed"), "extract-failed"),
+        (ExtractionError("pdftoppm failed"), "extract-failed: pdftoppm failed"),
+        (ExtractionError("extract-failed", "pdfinfo failed: Syntax Error: bad xref"),
+         "extract-failed: pdfinfo failed: Syntax Error: bad xref"),
+        (ExtractionError("tool-missing", "pdftoppm"), "tool-missing: pdftoppm"),
     ],
 )
 async def test_poison_file_does_not_abort_or_remain_pending(
@@ -295,7 +298,7 @@ async def test_broken_pool_is_rebuilt_for_remaining_files(
         "done": 2, "failed": 1
     }
     detail = store.db.execute("SELECT detail FROM files WHERE state='failed'").fetchone()[0]
-    assert detail == "extract-failed"
+    assert detail == "extract-failed: the extraction worker stopped"
 
 
 async def test_nonprecision_embedding_error_still_propagates(store, tmp_path, inline_pool):
@@ -311,6 +314,38 @@ async def test_nonprecision_embedding_error_still_propagates(store, tmp_path, in
 
     with pytest.raises(EmbeddingError, match="server unavailable"):
         await Jobs(store, Failed(), journal=tmp_path / "journal").drain()
+
+
+async def test_failed_drain_does_not_wait_for_prefetched_extractions(
+    store, tmp_path, monkeypatch, inline_pool
+):
+    from omafindd import jobs
+    from omafindd.embedder import EmbeddingError
+    from omafindd.jobs import Jobs
+
+    waits = []
+
+    class Pool(inline_pool):
+        def shutdown(self, **kwargs):
+            waits.append(kwargs.get("wait", True))
+
+    monkeypatch.setattr(jobs, "ProcessPoolExecutor", Pool)
+    for name in ("a.txt", "b.txt"):
+        (tmp_path / name).write_text("fixture")
+    crawl(store, [{"path": str(tmp_path)}])
+
+    class Failed(FakeEmbedder):
+        async def embed_documents(self, parts):
+            raise EmbeddingError("server unavailable")
+
+    with pytest.raises(EmbeddingError):
+        await Jobs(store, Failed(), journal=tmp_path / "journal").drain()
+    assert waits == [False]
+
+    waits.clear()
+    store.db.execute("UPDATE files SET state='pending', detail=NULL")
+    await Jobs(store, FakeEmbedder(), journal=tmp_path / "journal").drain()
+    assert waits == [True]
 
 
 async def test_pdf_windows_are_committed_before_next_extraction(
@@ -429,3 +464,316 @@ async def test_extraction_await_uses_future_completion_and_can_cancel(
     finally:
         pending.cancel()
         await asyncio.gather(pending, return_exceptions=True)
+
+
+async def test_rejected_file_fails_and_the_run_continues(store, tmp_path, inline_pool, caplog):
+    from omafindd.embedder import EmbeddingRejected
+    from omafindd.jobs import Jobs
+
+    (tmp_path / "bad.txt").write_text("reject me")
+    (tmp_path / "good.txt").write_text("keep me")
+    crawl(store, [{"path": str(tmp_path)}])
+
+    class Picky(FakeEmbedder):
+        async def embed_documents(self, parts):
+            if any("reject" in part for part in parts if isinstance(part, str)):
+                raise EmbeddingRejected("HTTP 500: input (3359 tokens) is too large")
+            return await super().embed_documents(parts)
+
+    await Jobs(store, Picky(), journal=tmp_path / "journal").drain()
+    states = dict(store.db.execute(
+        "SELECT path, state || ':' || coalesce(detail, '') FROM files"))
+    assert states == {
+        "bad.txt": "failed:embedding-failed: HTTP 500: input (3359 tokens) is too large",
+        "good.txt": "done:",
+    }
+    assert "HTTP 500" in caplog.text and "reject me" not in caplog.text
+
+
+async def test_rejected_pdf_window_keeps_earlier_pages(store, tmp_path, monkeypatch, inline_pool):
+    from omafindd import jobs
+    from omafindd.embedder import EmbeddingRejected
+    from omafindd.extractors import Extracted, Segment
+
+    (tmp_path / "long.pdf").write_text("fixture")
+    crawl(store, [{"path": str(tmp_path)}])
+
+    def window(path, kind, start):
+        end = 30 if start == 1 else 58
+        segments = [Segment("page", "text", f"page {page}", loc=page, loc_end=page)
+                    for page in range(start, end + 1)]
+        return Extracted(segments, {"pages": 58, "read_to": end},
+                         "partial" if end < 58 else "done")
+
+    class Second(FakeEmbedder):
+        async def embed_documents(self, parts):
+            if any("page 31" in part for part in parts):
+                raise EmbeddingRejected("HTTP 500: too large")
+            return await super().embed_documents(parts)
+
+    monkeypatch.setattr(jobs, "extract", window)
+    await jobs.Jobs(store, Second(), journal=tmp_path / "journal").drain()
+    row = store.db.execute("SELECT state, detail FROM files").fetchone()
+    assert tuple(row) == ("partial", "embedding-failed: HTTP 500: too large")
+    assert store.db.execute("SELECT count(*) FROM segments WHERE kind='page'").fetchone()[0] == 30
+
+
+async def test_next_files_are_extracted_while_one_embeds(store, tmp_path, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from omafindd import jobs
+    from omafindd.extractors import Extracted, Segment
+
+    for n in range(4):
+        (tmp_path / f"n{n}.txt").write_text(f"note {n}")
+    crawl(store, [{"path": str(tmp_path)}])
+    started = []
+    lock = threading.Lock()
+
+    def extract(path, kind, start):
+        with lock:
+            started.append(path.name)
+        return Extracted([Segment("chunk", "text", path.name, 1, 1)])
+
+    class Slow(FakeEmbedder):
+        async def embed_documents(self, parts):
+            if len(started) < 4:
+                await asyncio.sleep(0.05)
+            snapshot.append(len(started))
+            return await super().embed_documents(parts)
+
+    snapshot = []
+    monkeypatch.setattr(jobs, "extract", extract)
+    monkeypatch.setattr(jobs, "_pool", lambda: ThreadPoolExecutor(4))
+    await jobs.Jobs(store, Slow(), journal=tmp_path / "journal").drain()
+    assert snapshot[0] >= 2
+    assert {row[0] for row in store.db.execute("SELECT state FROM files")} == {"done"}
+
+
+@pytest.mark.parametrize("prefetch", [1, 4])
+async def test_prefetched_files_continue_after_rejection(
+    store, tmp_path, monkeypatch, inline_pool, prefetch
+):
+    from omafindd import jobs
+    from omafindd.embedder import EmbeddingRejected
+    from omafindd.extractors import Extracted, Segment
+
+    for n in range(6):
+        (tmp_path / f"n{n}.pdf").write_text("fixture")
+    crawl(store, [{"path": str(tmp_path)}])
+    with store.db:
+        store.db.execute("UPDATE files SET mtime=0")
+    extracted, embedded = [], []
+
+    def extract(path, kind, start):
+        extracted.append(path.name)
+        return Extracted([Segment("chunk", "text", path.name, 1, 1)])
+
+    class Picky(FakeEmbedder):
+        async def embed_documents(self, parts):
+            assert len(extracted) - len(embedded) <= prefetch
+            embedded.append(parts[0])
+            if len(embedded) == 1:
+                assert len(extracted) == prefetch
+                raise EmbeddingRejected("HTTP 500: fixture rejected")
+            return await super().embed_documents(parts)
+
+    monkeypatch.setattr(jobs, "extract", extract)
+    runner = jobs.Jobs(store, Picky(), journal=tmp_path / "journal")
+    await runner.drain(prefetch=prefetch)
+    assert len(extracted) == len(embedded) == 6
+    assert dict(store.db.execute("SELECT state,count(*) FROM files GROUP BY state")) == {
+        "done": 5, "failed": 1
+    }
+    assert runner.journal.read_text() == ""
+
+
+@pytest.mark.parametrize("kind,state,sizes", [
+    ("pdf", "pending", [1, 1, 1]),
+    ("image", "pending", [1, 1, 1]),
+    ("text", "partial", [2, 1]),
+])
+async def test_text_batch_leaves_other_kinds_and_partial_rows_on_per_file_path(
+    store, tmp_path, monkeypatch, inline_pool, kind, state, sizes
+):
+    from omafindd import jobs
+    from omafindd.extractors import Extracted, Segment
+
+    for n in range(3):
+        (tmp_path / f"n{n}.txt").write_text("fixture")
+    crawl(store, [{"path": str(tmp_path)}])
+    with store.db:
+        ids = [row[0] for row in store.db.execute("SELECT id FROM files ORDER BY id")]
+        store.db.execute("UPDATE files SET mtime=-id")
+        store.db.execute("UPDATE files SET kind=?,state=? WHERE id=?", (kind, state, ids[1]))
+
+    def extract(path, kind, start, *args):
+        return Extracted([Segment("chunk", "text", path.name, 1, 1)])
+
+    class Observe(FakeEmbedder):
+        async def embed_documents(self, parts):
+            calls.append(len(parts))
+            return await super().embed_documents(parts)
+
+    calls = []
+    monkeypatch.setattr(jobs, "extract", extract)
+    await jobs.Jobs(store, Observe(), journal=tmp_path / "journal").drain()
+    assert calls == sizes
+    assert {row[0] for row in store.db.execute("SELECT state FROM files")} == {"done"}
+
+
+async def test_cancelled_text_batch_journals_every_file(store, tmp_path, inline_pool):
+    from omafindd.jobs import Jobs
+
+    for n in range(3):
+        (tmp_path / f"n{n}.txt").write_text("fixture")
+    crawl(store, [{"path": str(tmp_path)}])
+
+    class Crash(FakeEmbedder):
+        async def embed_documents(self, parts):
+            assert len(parts) == 3
+            raise asyncio.CancelledError()
+
+    journal = tmp_path / "journal"
+    with pytest.raises(asyncio.CancelledError):
+        await Jobs(store, Crash(), journal=journal).drain()
+    files = [row[0] for row in store.db.execute("SELECT id FROM files ORDER BY id")]
+    recovered = Jobs(store, FakeEmbedder(), journal=journal)
+    assert sorted(recovered.recover()) == files
+    assert {row[0] for row in store.db.execute("SELECT state FROM files")} == {"pending"}
+    await recovered.drain()
+    assert journal.read_text() == ""
+
+
+async def test_text_batch_precision_fault_fails_only_the_bad_file(store, tmp_path, inline_pool):
+    from omafindd.embedder import EmbeddingError
+    from omafindd.jobs import Jobs
+
+    for name, text in (("good.txt", "keep me"), ("bad.txt", "poison")):
+        (tmp_path / name).write_text(text)
+    crawl(store, [{"path": str(tmp_path)}])
+    with store.db:
+        store.db.execute("UPDATE files SET mtime=(path='good.txt')")
+    calls = []
+
+    class Picky(FakeEmbedder):
+        async def embed_documents(self, parts):
+            calls.append(len(parts))
+            if any("poison" in part for part in parts):
+                raise EmbeddingError("embedding precision fault")
+            return await super().embed_documents(parts)
+
+    runner = Jobs(store, Picky(), journal=tmp_path / "journal")
+    await runner.drain()
+    assert [tuple(row) for row in store.db.execute(
+        "SELECT path,state,detail FROM files ORDER BY path"
+    )] == [("bad.txt", "failed", "embedding-precision-fault"), ("good.txt", "done", None)]
+    assert calls == [2, 1, 1]
+    assert runner.journal.read_text() == ""
+
+
+async def test_broken_pool_during_prefetch_submission_is_rebuilt(
+    store, tmp_path, monkeypatch, inline_pool
+):
+    from omafindd import jobs
+
+    for n in range(6):
+        (tmp_path / f"n{n}.txt").write_text("fixture")
+    crawl(store, [{"path": str(tmp_path)}])
+    pools = []
+
+    class Pool(inline_pool):
+        def __init__(self, **kwargs):
+            pools.append(self)
+
+        def submit(self, function, *args):
+            if self is pools[0]:
+                raise BrokenProcessPool("fixture worker died before submit")
+            return super().submit(function, *args)
+
+    monkeypatch.setattr(jobs, "ProcessPoolExecutor", Pool)
+    runner = jobs.Jobs(store, FakeEmbedder(), journal=tmp_path / "journal")
+    await runner.drain(prefetch=4)
+    assert len(pools) == 2
+    assert dict(store.db.execute("SELECT state,count(*) FROM files GROUP BY state")) == {
+        "done": 5, "failed": 1
+    }
+    assert runner.journal.read_text() == ""
+
+
+@pytest.mark.parametrize("counts,sizes", [([1] * 10, [10]), ([3, 5, 8, 1], [16, 1])])
+async def test_ready_text_files_share_batches_and_keep_their_vectors(
+    store, tmp_path, monkeypatch, inline_pool, counts, sizes
+):
+    from omafindd import jobs
+    from omafindd.extractors import Extracted, Segment
+
+    for n in range(len(counts)):
+        (tmp_path / f"n{n}.txt").write_text("fixture")
+    crawl(store, [{"path": str(tmp_path)}])
+    with store.db:
+        store.db.execute("UPDATE files SET mtime=0")
+        rows = list(store.db.execute("SELECT path FROM files ORDER BY id"))
+    expected = {row[0]: [f"word{n}part{part}" for part in range(counts[n])]
+                for n, row in enumerate(rows)}
+
+    def extract(path, kind, start):
+        return Extracted([Segment("chunk", "text", text, loc=n, loc_end=n)
+                          for n, text in enumerate(expected[path.name], 1)])
+
+    class Observe(FakeEmbedder):
+        def __init__(self):
+            super().__init__()
+            self.sizes = []
+
+        async def embed_documents(self, parts):
+            self.sizes.append(len(parts))
+            return await super().embed_documents(parts)
+
+    monkeypatch.setattr(jobs, "extract", extract)
+    embedder = Observe()
+    progress = []
+    runner = jobs.Jobs(store, embedder, journal=tmp_path / "journal")
+    await runner.drain(progress=progress.append)
+    assert embedder.sizes == sizes
+    for path, texts in expected.items():
+        segments = list(store.db.execute(
+            "SELECT s.excerpt,s.vec FROM segments s JOIN files f ON f.id=s.file "
+            "WHERE f.path=? AND s.kind='chunk' ORDER BY s.loc", (path,)
+        ))
+        assert [row[0] for row in segments] == texts
+        for row in segments:
+            np.testing.assert_array_equal(np.frombuffer(row[1], dtype=np.float16),
+                                          embedder._vector(row[0]))
+    assert {row[0] for row in store.db.execute("SELECT state FROM files")} == {"done"}
+    assert len(progress) == len(counts) and progress[-1]["queued"] == 0
+    assert runner.journal.read_text() == ""
+
+
+async def test_rejected_text_batch_retries_each_file(store, tmp_path, inline_pool):
+    from omafindd.embedder import EmbeddingRejected
+    from omafindd.jobs import Jobs
+
+    for name, text in (("one.txt", "keep one"), ("bad.txt", "reject me"),
+                       ("two.txt", "keep two")):
+        (tmp_path / name).write_text(text)
+    crawl(store, [{"path": str(tmp_path)}])
+    calls = []
+
+    class Picky(FakeEmbedder):
+        async def embed_documents(self, parts):
+            calls.append(len(parts))
+            if any("reject me" in part for part in parts):
+                raise EmbeddingRejected("HTTP 500: fixture rejected")
+            return await super().embed_documents(parts)
+
+    runner = Jobs(store, Picky(), journal=tmp_path / "journal")
+    await runner.drain()
+    assert calls == [3, 1, 1, 1]
+    assert [tuple(row) for row in store.db.execute(
+        "SELECT path,state,detail FROM files ORDER BY path"
+    )] == [("bad.txt", "failed", "embedding-failed: HTTP 500: fixture rejected"),
+          ("one.txt", "done", None),
+          ("two.txt", "done", None)]
+    assert runner.journal.read_text() == ""

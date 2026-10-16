@@ -1,11 +1,12 @@
 import asyncio
 import json
 import os
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from omafindd import discovery
+from omafindd import bindings, discovery, errors
 from omafindd.ipc import IpcServer
 from omafindd.settings import Settings
 from omafindd.setup import SetupService
@@ -144,6 +145,7 @@ async def service(tmp_path, monkeypatch):
         volume_of=lambda path: ("u", Path("/h")),
         list_dirs=list_dirs,
         home=Path("/h"),
+        menu_path=tmp_path / "omarchy-menu.jsonc",
     )
     setup.test_calls, setup.test_pushes, setup.test_process = calls, pushes, process
     setup.test_walks = walks
@@ -209,15 +211,15 @@ async def test_walk_failure_ends_with_done_and_error(service):
     service.walk = broken
     await service.handle({"t": "discover_start"})
     await asyncio.gather(*service._discovery)
+    failure = errors.scan_failed("/h", "fd failed: boom").to_dict()
     assert service.test_pushes[-1] == {"t": "discover_counts", "root": "/h", "counts": {},
-                                       "done": True, "seconds": None,
-                                       "error": "fd failed: boom"}
+                                       "done": True, "seconds": None, "error": failure}
 
     service.test_pushes.clear()
     await service.handle({"t": "discover_start"})
     await asyncio.gather(*service._discovery)
     assert service.test_pushes[-1]["done"]
-    assert service.test_pushes[-1]["error"] == "fd failed: boom"
+    assert service.test_pushes[-1]["error"] == failure
     assert attempts == [Path("/h"), Path("/h")]
     assert "/h" not in service._walked
 
@@ -272,13 +274,14 @@ async def test_fs_list(service):
 
 
 async def test_fs_list_missing(service):
+    failure = errors.scan_failed("/missing", "No such file or directory").to_dict()
     service.list_dirs = lambda path, **kw: {
         "path": path,
         "abs": path,
         "dirs": [],
-        "error": "missing",
+        "error": failure,
     }
-    assert (await service.handle({"t": "fs_list", "path": "/missing"}))["error"] == "missing"
+    assert (await service.handle({"t": "fs_list", "path": "/missing"}))["error"] == failure
 
 
 async def test_index_start_spawns_once(service):
@@ -294,12 +297,8 @@ async def test_index_start_spawns_once(service):
 
 async def test_index_start_no_roots(service):
     service.settings = lambda: Settings()
-    assert await service.handle({"t": "index_start"}) == {
-        "t": "error",
-        "for": "index_start",
-        "code": "no-roots",
-        "reason": "No folders are selected. Pick folders in setup first.",
-    }
+    assert await service.handle({"t": "index_start"}) == errors.reply(
+        "index_start", errors.no_roots())
     assert not service.test_calls
 
 
@@ -333,26 +332,33 @@ async def test_failed_index_exit_broadcasts_progress_and_error(service, exit_cod
     final, error = service.test_pushes[-2:]
     assert final["running"] is False
     assert final["exit"] == exit_code
-    assert error == {
-        "t": "error",
-        "for": "index_start",
-        "code": "runtime-failed",
-        "reason": f"Indexing exited with code {exit_code}. "
-        f"See {service.data_dir / 'index/reindex.log'}.",
-    }
+    log = service.data_dir / "index/reindex.log"
+    assert error == errors.reply("index_start", errors.index_exited(exit_code, log))
+    assert error["log"] == str(log)
 
 
 async def test_errors_carry_for_and_no_seq(service, tmp_path):
+    failure = errors.scan_failed("/h", "Permission denied")
+
     def failed(**kw):
-        raise OSError("scan broke")
+        raise errors.UserFailure(failure)
 
     service.top = failed
     server = IpcServer(tmp_path / "ui.sock", State(), setup=service)
     writer = Writer()
     await server.dispatch(writer, {"t": "discover_start", "seq": 7, "id": "wrong"})
-    assert writer.messages == [
-        {"t": "error", "for": "discover_start", "code": "scan-failed", "reason": "scan broke"}
-    ]
+    assert writer.messages == [errors.reply("discover_start", failure)]
+
+
+@pytest.mark.parametrize("kind", ["index_start", "discover_start", "runtime_status"])
+async def test_unexpected_failure_is_internal_whatever_the_request(service, kind):
+    def broken(*args, **kwargs):
+        raise ValueError("shell.json is not valid JSON")
+
+    service.settings = service.top = broken
+    service.runtime.status = broken
+    reply = await service.handle({"t": kind})
+    assert reply == errors.reply(kind, errors.internal("shell.json is not valid JSON"))
 
 
 @pytest.mark.parametrize("kind", sorted(SetupService.TYPES))
@@ -407,9 +413,100 @@ async def test_progress_body_from_stores(service):
     assert result["done"] == 6 and result["queued"] == 2
     assert result["skipped"] == {"size-cap": 2}
     assert result["failed"] == {"encrypted-pdf": 1}
-    assert result["problems"] == [{"path": "/h/e.pdf", "reason": "encrypted-pdf"}]
+    assert result["problems"] == [{"path": "/h/e.pdf", "code": "encrypted-pdf", "detail": ""}]
+    assert result["tool_errors"] == []
     assert result["volume"] == "u"
     assert result["volumes"] == {"u": {"label": "root", "done": 6, "total": 8}}
+
+
+def _failed_rows(service, rows):
+    store = Store(service.data_dir / "index/u.sqlite", volume="u", mount=Path("/h"))
+    for index, (path, state, detail) in enumerate(rows, 1):
+        store.db.execute(
+            "INSERT INTO files(id,path,kind,size,mtime,inode,device,state,detail) "
+            "VALUES(?,?,'text',0,0,0,0,?,?)",
+            (index, path, state, detail),
+        )
+    store.db.commit()
+    store.close()
+
+
+async def test_progress_names_failures_and_missing_tools(service):
+    from omafindd import errors
+
+    _failed_rows(service, [
+        ("a.png", "failed", "tool-missing: tesseract"),
+        ("b.png", "failed", "tool-missing: tesseract"),
+        ("c.pdf", "failed", "extract-failed: pdfinfo failed: Syntax Error"),
+        ("d.txt", "failed", "embedding precision fault"),
+        ("e.mp4", "failed", "tool-missing: ffprobe"),
+    ])
+    result = await service.handle({"t": "index_progress"})
+    assert result["failed"] == {"tool-missing": 3, "extract-failed": 1,
+                                "embedding-precision-fault": 1}
+    assert result["problems"] == [
+        {"path": "/h/a.png", "code": "tool-missing", "detail": "tesseract"},
+        {"path": "/h/b.png", "code": "tool-missing", "detail": "tesseract"},
+        {"path": "/h/c.pdf", "code": "extract-failed",
+         "detail": "pdfinfo failed: Syntax Error"},
+        {"path": "/h/d.txt", "code": "embedding-precision-fault", "detail": ""},
+        {"path": "/h/e.mp4", "code": "tool-missing", "detail": "ffprobe"},
+    ]
+    assert result["tool_errors"] == [
+        errors.tool_missing(1, "ffprobe", "video and audio", "ffmpeg").to_dict(),
+        errors.tool_missing(2, "tesseract", "text recognition", "tesseract").to_dict(),
+    ]
+    assert list(result["volumes"]) == ["u"]
+    assert result["kinds"]["text"] == {"done": 5, "total": 5}
+
+
+async def test_retry_failed_queues_only_that_code_and_starts_indexing(service):
+    _failed_rows(service, [
+        ("a.png", "failed", "tool-missing: tesseract"),
+        ("b.pdf", "failed", "encrypted-pdf"),
+        ("c.mp4", "failed", "tool-missing: ffprobe"),
+        ("d.txt", "done", None),
+    ])
+    assert await service.handle({"t": "retry_failed", "code": "tool-missing"}) == {
+        "t": "retry_failed", "code": "tool-missing", "count": 2,
+    }
+    db = sqlite3.connect(service.data_dir / "index/u.sqlite")
+    try:
+        assert db.execute("SELECT path,state,detail FROM files ORDER BY path").fetchall() == [
+            ("a.png", "pending", None), ("b.pdf", "failed", "encrypted-pdf"),
+            ("c.mp4", "pending", None), ("d.txt", "done", None),
+        ]
+    finally:
+        db.close()
+    assert len(service.test_calls) == 1
+
+
+async def test_retry_failed_during_a_run_indexes_after_it(service):
+    _failed_rows(service, [("a.png", "failed", "tool-missing: tesseract")])
+    await service.handle({"t": "index_start"})
+    reply = await service.handle({"t": "retry_failed", "code": "tool-missing"})
+    assert reply["count"] == 1 and len(service.test_calls) == 1
+    service.test_process.returncode = 0
+    await service.poll(now=0)
+    assert len(service.test_calls) == 2
+
+
+async def test_retry_failed_without_matches_starts_nothing(service):
+    _failed_rows(service, [("b.pdf", "failed", "encrypted-pdf")])
+    assert await service.handle({"t": "retry_failed", "code": "tool-missing"}) == {
+        "t": "retry_failed", "code": "tool-missing", "count": 0,
+    }
+    assert not service.test_calls
+
+
+@pytest.mark.parametrize("code", [None, "", "missing", ["tool-missing"]])
+async def test_retry_failed_rejects_unknown_codes(service, code):
+    from omafindd import errors
+
+    assert await service.handle({"t": "retry_failed", "code": code}) == errors.reply(
+        "retry_failed", errors.bad_request("Unknown failure code")
+    )
+    assert not service.test_calls
 
 
 @pytest.mark.parametrize(
@@ -467,7 +564,7 @@ async def test_ipc_dispatch_exception_uses_for_without_search_sequence(service, 
     server = IpcServer(tmp_path / "ui.sock", State(), setup=service)
     writer = Writer()
     await server.dispatch(writer, {"t": "runtime_status", "seq": 9, "id": "search"})
-    assert writer.messages == [{"t": "error", "for": "runtime_status", "reason": "bad service"}]
+    assert writer.messages == [errors.reply("runtime_status", errors.internal("bad service"))]
 
 
 async def test_setup_requests_after_hello_are_dispatched(service, tmp_path):
@@ -730,7 +827,8 @@ async def test_initial_count_broadcast_failure_finishes_without_starting_a_worke
     await service.handle({'t': 'discover_start'})
     await asyncio.gather(*service._discovery)
     assert pushes == [{'t': 'discover_counts', 'root': '/h', 'counts': {}, 'done': True,
-                       'seconds': None, 'error': 'Cannot send counts'}]
+                       'seconds': None,
+                       'error': errors.scan_failed('/h', 'Cannot send counts').to_dict()}]
     assert service.test_walks[0].done and service.test_walks[0].stopped
     assert '/h' not in service._walked
 
@@ -747,8 +845,18 @@ async def test_binds_get_returns_live_binds(service):
 
     service.run = run
     assert await service.handle({"t": "binds_get"}) == {
-        "t": "binds", "binds": [{"chord": "Super D", "description": "Files"}]}
+        "t": "binds", "binds": [{"chord": "Super D", "description": "Files"}], "menu": False}
     assert calls[0][0] == ["hyprctl", "binds", "-j"] and calls[0][1]["timeout"] == 5
+
+
+async def test_binds_get_reports_the_find_files_menu_row(service):
+    import subprocess
+
+    service.run = lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "[]", "")
+    bindings.write_menu_row(service.menu_path)
+    assert (await service.handle({"t": "binds_get"}))["menu"] is True
+    bindings.remove_menu_row(service.menu_path)
+    assert (await service.handle({"t": "binds_get"}))["menu"] is False
 
 
 async def test_binds_get_failure_names_the_request(service):
@@ -757,9 +865,7 @@ async def test_binds_get_failure_names_the_request(service):
 
     service.run = run
     reply = await service.handle({"t": "binds_get"})
-    assert reply["t"] == "error" and reply["for"] == "binds_get"
-    assert reply["code"] == "binds-failed"
-    assert reply["reason"].startswith("Could not read your Hyprland bindings")
+    assert reply == errors.reply("binds_get", errors.binds_failed("hyprctl"))
 
 
 @pytest.mark.parametrize("output,code", [("", 1), ("not JSON", 0), ("[broken", 0),
@@ -770,17 +876,18 @@ async def test_binds_get_rejects_failed_or_malformed_output(service, output, cod
     service.run = lambda argv, **kw: subprocess.CompletedProcess(argv, code, output, "failed")
     reply = await service.handle({"t": "binds_get"})
     assert reply["t"] == "error" and reply["code"] == "binds-failed"
-    assert reply["reason"].startswith("Could not read your Hyprland bindings")
+    assert reply["fix"] == {"kind": "retry"}
 
 
-@pytest.mark.parametrize("error", [
-    FileNotFoundError(2, "No such file or directory", "hyprctl"),
-    OSError("Cannot read bindings."),
+@pytest.mark.parametrize("error,detail", [
+    (FileNotFoundError(2, "No such file or directory", "hyprctl"),
+     "hyprctl: No such file or directory. The shortcut was not saved."),
+    (OSError("Cannot read bindings."), "Cannot read bindings. The shortcut was not saved."),
 ])
-async def test_binds_get_failure_has_one_clean_sentence(service, error):
+async def test_binds_get_failure_keeps_the_cause(service, error, detail):
     def run(argv, **kw):
         raise error
 
     service.run = run
     reply = await service.handle({"t": "binds_get"})
-    assert reply["reason"] == "Could not read your Hyprland bindings."
+    assert reply["code"] == "binds-failed" and reply["detail"] == detail

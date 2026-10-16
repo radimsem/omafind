@@ -1,10 +1,13 @@
 import asyncio
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from omafindd import models
+from omafindd import errors, models
 from omafindd.install import RuntimeJob, gpu_name
+
+BUILD_LOGS = Path(__file__).resolve().parents[1] / "fixtures/build"
 
 
 class Process:
@@ -44,7 +47,8 @@ def job_factory(tmp_path, monkeypatch):
     monkeypatch.setattr("omafindd.install.shutil.which", lambda name: "/usr/bin/" + name)
     jobs = []
 
-    def make(*, process=None, valid=None, download=None, clock=lambda: 10.0):
+    def make(*, process=None, valid=None, download=None, clock=lambda: 10.0,
+             missing_build=lambda: []):
         messages, calls = [], []
 
         async def broadcast(message):
@@ -68,6 +72,7 @@ def job_factory(tmp_path, monkeypatch):
             valid=valid or (lambda directory: {f.name: True for f in models.FILES}),
             gpu=lambda: "RTX 3060 12 GB",
             clock=clock,
+            missing_build=missing_build,
         )
         jobs.append(job)
         return job, messages, calls
@@ -150,25 +155,123 @@ async def test_pause_during_download_stops_at_next_chunk_and_resume_continues(jo
     assert job.snapshot()["state"] == "done"
 
 
-async def test_build_failure_reports_last_stderr_line(job_factory):
-    job, _, _ = job_factory(process=Process(1, b"first\nlast error\n"))
+async def test_silent_build_failure_reports_its_exit_code_and_log(job_factory, tmp_path):
+    job, _, _ = job_factory(process=Process(3))
+    assert job.snapshot()["error"] is None and "reason" not in job.snapshot()
     await job.start()
     await finish(job)
-    assert job.snapshot()["build"]["state"] == "failed"
-    assert job.snapshot()["reason"] == (
-        "The runtime build failed: last error. "
-        "Run bin/omafind build-runtime in a terminal for the full log."
-    )
+    result = job.snapshot()
+    assert result["build"]["state"] == "failed"
+    assert result["error"]["code"] == "build-failed"
+    assert result["error"]["detail"].startswith("The build exited with code 3. ")
+    assert result["error"]["log"] == str(tmp_path / "cache/logs/build-runtime.log")
 
 
-async def test_digest_mismatch_fails_with_resume_hint(job_factory):
+async def test_build_runs_without_a_log_and_fails_without_one(job_factory, monkeypatch):
+    from omafindd import paths
+
+    def denied(data=None):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(paths, "logs_dir", denied)
+    job, _, calls = job_factory(process=Process(3))
+    await job.start()
+    await finish(job)
+    result = job.snapshot()
+    assert any(args[0].endswith("scripts/build-runtime.sh") for args, _ in calls)
+    assert result["state"] == "failed"
+    assert result["error"]["code"] == "build-failed"
+    assert result["error"]["detail"].startswith("The build exited with code 3. ")
+    assert "log" not in result["error"]
+
+
+async def test_missing_build_packages_fail_before_the_build_starts(job_factory, tmp_path):
+    job, _, calls = job_factory(missing_build=lambda: ["vulkan-headers", "shaderc"])
+    await job.start()
+    await finish(job)
+    result = job.snapshot()
+    assert result["state"] == "failed"
+    assert result["build"]["state"] == "failed"
+    assert result["error"]["code"] == "build-missing-packages"
+    assert result["error"]["fix"] == {"kind": "install", "packages": ["vulkan-headers", "shaderc"]}
+    assert "log" not in result["error"]
+    assert not calls
+    assert not (tmp_path / "cache/logs/build-runtime.log").exists()
+
+
+async def test_failing_build_script_writes_both_streams_to_a_fresh_log(job_factory, tmp_path):
+    script = tmp_path / "plugin/scripts/build-runtime.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text(f"#!/bin/sh\ncat '{BUILD_LOGS / 'missing-header.log'}'\n"
+                      "echo 'stderr reaches the log' >&2\nexit 1\n")
+    script.chmod(0o755)
+    log = tmp_path / "cache/logs/build-runtime.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("previous run\n")
+    job, _, _ = job_factory()
+
+    async def spawn(*args, **kw):
+        if args[0] == "systemctl":
+            return Process()
+        return await asyncio.create_subprocess_exec(*args, **kw)
+
+    job.spawn = spawn
+    await job.start()
+    await finish(job)
+    text = log.read_text()
+    assert "previous run" not in text
+    assert "fatal error: vulkan/vulkan_core.h" in text
+    assert text.endswith("stderr reaches the log\n")
+    assert log.stat().st_mode & 0o777 == 0o600
+    result = job.snapshot()
+    assert result["build"]["state"] == "failed"
+    assert result["error"]["code"] == "build-missing-packages"
+    assert result["error"]["fix"] == {"kind": "install", "packages": ["vulkan-headers"]}
+    assert result["error"]["log"] == str(log)
+
+
+async def test_digest_mismatch_fails_with_model_verify_failed(job_factory):
     job, _, _ = job_factory(valid=lambda directory: {f.name: False for f in models.FILES})
     await job.start()
     await finish(job)
     assert job.snapshot()["state"] == "failed"
-    assert job.snapshot()["reason"] == (
-        f"Model sha256 mismatch: {models.FILES[0].name}. Press Resume to download it again."
-    )
+    assert job.snapshot()["error"] == errors.model_verify_failed(models.FILES[0].name).to_dict()
+
+
+@pytest.mark.parametrize("raised,expected", [
+    (OSError("connection refused"), errors.model_download_failed("connection refused")),
+    (ValueError(f"Model sha256 mismatch: {models.FILES[1].name}"),
+     errors.model_verify_failed(models.FILES[1].name)),
+])
+async def test_download_failure_names_its_cause(job_factory, raised, expected):
+    def fetch(directory, *, progress):
+        raise raised
+
+    job, _, _ = job_factory(download=fetch)
+    await job.start()
+    await finish(job)
+    assert job.snapshot()["state"] == "failed"
+    assert job.snapshot()["build"]["state"] == "ok"
+    assert job.snapshot()["error"] == expected.to_dict()
+
+
+async def test_unexpected_failure_is_internal(job_factory):
+    def broken(directory):
+        raise RuntimeError("disk vanished")
+
+    job, _, _ = job_factory(valid=broken)
+    await job.start()
+    await finish(job)
+    assert job.snapshot()["error"] == errors.internal("disk vanished").to_dict()
+
+
+async def test_restart_clears_the_error(job_factory):
+    job, _, _ = job_factory(process=Process(1, b"boom\n"))
+    await job.start()
+    await finish(job)
+    assert job.snapshot()["error"]["code"] == "build-failed"
+    assert (await job.start())["error"] is None
+    await finish(job)
 
 
 async def test_existing_runtime_reports_installed_without_seconds(job_factory, tmp_path):
@@ -239,7 +342,7 @@ async def test_build_refuses_unavailable_memory_scope(job_factory, monkeypatch):
     await job.start()
     await finish(job)
     assert job.snapshot()["state"] == "failed"
-    assert "memory" in job.snapshot()["reason"]
+    assert job.snapshot()["error"] == errors.build_no_scope().to_dict()
     assert not calls
 
 

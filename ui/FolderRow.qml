@@ -19,27 +19,23 @@ Item {
   property string name: ""
   property string rule: ""
   property var facts: []
-  // Five kind cells: [{n, cut}] for numbers, or `dash` for repositories.
+  // Five kind cells: [{n, cut}] for numbers, or `dash` while the counts are unknown.
   property var cells: []
   property bool dash: false
   property real numSize: Style.font.body
   property string indexText: ""
   property string timeText: ""
   property bool pending: false
-  // Action column: "" or "code".
-  property string action: ""
-  property bool actionActive: false
-  property string actionLabel: ""
   // Row fill: "" or "on" (checked).
   property string fill: ""
   property bool hairline: true
   property real pathGap: Style.space(2)
 
   signal toggled()
-  signal actionClicked()
   signal twistyClicked()
 
   readonly property bool focused: check !== "" && checkBox.activeFocus
+  readonly property bool holdsFocus: checkBox.activeFocus
   readonly property real indent: Style.space(18)
 
   function focusCheck() {
@@ -238,49 +234,6 @@ Item {
       color: Color.foreground
       font.family: Style.font.family
       font.pixelSize: Style.font.body
-    }
-
-    Rectangle {
-      id: actionButton
-      visible: root.action === "code"
-      x: root.table ? root.table.cellX(9) : 0
-      anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(28)
-      height: width
-      radius: Style.cornerRadius
-      color: actionMouse.pressed ? Style.selectedFill : actionMouse.containsMouse ? Style.hoverFill : "transparent"
-      border.width: activeFocus ? 1 : 0
-      border.color: activeFocus ? Color.accent : Style.normalBorderColor
-      activeFocusOnTab: visible
-      Accessible.role: Accessible.Button
-      Accessible.name: root.actionLabel
-      Behavior on color { ColorAnimation { duration: 100 } }
-
-      Keys.onPressed: event => {
-        if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-          root.actionClicked()
-          event.accepted = true
-        }
-      }
-
-      Icon {
-        anchors.centerIn: parent
-        name: "code"
-        size: Style.space(12)
-        color: root.actionActive ? Color.accent : Plugin.Tokens.dim
-        Behavior on color { ColorAnimation { duration: 100 } }
-      }
-
-      MouseArea {
-        id: actionMouse
-        anchors.fill: parent
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-        onClicked: {
-          actionButton.forceActiveFocus()
-          root.actionClicked()
-        }
-      }
     }
 
   }

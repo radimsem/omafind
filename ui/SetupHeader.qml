@@ -10,7 +10,6 @@ Item {
   property string crumbLeaf: ""
   property string title: ""
   property string subtitle: ""
-  property color subtitleColor: Plugin.Tokens.dim
   property var facts: []
   property bool spinning: false
   property string stepText: ""
@@ -73,7 +72,7 @@ Item {
         text: root.subtitle
         textFormat: Text.PlainText
         elide: Text.ElideRight
-        color: root.subtitleColor
+        color: Plugin.Tokens.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.body
       }

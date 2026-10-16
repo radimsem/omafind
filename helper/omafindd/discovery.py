@@ -6,14 +6,14 @@ import threading
 import time
 from pathlib import Path
 
-from . import rules
+from . import errors, rules
 
 KINDS = ('text', 'pdf', 'image', 'video', 'audio')
+COUNTED = (*KINDS, 'dirs')
 RATES = {
-    'gpu': {'text': .07, 'pdf': .37, 'image': .14, 'video': 3.2, 'audio': 1.5, 'code': .042},
-    'cpu': {'text': .13, 'pdf': .54, 'image': 1.36, 'video': 18., 'audio': 11.1, 'code': .084},
-    'bytes': {'text': 11000, 'pdf': 48000, 'image': 7000, 'video': 40000,
-              'audio': 12000, 'code': 10000},
+    'gpu': {'text': .07, 'pdf': .37, 'image': .14, 'video': 3.2, 'audio': 1.5},
+    'cpu': {'text': .13, 'pdf': .54, 'image': 1.36, 'video': 18., 'audio': 11.1},
+    'bytes': {'text': 11000, 'pdf': 48000, 'image': 7000, 'video': 40000, 'audio': 12000},
 }
 
 
@@ -61,6 +61,23 @@ XDG_PICKS = ("DOCUMENTS", "PICTURES", "VIDEOS", "MUSIC", "DOWNLOAD", "DESKTOP")
 LIMIT = 500
 
 
+def git_kind(path: str) -> str | None:
+    """`repo` for a `.git` directory or a submodule, `worktree` for a linked worktree."""
+    marker = os.path.join(path, ".git")
+    if os.path.isdir(marker):
+        return "repo"
+    try:
+        with open(marker, encoding="utf-8") as stream:
+            line = stream.readline(4096)
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not line.startswith("gitdir:"):
+        return None
+    gitdir = os.path.join(path, line[len("gitdir:"):].strip())
+    # Only a linked worktree's gitdir has `commondir`; a submodule's does not.
+    return "worktree" if os.path.isfile(os.path.join(gitdir, "commondir")) else "repo"
+
+
 def _visible(entry) -> bool:
     try:
         entry.path.encode()
@@ -85,9 +102,30 @@ def folders(path) -> list[dict]:
     with os.scandir(path) as entries:
         names = sorted((entry.path for entry in entries if _visible(entry)),
                        key=lambda name: (os.path.basename(name).casefold(), name))[:LIMIT]
-    return [{"path": name, "name": os.path.basename(name),
-             "repo": os.path.exists(os.path.join(name, ".git")), "hasChildren": _has_children(name)}
-            for name in names]
+    rows = []
+    for name in names:
+        kind = git_kind(name)
+        rows.append({"path": name, "name": os.path.basename(name), "repo": kind == "repo",
+                     "worktree": kind == "worktree", "hasChildren": _has_children(name)})
+    return rows
+
+
+def _scanned(path) -> list[dict]:
+    try:
+        return folders(path)
+    except OSError as error:
+        failure = errors.scan_failed(str(path), error.strerror or str(error))
+        raise errors.UserFailure(failure) from error
+
+
+def _label(lsblk: dict, uuid: str) -> str | None:
+    devices = list(lsblk.get('blockdevices', []))
+    while devices:
+        device = devices.pop()
+        if device.get('uuid') == uuid and device.get('label'):
+            return device['label']
+        devices.extend(device.get('children', []))
+    return None
 
 
 def top(*, home: Path, volume: str | None = None, run=subprocess.run, lsblk=None, xdg=None,
@@ -106,19 +144,20 @@ def top(*, home: Path, volume: str | None = None, run=subprocess.run, lsblk=None
     if volume is not None:
         mount = next((path for uuid, path in volumes if uuid == volume), None)
         if mount is None:
-            raise ValueError("That drive is not mounted. Plug it in and try again.")
-        rows = [dict(row, xdg=False, volume=volume) for row in folders(mount)]
+            raise errors.UserFailure(errors.drive_not_mounted(_label(lsblk, volume) or "The drive"))
+        rows = [dict(row, xdg=False, volume=volume) for row in _scanned(mount)]
         return {"roots": [{"path": str(mount), "volume": volume}], "folders": rows}
     xdg = xdg_dirs(home) if xdg is None else xdg
     picks = {str(xdg[name]) for name in XDG_PICKS if name in xdg}
     lookup = _volume_lookup(lsblk) if volume_of is None else volume_of
-    rows = [dict(row, xdg=row["path"] in picks) for row in folders(home)]
+    rows = [dict(row, xdg=row["path"] in picks) for row in _scanned(home)]
     roots = [{"path": str(home), "volume": lookup(home)[0]}]
     for uuid, mount in volumes:
         roots.append({"path": str(mount), "volume": uuid})
         if not mount.is_relative_to(home):
             rows.append({"path": str(mount), "name": str(mount),
-                         "repo": os.path.exists(os.path.join(mount, ".git")), "hasChildren": True,
+                         "repo": git_kind(str(mount)) == "repo",
+                         "worktree": git_kind(str(mount)) == "worktree", "hasChildren": True,
                          "xdg": False, "volume": uuid})
     for row in rows:
         row.setdefault("volume", lookup(Path(row["path"]))[0])
@@ -137,6 +176,8 @@ class Walk:
         self.popen, self.clock = popen, clock
         self.counts = {}
         self.datasets = []
+        self.repos, self.worktrees = [], []
+        self._git = {}
         self.done = False
         self.seconds = None
         self.error = None
@@ -168,7 +209,7 @@ class Walk:
             counts = self.counts.get(path)
             if counts is not None:
                 return dict(counts)
-            return dict.fromkeys((*KINDS, "dirs"), 0) if self.done else None
+            return dict.fromkeys(COUNTED, 0) if self.done else None
 
     def dataset(self, path):
         with self._lock:
@@ -182,6 +223,8 @@ class Walk:
                     "done": self.done, "seconds": self.seconds}
             if self.done:
                 body["datasets"] = list(self.datasets)
+                body["repos"] = list(self.repos)
+                body["worktrees"] = list(self.worktrees)
             if self.error:
                 body["error"] = self.error
         return body
@@ -192,13 +235,22 @@ class Walk:
                     "counts": {path: dict(self.counts[path]) for path in changed},
                     "done": self.done, "seconds": self.seconds}
 
+    def _note_git(self, folder, root):
+        while folder not in self._git and len(folder) >= len(root):
+            kind = self._git[folder] = git_kind(folder)
+            if kind == "repo":
+                self.repos.append(folder)
+            elif kind == "worktree":
+                self.worktrees.append(folder)
+            folder = os.path.dirname(folder)
+
     def run(self, emit, *, every=.25):
         started = last = self.clock()
         root = str(self.root)
         changed, media = set(), {}
         listing = None
         try:
-            listing = rules.walk(self.root, excludes=[], run=self._popen)
+            listing = rules.walk(self.root, excludes=[], run=self._popen, kinds=())
             for path in listing:
                 if self._stop:
                     break
@@ -207,10 +259,11 @@ class Walk:
                     name.encode()
                 except UnicodeEncodeError:
                     continue
+                folder = os.path.dirname(name)
+                self._note_git(folder, root)
                 kind = rules.classify_name(os.path.basename(name))
                 if kind is None:
                     continue
-                folder = os.path.dirname(name)
                 if kind in rules.MEDIA_KINDS and folder != root:
                     tally = media.setdefault((folder, kind), [0, 0])
                     tally[0] += 1
@@ -221,7 +274,7 @@ class Walk:
                     while True:
                         if folder not in self.counts:
                             new_dirs += 1
-                        counts = self.counts.setdefault(folder, dict.fromkeys((*KINDS, "dirs"), 0))
+                        counts = self.counts.setdefault(folder, dict.fromkeys(COUNTED, 0))
                         counts[kind] += 1
                         counts["dirs"] += new_dirs
                         changed.add(folder)
@@ -234,7 +287,8 @@ class Walk:
                     changed, last = set(), now
         except OSError as error:
             if not self._stop:
-                self.error = str(error) or type(error).__name__
+                self.error = errors.scan_failed(
+                    root, error.strerror or str(error) or type(error).__name__).to_dict()
         finally:
             if listing is not None:
                 listing.close()
@@ -244,10 +298,14 @@ class Walk:
         with self._lock:
             self.datasets = [{"path": str(path), **evidence}
                              for path, evidence in sorted(found.items())]
+            self.repos.sort()
+            self.worktrees.sort()
             self.done = True
             self.seconds = round(float(self.clock() - started), 1)
         batch = self._batch(changed)
         batch["datasets"] = list(self.datasets)
+        batch["repos"] = list(self.repos)
+        batch["worktrees"] = list(self.worktrees)
         if self.error:
             batch["error"] = self.error
         emit(batch)
@@ -258,7 +316,8 @@ def children(path, walk=None) -> dict:
     try:
         rows = folders(path)
     except OSError as error:
-        return {"path": str(path), "dirs": [], "error": error.strerror or str(error)}
+        return {"path": str(path), "dirs": [],
+                "error": errors.scan_failed(str(path), error.strerror or str(error)).to_dict()}
     for row in rows:
         row["counts"] = walk.count(row["path"]) if walk is not None else None
         row["evidence"] = walk.dataset(row["path"]) if walk is not None else None
@@ -331,10 +390,6 @@ def list_dirs(path: str, *, home: Path) -> dict:
                                      if not entry.name.startswith('.')
                                      and entry.name not in rules.HEAVY_GLOBS
                                      and entry.is_dir()), key=lambda n: (n.casefold(), n))[:500]
-    except FileNotFoundError:
-        result['error'] = 'missing'
-    except NotADirectoryError:
-        result['error'] = 'not-a-directory'
-    except PermissionError:
-        result['error'] = 'denied'
+    except OSError as error:
+        result['error'] = errors.scan_failed(str(absolute), error.strerror or str(error)).to_dict()
     return result

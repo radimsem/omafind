@@ -4,10 +4,8 @@ import os
 import sys
 import time
 from collections import Counter, defaultdict
-from collections.abc import Sequence
 from pathlib import Path
 
-from .code import index_code
 from .crawler import crawl
 from .diskguard import DiskGuard, wait_for_space
 from .jobs import Jobs
@@ -24,7 +22,6 @@ async def reindex(
     volume_resolver=volume_for,
     progress=None,
     settings=None,
-    code_roots: Sequence[Path] = (),
     force=True,
     label_resolver=None,
     pause=None,
@@ -111,8 +108,6 @@ async def reindex(
                 jobs = Jobs(store, embedder, journal=directory / "journal", settings=settings,
                             pause=pause)
                 await jobs.drain(progress=progress or _progress)
-            if code_roots:
-                await index_code(code_roots, directory / "index", embedder)
             print("queued 0", file=sys.stderr)
         finally:
             await embedder.stop()

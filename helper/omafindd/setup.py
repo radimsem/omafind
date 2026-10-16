@@ -10,7 +10,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from . import bindings, discovery
+from . import bindings, discovery, errors, failures, tools
 from .install import RuntimeJob
 
 
@@ -19,6 +19,11 @@ def mounted_volumes():
     return resolve()
 
 HOME = Path.home()
+
+
+def default_menu_path(home=HOME):
+    config = os.environ.get("XDG_CONFIG_HOME")
+    return (Path(config) if config else home / ".config") / "omarchy/extensions/omarchy-menu.jsonc"
 KINDS = ("text", "pdf", "image", "video", "audio")
 
 
@@ -35,6 +40,7 @@ class SetupService:
         "index_start",
         "index_progress",
         "drive_decision",
+        "retry_failed",
     }
     # A finished walk answers repeat visits for this long; after it the next visit walks again.
     WALK_TTL = 300.0
@@ -57,12 +63,15 @@ class SetupService:
         run=subprocess.run,
         clock=time.monotonic,
         home=HOME,
+        menu_path=None,
         model_ready=lambda: True,
         paused=lambda: False,
         check_disk=None,
         push_status=None,
     ):
         self.data_dir, self.plugin_root, self.home = data_dir, plugin_root, home
+        # The same file `bin/omafind bindings menu add|remove` edits.
+        self.menu_path = menu_path if menu_path is not None else default_menu_path(home)
         self.settings, self.broadcast, self.runtime = settings, broadcast, runtime
         self.top, self.walk, self.children = top, walk, children
         self.estimate_device, self.volume_of, self.list_dirs = estimate_device, volume_of, list_dirs
@@ -89,10 +98,6 @@ class SetupService:
         self._final = True
         self._mounts = {}
 
-    @staticmethod
-    def _error(kind, code, reason):
-        return {"t": "error", "for": kind, "code": code, "reason": reason}
-
     async def handle(self, message: dict, *, client=None) -> dict:
         kind = message["t"]
         try:
@@ -114,7 +119,7 @@ class SetupService:
                 token = self._client_tokens.setdefault(client, object())
                 volume = message.get("volume")
                 if volume is not None and (not isinstance(volume, str) or not volume):
-                    return self._error(kind, "bad-request", "Invalid discovery volume.")
+                    return errors.reply(kind, errors.bad_request("Invalid discovery volume"))
                 body = await asyncio.to_thread(self.top, home=self.home, volume=volume)
                 device = await asyncio.to_thread(self.estimate_device, self.home)
                 if self._client_tokens.get(client) is not token:
@@ -134,7 +139,7 @@ class SetupService:
                 token = self._client_tokens.setdefault(client, object())
                 path = message.get("path")
                 if not isinstance(path, str) or not Path(path).is_absolute():
-                    return self._error(kind, "bad-request", "Pick an absolute folder path.")
+                    return errors.reply(kind, errors.bad_request("Pick an absolute folder path"))
                 path = os.path.normpath(path)
                 roots = [root for root in self._roots
                          if path == root or path.startswith(root.rstrip("/") + "/")]
@@ -142,7 +147,8 @@ class SetupService:
                     path == root or path.startswith(root + "/")
                     for root in ("/proc", "/sys", "/dev", "/run")
                 )):
-                    return self._error(kind, "bad-request", "Pick a folder outside system paths.")
+                    failure = errors.bad_request("Pick a folder outside system paths")
+                    return errors.reply(kind, failure)
                 root = max(roots, key=len) if roots else path
                 if not roots:
                     try:
@@ -167,32 +173,36 @@ class SetupService:
                     or not path
                     or not (Path(path).is_absolute() or path == "~" or path.startswith("~/"))
                 ):
-                    return self._error(kind, "bad-request", "Pick an absolute folder path.")
+                    return errors.reply(kind, errors.bad_request("Pick an absolute folder path"))
                 body = await asyncio.to_thread(self.list_dirs, path, home=self.home)
                 return {"t": kind, **body}
             if kind == "drive_decision":
                 uuid, choice = message.get("uuid"), message.get("choice")
                 if not isinstance(uuid, str) or not uuid or choice not in ("scan", "ignore"):
-                    return self._error(kind, "bad-request", "Invalid drive decision.")
+                    return errors.reply(kind, errors.bad_request("Invalid drive decision"))
                 if choice == "ignore":
                     self.ignored.add(uuid)
                 return {"t": kind, "uuid": uuid, "choice": choice}
             if kind == "index_start":
                 volume = message.get("volume")
                 if volume is not None and (not isinstance(volume, str) or not volume):
-                    return self._error(kind, "bad-request", "Invalid indexing volume.")
+                    return errors.reply(kind, errors.bad_request("Invalid indexing volume"))
                 if self._starting is None or self._starting.done():
                     self._starting = asyncio.create_task(self._start_index(volume))
                 return await asyncio.shield(self._starting)
-            return self._error(kind, "bad-request", "Unknown setup request.")
+            if kind == "retry_failed":
+                code = message.get("code")
+                if code not in failures.CODES:
+                    return errors.reply(kind, errors.bad_request("Unknown failure code"))
+                count = await asyncio.to_thread(self._retry_failed, code)
+                if count:
+                    await self.kick()
+                return {"t": kind, "code": code, "count": count}
+            return errors.reply(kind, errors.bad_request("Unknown setup request"))
+        except errors.UserFailure as failure:
+            return errors.reply(kind, failure.error)
         except Exception as error:
-            code = (
-                "runtime-failed"
-                if kind.startswith("runtime_") or kind == "index_start"
-                else "binds-failed" if kind == "binds_get"
-                else "scan-failed"
-            )
-            return self._error(kind, code, str(error))
+            return errors.reply(kind, errors.internal(str(error) or type(error).__name__))
 
     def _binds(self):
         try:
@@ -202,9 +212,12 @@ class SetupService:
             if not result.stdout.lstrip().startswith("["):
                 raise ValueError("hyprctl did not return a JSON array")
             items = bindings.binds_items(bindings.parse_binds(result.stdout))
-            return {"t": "binds", "binds": items}
+            return {"t": "binds", "binds": items, "menu": bindings.has_menu_row(self.menu_path)}
         except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
-            raise OSError("Could not read your Hyprland bindings.") from error
+            reason = (f"{error.filename}: {error.strerror}"
+                      if isinstance(error, OSError) and error.filename and error.strerror
+                      else str(error) or type(error).__name__)
+            raise errors.UserFailure(errors.binds_failed(reason)) from error
 
     def _track(self, coroutine):
         task = asyncio.create_task(coroutine)
@@ -245,7 +258,7 @@ class SetupService:
                 walk.run(emit)
             except Exception as error:
                 walk.done = True
-                walk.error = str(error) or type(error).__name__
+                walk.error = errors.scan_failed(root, str(error) or type(error).__name__).to_dict()
                 emit({"root": root, "counts": {}, "done": True, "seconds": None,
                       "error": walk.error})
 
@@ -266,7 +279,7 @@ class SetupService:
             if worker is not None:
                 await asyncio.gather(worker, return_exceptions=True)
             walk.done = True
-            walk.error = str(error) or type(error).__name__
+            walk.error = errors.scan_failed(root, str(error) or type(error).__name__).to_dict()
             try:
                 await self.broadcast({"t": "discover_counts", "root": root, "counts": {},
                                       "done": True, "seconds": None, "error": walk.error})
@@ -322,12 +335,8 @@ class SetupService:
     async def _start_index(self, volume=None):
         async with self._index_lock:
             settings = self.settings()
-            if not settings.roots and not settings.code_roots:
-                return self._error(
-                    "index_start",
-                    "no-roots",
-                    "No folders are selected. Pick folders in setup first.",
-                )
+            if not settings.roots:
+                return errors.reply("index_start", errors.no_roots())
             if self.check_disk is not None:
                 await self.check_disk()
             if self.paused() or not self.model_ready():
@@ -410,10 +419,27 @@ class SetupService:
             pass
         return None, None
 
+    def _retry_failed(self, code):
+        """Queues the failed files whose failure is `code` again and returns how many."""
+        count = 0
+        for path in sorted((self.data_dir / "index").glob("*.sqlite")):
+            with closing(
+                sqlite3.connect(path.absolute().as_uri() + "?mode=rw", uri=True, timeout=5)
+            ) as db, db:
+                ids = [(file,) for file, detail in db.execute(
+                    "SELECT id,detail FROM files WHERE state='failed'"
+                ) if failures.decode(detail)[0] == code]
+                db.executemany(
+                    "UPDATE files SET state='pending',detail=NULL,info=NULL,indexed_at=NULL "
+                    "WHERE id=? AND state='failed'", ids,
+                )
+                count += len(ids)
+        return count
+
     def _progress(self):
         kinds = {kind: {"done": 0, "total": 0} for kind in KINDS}
         kinds["pdf"]["pages"] = kinds["image"]["ocr"] = 0
-        failed, problems, volumes = {}, [], {}
+        failed, problems, volumes, missing = {}, [], {}, {}
         volume = pending_volume = None
         try:
             self._mounts = mounted_volumes()
@@ -421,8 +447,6 @@ class SetupService:
             pass
         ready = "NOT (state='pending' OR (state='partial' AND detail IS NULL))"
         for path in sorted((self.data_dir / "index").glob("*.sqlite")):
-            if path.name == "code.sqlite":
-                continue
             try:
                 with closing(
                     sqlite3.connect(path.absolute().as_uri() + "?mode=rw", uri=True, timeout=0.05)
@@ -454,20 +478,23 @@ class SetupService:
                         + " AND EXISTS (SELECT 1 FROM segments s JOIN fts ON fts.rowid=s.id "
                         "WHERE s.file=f.id AND s.kind='ocr' AND length(fts.body)>0)"
                     ).fetchone()[0]
-                    for detail, count in db.execute(
+                    for value, count in db.execute(
                         "SELECT detail,count(*) FROM files WHERE state='failed' GROUP BY detail"
                     ):
-                        reason = detail or "unknown"
-                        failed[reason] = failed.get(reason, 0) + count
+                        code, detail = failures.decode(value)
+                        failed[code] = failed.get(code, 0) + count
+                        if code == "tool-missing" and detail in tools.TOOL_FEATURES:
+                            missing[detail] = missing.get(detail, 0) + count
                     mount = self._mounts.get(current)
                     if mount is not None:
-                        for rel, detail in db.execute(
+                        for rel, value in db.execute(
                             "SELECT path,detail FROM files WHERE state='failed' "
                             "ORDER BY path LIMIT ?",
                             (50 - len(problems),),
                         ):
+                            code, detail = failures.decode(value)
                             problems.append(
-                                {"path": str(mount / rel), "reason": detail or "unknown"}
+                                {"path": str(mount / rel), "code": code, "detail": detail}
                             )
             except sqlite3.Error:
                 continue
@@ -498,6 +525,11 @@ class SetupService:
             "skipped": skipped,
             "failed": failed,
             "problems": problems,
+            "tool_errors": [
+                errors.tool_missing(count, tool, tools.TOOL_FEATURES[tool], tools.TOOLS[tool])
+                .to_dict()
+                for tool, count in sorted(missing.items())
+            ],
         }
 
     async def poll(self, *, now=None) -> None:
@@ -513,13 +545,9 @@ class SetupService:
             if not body["running"]:
                 self._final = True
                 if "exit" in body:
+                    log = self.data_dir / "index/reindex.log"
                     await self.broadcast(
-                        self._error(
-                            "index_start",
-                            "runtime-failed",
-                            f"Indexing exited with code {body['exit']}. "
-                            f"See {self.data_dir / 'index/reindex.log'}.",
-                        )
+                        errors.reply("index_start", errors.index_exited(body["exit"], log))
                     )
 
                 if self._deferred:

@@ -12,24 +12,28 @@ FocusScope {
 
   property var service: null
   property bool back: false
+  // Settings' "Change folders" opens a finished setup here; starting the index clears it.
+  property bool pickFolders: false
 
   signal closeRequested()
   signal searchRequested()
 
   readonly property alias folders: foldersPage
   readonly property int step: Setup.step({runtimeProgress: service ? service.runtimeProgress : null,
-    progress: service ? service.progress : null, back: back})
+    progress: service ? service.progress : null, back: back, folders: pickFolders})
   readonly property var size: Setup.panelSize(step)
   readonly property real panelWidth: Style.space(size.width)
   readonly property real panelHeight: Style.space(size.height) + (step === 3 ? indexPage.extraHeight : 0)
+    + (step === 1 ? enginePage.extraHeight : 0)
   readonly property string walkError: service ? Setup.walkError(service.walks) : ""
   readonly property var discover: service ? service.discover : null
-  readonly property string indexFailure: step === 3 && service ? Setup.indexFailure(service.progress, service.setupError) : ""
+  readonly property var indexFailure: step === 3 && service ? service.indexError : null
   readonly property string home: discover && discover.home ? discover.home : (Quickshell.env("HOME") || "")
 
 
   function reset() {
     back = false
+    indexPage.followMenu = pickFolders
     if (step === 2) ensureScan(true)
     if (step === 3 && service) service.getBinds()
   }
@@ -51,6 +55,8 @@ FocusScope {
     }
   }
 
+  onPickFoldersChanged: if (pickFolders) indexPage.followMenu = true
+
   onStepChanged: {
     if (step === 2) ensureScan()
     if (step === 3) indexPage.begin()
@@ -64,7 +70,7 @@ FocusScope {
 
   function ensureScan(force) {
     if (!service || service.scanning) return
-    if (force || !service.discover || service.discoverError !== "" || walkError !== "") service.scan()
+    if (force || !service.discover || !!service.folderError || walkError !== "") service.scan()
   }
 
   function showFolders() {
@@ -77,6 +83,9 @@ FocusScope {
     target: root.service
     function onReadyChanged() {
       if (root.visible && root.step === 2 && root.service.ready) root.ensureScan(true)
+    }
+    function onIndexPendingChanged() {
+      if (root.service.indexPending) root.pickFolders = false
     }
   }
 
@@ -117,11 +126,8 @@ FocusScope {
             : Setup.indexTitle(root.service ? root.service.progress : null, root.indexFailure)
           stepText: Setup.stepLabel(root.step)
           subtitle: root.step === 1 ? "Everything runs on this machine. Nothing downloads until you press a button."
-            : root.step === 3 ? root.indexFailure || "You can search already. Results fill in as files finish."
-            : root.service && !root.service.scanning && root.service.discoverError !== "" ? Setup.folderError(root.service.discoverError)
-            : root.walkError !== "" ? Setup.folderError(root.walkError)
+            : root.step === 3 ? "You can search already. Results fill in as files finish."
             : ""
-          subtitleColor: root.step === 2 || root.indexFailure !== "" ? Color.urgent : Plugin.Tokens.dim
           spinning: root.step === 2 && !!root.service && (root.service.scanning
             || Object.keys(root.service.walks).some(key => !root.service.walks[key].done))
           facts: root.step !== 2 || !root.discover ? []

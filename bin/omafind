@@ -114,8 +114,6 @@ def _index_status(env, run):
     volumes = []
     queue = 0
     for path in sorted((data / "index").glob("*.sqlite")):
-        if path.name == "code.sqlite":
-            continue
         label = path.stem
         files = pending = 0
         try:
@@ -166,29 +164,37 @@ def _print_presence(details):
 
 
 def _command(command, env, run):
+    """Run one setup step. Returns its failure output, or None when it succeeded."""
     result = run(command, env=env, capture_output=True, text=True)
     if result.returncode:
-        print(result.stderr or result.stdout or f"{command[0]} failed", file=sys.stderr)
-    return result.returncode == 0
+        reason = result.stderr or result.stdout or f"{command[0]} failed"
+        print(reason, file=sys.stderr)
+        return reason
+    return None
 
 
-def setup(env, run=subprocess.run, probe=read_hello, clock=time.monotonic, sleep=time.sleep,
-          which=shutil.which):
-    from omafindd.tools import check
+def _setup(env, run, probe, clock, sleep, which):
+    """Returns (error, build packages still missing). Only runtime tools stop setup."""
+    from omafindd import errors, tools
 
-    missing = check(which=which, run=run)
+    missing = tools.check(which=which, run=run)
     if missing:
         print("sudo pacman -S --needed " + " ".join(missing), file=sys.stderr)
-        return 1
+        return errors.tools_missing(missing), []
+    # The search engine step checks these again before it builds, so setup only names them.
+    build_missing = [] if _presence(env)["runtime"]["present"] else tools.missing_build(which=which)
+    if build_missing:
+        print(f"Build packages missing: {', '.join(build_missing)}. "
+              "The search engine step in setup installs them.", file=sys.stderr)
     home = Path(env["HOME"])
     socket_path = _socket_path(env)
-    if not _command(["systemctl", "--user", "show-environment"], env, run):
-        return 1
+    if failed := _command(["systemctl", "--user", "show-environment"], env, run):
+        return errors.helper_install_failed(failed), build_missing
     python = home / ".local/share/omafind/venv/bin/python"
     sync_env = dict(env, UV_PROJECT_ENVIRONMENT=str(python.parent.parent))
     sync = ["uv", "sync", "--project", str(PLUGIN_ROOT / "helper"), "--frozen", "--no-dev"]
-    if not _command(sync, sync_env, run):
-        return 1
+    if failed := _command(sync, sync_env, run):
+        return errors.helper_install_failed(failed), build_missing
     paths.data_dir()
     python.parent.parent.parent.chmod(0o700)
     config = Path(env.get("XDG_CONFIG_HOME") or home / ".config")
@@ -196,15 +202,18 @@ def setup(env, run=subprocess.run, probe=read_hello, clock=time.monotonic, sleep
     unit.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(PLUGIN_ROOT / "systemd/omafind.service", unit)
     unit.chmod(0o644)
-    if not _command(["systemctl", "--user", "daemon-reload"], env, run):
-        return 1
+    if failed := _command(["systemctl", "--user", "daemon-reload"], env, run):
+        return errors.helper_install_failed(failed), build_missing
     active = run(["systemctl", "--user", "is-active", "omafind.service"],
                  env=env, capture_output=True, text=True)
-    if not _command(["systemctl", "--user", "enable", "--now", "omafind.service"], env, run):
-        return 1
+    run(["systemctl", "--user", "reset-failed", "omafind.service"],
+        env=env, capture_output=True, text=True)
+    if failed := _command(["systemctl", "--user", "enable", "--now", "omafind.service"], env, run):
+        return errors.helper_install_failed(failed), build_missing
     if (active.returncode == 0 and active.stdout.strip() == "active"
-            and not _command(["systemctl", "--user", "restart", "omafind.service"], env, run)):
-        return 1
+            and (failed := _command(["systemctl", "--user", "restart", "omafind.service"],
+                                    env, run))):
+        return errors.helper_install_failed(failed), build_missing
     deadline = clock() + 5
     while clock() < deadline:
         if probe(socket_path, min(0.2, max(0.001, deadline - clock()))):
@@ -214,19 +223,39 @@ def setup(env, run=subprocess.run, probe=read_hello, clock=time.monotonic, sleep
             _print_presence(details)
             if not details["runtime"]["present"] or not all(details["model"]["files"].values()):
                 print("next bin/omafind build-runtime")
-            return 0
+            return None, build_missing
         sleep(min(0.1, max(0, deadline - clock())))
     print("socket silent", file=sys.stderr)
     journal = run(["journalctl", "--user", "-u", "omafind.service", "-n", "20", "--no-pager"],
                   env=env, capture_output=True, text=True)
     print(journal.stdout or journal.stderr, end="", file=sys.stderr)
-    return 1
+    silent = errors.helper_install_failed("The omafind service did not answer on its socket")
+    return silent, build_missing
+
+
+def setup(env, run=subprocess.run, probe=read_hello, clock=time.monotonic, sleep=time.sleep,
+          which=shutil.which, as_json=False):
+    """With `as_json`, the last stdout line is {"ok":true,"build_missing":[...]} or
+    {"ok":false,"error":{...}}."""
+    from omafindd import errors
+
+    try:
+        failure, build_missing = _setup(env, run, probe, clock, sleep, which)
+    except (OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        failure = errors.helper_install_failed(str(error))
+    if as_json:
+        body = ({"ok": True, "build_missing": build_missing} if failure is None
+                else {"ok": False, "error": failure.to_dict()})
+        print(json.dumps(body, separators=(",", ":")))
+    return 0 if failure is None else 1
 
 
 def status(env, run=subprocess.run, probe=read_hello, as_json=False):
     from omafindd.tools import check
 
-    missing = check(run=run)
+    presence = _presence(env)
+    missing = check(run=run, build=not presence["runtime"]["present"])
     enabled_result = run(["systemctl", "--user", "is-enabled", "omafind.service"],
                          env=env, capture_output=True, text=True)
     active_result = run(["systemctl", "--user", "is-active", "omafind.service"],
@@ -239,7 +268,7 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
     answers = bool(probe(path, 0.2))
     details = {"unit": {"enabled": enabled, "active": active},
                "socket": {"path": str(path), "answers": answers},
-               "tools": {"missing": missing}, "venv": _venv(env, run), **_presence(env)}
+               "tools": {"missing": missing}, "venv": _venv(env, run), **presence}
     index = _index_status(env, run)
     details["model"]["verified"] = index.pop("verified")
     details.update(index)
@@ -275,6 +304,11 @@ def status(env, run=subprocess.run, probe=read_hello, as_json=False):
 
 
 def build_runtime(env, run=subprocess.run, execve=os.execve):
+    from omafindd import tools
+
+    if missing := tools.missing_build():
+        print("sudo pacman -S --needed " + " ".join(missing), file=sys.stderr)
+        return 1
     python = Path(env["HOME"]) / ".local/share/omafind/venv/bin/python"
     if not python.is_file():
         print("venv missing\nnext bin/omafind setup", file=sys.stderr)
@@ -335,7 +369,7 @@ def search(args, env, request):
         print("socket silent", file=sys.stderr)
         return 3
     if reply["t"] == "error":
-        print(reply["reason"], file=sys.stderr)
+        print(f'{reply["title"]} {reply["detail"]}'.strip(), file=sys.stderr)
         return 2 if reply.get("code") == "bad-request" else 1
     if parsed.json:
         print(json.dumps(reply, separators=(",", ":"), ensure_ascii=False))
@@ -346,7 +380,6 @@ def search(args, env, request):
 
 
 def reindex(args, env, execve=os.execve):
-    from omafindd.code import configured_roots
     from omafindd.settings import load
 
     parser = argparse.ArgumentParser(prog="omafind reindex")
@@ -358,14 +391,13 @@ def reindex(args, env, execve=os.execve):
     except SystemExit as error:
         return error.code
     settings = load(Path(env["HOME"]) / ".config/omarchy/shell.json")
-    code_roots = configured_roots(lambda: settings)
     configured = {Path(root["path"]).resolve(): root for root in settings.roots}
     roots = []
     for root in parsed.root:
         path = Path(root).expanduser().resolve()
         roots.append(dict(configured.get(path, {"excludes": []}), path=str(path)))
     roots = roots or settings.roots
-    if not roots and not code_roots:
+    if not roots:
         print("Choose --root PATH or configure the roots setting before omafind reindex",
               file=sys.stderr)
         return 2
@@ -388,7 +420,7 @@ def reindex(args, env, execve=os.execve):
                                 api_key=env.get('OMAFIND_EMBED_KEY')))
     try:
         asyncio.run(index(roots, directory=directory, embedder=embedder, volume=parsed.volume,
-                          settings=settings, code_roots=code_roots, force=not parsed.incremental))
+                          settings=settings, force=not parsed.incremental))
     except EmbeddingError as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -414,9 +446,13 @@ def discover(args, env, execve=os.execve):
         return execve(str(python), [str(python), str(PLUGIN_ROOT / "bin/omafind"),
                                   "discover", *args], env)
     from omafindd.discovery import snapshot
+    from omafindd.errors import UserFailure
 
     try:
         body = snapshot(home=Path(env["HOME"]), volume=parsed.volume)
+    except UserFailure as failure:
+        print(f"{failure.error.title} {failure.error.detail}", file=sys.stderr)
+        return 1
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(" ".join(str(error).splitlines()), file=sys.stderr)
         return 1
@@ -496,8 +532,8 @@ def main(args=None, env=None, run=subprocess.run, probe=read_hello, request=requ
             return discover(args[1:], env, execve)
         if args and args[0] == "reindex":
             return reindex(args[1:], env, execve)
-        if args == ["setup"]:
-            return setup(env, run, probe)
+        if args in (["setup"], ["setup", "--json"]):
+            return setup(env, run, probe, as_json="--json" in args)
         if args == ["build-runtime"]:
             return build_runtime(env, run, execve)
         if args == ["fingerprint"]:
@@ -508,7 +544,7 @@ def main(args=None, env=None, run=subprocess.run, probe=read_hello, request=requ
     except (OSError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 1
-    print("Usage: omafind setup | status [--json] | fingerprint | build-runtime | "
+    print("Usage: omafind setup [--json] | status [--json] | fingerprint | build-runtime | "
           "search [--json] [--limit N] QUERY | "
           "reindex [--root PATH]... [--volume UUID] [--incremental] | "
           "discover --json [--volume UUID] | "

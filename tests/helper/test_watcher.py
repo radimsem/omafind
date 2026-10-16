@@ -153,7 +153,7 @@ async def test_excluded_directories_never_get_a_watch(tree):
 
 
 async def test_created_subdirectory_gets_watch_and_deleted_watches_are_removed(tree, monkeypatch):
-    from watchdog.events import DirCreatedEvent, DirDeletedEvent
+    from omafindd.inotify import Event
 
     root, store = tree
     async def inline(callback, *args):
@@ -165,14 +165,14 @@ async def test_created_subdirectory_gets_watch_and_deleted_watches_are_removed(t
         handler = watcher.observer.watches[0][0]
         folder = root / 'new/nested'
         folder.mkdir(parents=True)
-        handler.on_any_event(DirCreatedEvent(str(root / 'new')))
+        handler.on_any_event(Event('created', str(root / 'new'), True))
         await asyncio.sleep(0)
         await watcher.flush()
         assert {item[1] for item in watcher.observer.watches} == {
             str(root), str(root / 'new'), str(folder)}
         folder.rmdir()
         folder.parent.rmdir()
-        handler.on_any_event(DirDeletedEvent(str(root / 'new')))
+        handler.on_any_event(Event('deleted', str(root / 'new'), True))
         await asyncio.sleep(0)
         await watcher.flush()
         assert [item[1] for item in watcher.observer.watches] == [str(root)]
@@ -202,5 +202,130 @@ async def test_enospc_on_one_directory_does_not_fail_root(tree, caplog):
         assert {item[1] for item in observer.watches} == {str(root), str(root / 'okay')}
         assert watcher.unwatched == 1
         assert str(root) not in caplog.text and 'private fixture text' not in caplog.text
+    finally:
+        watcher.stop()
+
+
+async def test_overflow_marks_every_root_dirty(tree, monkeypatch):
+    from omafindd.watcher import Watcher
+
+    root, _ = tree
+    calls = []
+
+    async def dirty(setting, dirs):
+        calls.append((setting['path'], dirs))
+
+    async def inline(callback, *args):
+        return callback(*args)
+
+    monkeypatch.setattr(asyncio, 'to_thread', inline)
+    watcher = Watcher(on_dirty=dirty, observer_factory=Observer)
+    watcher.watch([{'path': str(root)}])
+    try:
+        watcher.overflow()
+        await asyncio.sleep(0)
+        await watcher.flush()
+        assert calls == [(str(root), None)]
+    finally:
+        watcher.stop()
+
+
+async def test_enospc_logs_one_line_for_many_directories(tree, caplog):
+    import errno
+
+    from omafindd.watcher import Watcher
+
+    root, _ = tree
+    for n in range(5):
+        (root / f'full{n}').mkdir()
+
+    class Full(Observer):
+        def schedule(self, handler, path, *, recursive):
+            if path != str(root):
+                raise OSError(errno.ENOSPC, 'no space', path)
+            return super().schedule(handler, path, recursive=recursive)
+
+    watcher = Watcher(on_dirty=None, observer_factory=Full)
+    try:
+        watcher.watch([{'path': str(root)}])
+        assert watcher.unwatched == 5
+        assert caplog.text.count('Watcher') == 1
+    finally:
+        watcher.stop()
+
+
+async def test_renamed_directory_moves_its_watches(tree, monkeypatch):
+    from omafindd.inotify import Event
+
+    root, store = tree
+
+    async def inline(callback, *args):
+        return callback(*args)
+
+    monkeypatch.setattr(asyncio, 'to_thread', inline)
+    (root / 'old/nested').mkdir(parents=True)
+    watcher, _, _ = await watcher_for(root, store)
+    try:
+        handler = watcher.observer.watches[0][0]
+        (root / 'old').rename(root / 'new')
+        handler.on_any_event(Event('deleted', str(root / 'old'), True))
+        handler.on_any_event(Event('created', str(root / 'new'), True))
+        await asyncio.sleep(0)
+        await watcher.flush()
+        assert {item[1] for item in watcher.observer.watches} == {
+            str(root), str(root / 'new'), str(root / 'new/nested')}
+    finally:
+        watcher.stop()
+
+
+async def test_overflow_rebuilds_watches_for_missed_directory_events(tree, monkeypatch):
+    from omafindd.watcher import Watcher
+
+    root, _ = tree
+    (root / 'old').mkdir()
+    calls = []
+
+    async def inline(callback, *args):
+        return callback(*args)
+
+    async def dirty(setting, dirs):
+        calls.append((setting['path'], dirs))
+
+    monkeypatch.setattr(asyncio, 'to_thread', inline)
+    watcher = Watcher(on_dirty=dirty, observer_factory=Observer)
+    watcher.watch([{'path': str(root)}])
+    try:
+        (root / 'old').rmdir()
+        (root / 'new/nested').mkdir(parents=True)
+        watcher.overflow()
+        await asyncio.sleep(0)
+        await watcher.flush()
+        assert {item[1] for item in watcher.observer.watches} == {
+            str(root), str(root / 'new'), str(root / 'new/nested')}
+        assert calls == [(str(root), None)]
+    finally:
+        watcher.stop()
+
+
+async def test_overflow_discards_stale_directory_events(tree, monkeypatch):
+    from omafindd.inotify import Event
+
+    root, store = tree
+
+    async def inline(callback, *args):
+        return callback(*args)
+
+    monkeypatch.setattr(asyncio, 'to_thread', inline)
+    folder = root / 'recreated'
+    folder.mkdir()
+    watcher, _, _ = await watcher_for(root, store)
+    try:
+        folder.rmdir()
+        watcher.observer.watches[0][0].on_any_event(Event('deleted', str(folder), True))
+        folder.mkdir()
+        watcher.overflow()
+        await asyncio.sleep(0)
+        await watcher.flush()
+        assert {item[1] for item in watcher.observer.watches} == {str(root), str(folder)}
     finally:
         watcher.stop()

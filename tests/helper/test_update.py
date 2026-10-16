@@ -57,14 +57,18 @@ def test_state_message_carries_build():
 
 
 def test_missing_dependency_start_names_module_and_setup(tmp_path):
-    code = ("import sys, runpy; sys.modules['watchdog'] = None; "
+    code = ("import sys, runpy; sys.modules['inotify_simple'] = None; "
             "runpy.run_module('omafindd', run_name='__main__')")
     result = subprocess.run([sys.executable, "-c", code], cwd=ROOT / "helper",
                             env={"HOME": str(tmp_path), "PATH": "/usr/bin"},
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 1
     assert result.stderr.strip().splitlines() == [
-        "omafindd cannot import watchdog. Run bin/omafind setup."]
+        "omafindd cannot import inotify_simple. Run bin/omafind setup."]
+    log = tmp_path / ".local/share/omafind/cache/logs/omafindd-start.log"
+    assert log.read_text().endswith(
+        " omafindd cannot import inotify_simple. Run bin/omafind setup.\n")
+    assert log.stat().st_mode & 0o777 == 0o600
 
 
 def test_fingerprint_rejects_manifest_without_version(plugin):
@@ -96,3 +100,61 @@ async def test_daemon_reports_empty_build_when_fingerprint_fails(tmp_path, monke
         await main._serve(manifest)
     assert started == [""]
     assert "Cannot fingerprint" in caplog.text
+
+
+def test_fatal_start_error_writes_the_start_log(tmp_path, monkeypatch):
+    from omafindd import main, paths, startlog
+
+    async def bind_fails():
+        raise OSError(98, "Address already in use")
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr(main, "_serve", bind_fails)
+    assert main.run() == 1
+    assert "Address already in use" in (paths.logs_dir() / startlog.NAME).read_text()
+
+
+def test_start_log_write_never_raises(tmp_path, monkeypatch):
+    from omafindd import startlog
+
+    (tmp_path / "file").touch()
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "file"))
+    startlog.write("bind failed")
+    startlog.clear()
+
+
+async def test_started_daemon_removes_the_start_log(tmp_path, monkeypatch):
+    from omafindd import main, paths, startlog
+
+    class Server:
+        def __init__(self, path, state):
+            self.state = state
+
+        async def start(self):
+            assert stale.exists()
+
+        async def stop(self):
+            pass
+
+        async def broadcast(self, message):
+            pass
+
+    def stop_here():
+        raise main.AlreadyRunning("stop here")
+
+    class Freshness(main._Freshness):
+        def __init__(self, *args):
+            super().__init__(*args)
+            self.volumes.snapshot = stop_here
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr(main, "IpcServer", Server)
+    monkeypatch.setattr(main, "_Freshness", Freshness)
+    stale = paths.logs_dir() / startlog.NAME
+    stale.write_text("old failure\n")
+    manifest = tmp_path / "manifest.json"
+    manifest.touch()
+    assert await main._serve(manifest) == 1
+    assert not stale.exists()

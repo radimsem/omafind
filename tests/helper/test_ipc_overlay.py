@@ -3,7 +3,7 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-from omafindd import opener, preview
+from omafindd import errors, opener, preview
 from omafindd.ipc import IpcServer
 from omafindd.settings import Settings
 from omafindd.state import State
@@ -31,8 +31,7 @@ def server(tmp_path, monkeypatch):
     return IpcServer(tmp_path / "ui.sock", State())
 
 
-@pytest.mark.parametrize("kind,mode", [("text", "lines"), ("code", "lines"),
-                                      ("pdf", "image"), ("video", "image"),
+@pytest.mark.parametrize("kind,mode", [("text", "lines"), ("pdf", "image"), ("video", "image"),
                                       ("image", "image"), ("audio", "bars")])
 async def test_preview_latest_results(server, tmp_path, monkeypatch, kind, mode):
     path = tmp_path / "fixture"
@@ -57,7 +56,23 @@ async def test_preview_latest_results(server, tmp_path, monkeypatch, kind, mode)
     assert calls == [(item, "talk")]
     other = Writer()
     await server.dispatch(other, {"t": "preview", "id": "hit"})
-    assert other.messages[-1]["code"] == "missing"
+    assert other.messages[-1] == {"t": "error", "id": "hit",
+                                  **errors.file_missing("The file").to_dict()}
+
+
+async def test_preview_failure_is_internal_with_the_item_id(server, tmp_path, monkeypatch):
+    path = tmp_path / "a.pdf"
+    path.touch()
+    writer = Writer()
+    server._results[writer] = {"hit": {"id": "hit", "kind": "pdf", "path": str(path)}}
+
+    def render(item, query):
+        raise RuntimeError("pdftoppm crashed")
+
+    monkeypatch.setattr(preview, "render", render)
+    await server.dispatch(writer, {"t": "preview", "id": "hit"})
+    assert writer.messages[-1] == {"t": "error", "id": "hit",
+                                   **errors.internal("pdftoppm crashed").to_dict()}
 
 
 async def test_open_reveal_and_preview_jump(server, tmp_path, monkeypatch):
@@ -80,20 +95,39 @@ async def test_open_reveal_and_preview_jump(server, tmp_path, monkeypatch):
     assert calls[-1][1]["how"] == "reveal"
 
 
-@pytest.mark.parametrize("offline,exists,reason", [(True, True, "offline"),
-                                                  (False, False, "missing")])
+@pytest.mark.parametrize("offline,exists,error", [
+    (True, True, errors.drive_not_mounted("Photos2024")),
+    (False, False, errors.file_missing("a")),
+])
 async def test_open_refuses_offline_or_missing(server, tmp_path, monkeypatch,
-                                              offline, exists, reason):
+                                              offline, exists, error):
     path = tmp_path / "a"
     if exists:
         path.touch()
     writer = Writer()
-    server._results[writer] = {"hit": {"id": "hit", "path": str(path), "offline": offline}}
+    server._results[writer] = {"hit": {"id": "hit", "path": str(path), "offline": offline,
+                                       "label": "Photos2024"}}
     monkeypatch.setattr(opener, "launch", lambda *args, **kw: pytest.fail("launched"))
     await server.dispatch(writer, {"t": "open", "id": "hit", "how": "open"})
-    assert writer.messages[-1] == {"t": "open_failed", "id": "hit", "reason": reason}
+    assert writer.messages[-1] == {"t": "open_failed", "id": "hit", "error": error.to_dict()}
     await server.dispatch(writer, {"t": "open", "id": "unknown", "how": "open"})
-    assert writer.messages[-1]["reason"] == "missing"
+    assert writer.messages[-1]["error"] == errors.file_missing("The file").to_dict()
+
+
+async def test_open_launch_failure_names_the_program(server, tmp_path, monkeypatch):
+    path = tmp_path / "clip.mp4"
+    path.touch()
+    writer = Writer()
+    server._results[writer] = {"hit": {"id": "hit", "kind": "video", "path": str(path)}}
+
+    def launch(item, **kw):
+        raise FileNotFoundError(2, "No such file or directory", "mpv")
+
+    monkeypatch.setattr(opener, "launch", launch)
+    await server.dispatch(writer, {"t": "open", "id": "hit", "how": "open"})
+    assert writer.messages[-1] == {
+        "t": "open_failed", "id": "hit",
+        "error": errors.open_failed("clip.mp4", "mpv: No such file or directory").to_dict()}
 
 
 async def test_status_reply_and_time_gated_push(server, tmp_path):
@@ -325,25 +359,21 @@ async def test_open_prefers_client_line_and_rejects_bad_lines(server, tmp_path, 
     assert calls[-1]["loc"] == 212
     for line in (0, -3, "7", True, 2.5, None):
         await server.dispatch(writer, {"t": "open", "id": "hit", "how": "open", "line": line})
-        assert writer.messages[-1] == {"t": "error", "id": "hit", "for": "open",
-                                       "code": "bad-request", "reason": "Invalid open arguments"}
+        assert writer.messages[-1] == {
+            "t": "error", "id": "hit", "for": "open",
+            **errors.bad_request("Invalid open arguments").to_dict()}
     assert len(calls) == 2
 
 
-@pytest.mark.parametrize("kind,expected", [("code", 230), ("pdf", 3), ("image", None)])
-async def test_client_line_only_overrides_text_and_code(server, tmp_path, monkeypatch,
-                                                       kind, expected):
+@pytest.mark.parametrize("kind,expected", [("text", 230), ("pdf", 3), ("image", None)])
+async def test_client_line_only_overrides_text(server, tmp_path, monkeypatch, kind, expected):
     path = tmp_path / "file"
     path.touch()
     writer = Writer()
     item = {"id": "hit", "kind": kind, "path": str(path), "loc": 3 if kind == "pdf" else None}
-    if kind == "code":
-        item["open_line"] = 8
     server._results[writer] = {"hit": item}
     calls = []
     monkeypatch.setattr(opener, "launch", lambda item, **kw: calls.append(item))
     await server.dispatch(writer, {"t": "open", "id": "hit", "line": 230})
     assert calls[0]["loc"] == expected
-    if kind == "code":
-        assert calls[0]["open_line"] == 230
     assert item["loc"] == (3 if kind == "pdf" else None)

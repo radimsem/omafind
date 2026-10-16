@@ -71,3 +71,31 @@ async def test_ocr_match_keeps_ocr_part_when_image_also_matches(tmp_path):
         assert item["hits"] == ["needle"]
     finally:
         store.close()
+
+
+async def test_missing_tesseract_fails_the_screenshot_as_tool_missing(tmp_path, monkeypatch):
+    import shutil
+
+    from omafindd import jobs
+    from omafindd.crawler import crawl
+    from omafindd.store import Store
+
+    files = tmp_path / "files"
+    files.mkdir()
+    command("magick", "-size", "1200x160", "xc:white", str(files / "screenshot-text.png"))
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    # CI's magick is a shim that execs ImageMagick 6's convert and identify.
+    for name in ("magick", "convert", "identify"):
+        if path := shutil.which(name):
+            (tools / name).symlink_to(path)
+    monkeypatch.setattr(jobs, "ProcessPoolExecutor", InlinePool)
+    store = Store(tmp_path / "index/v.sqlite", volume="v", mount=files)
+    try:
+        crawl(store, [{"path": str(files)}])
+        monkeypatch.setenv("PATH", str(tools))
+        await jobs.Jobs(store, FakeEmbedder(), journal=tmp_path / "journal").drain()
+        assert tuple(store.db.execute("SELECT state,detail FROM files").fetchone()) == (
+            "failed", "tool-missing: tesseract")
+    finally:
+        store.close()

@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import ".." as Plugin
 import "../lib/setup.js" as Setup
+import "../lib/errors.js" as Errors
 import "../lib/keycombo.js" as Keycombo
 
 // Step 3 (board Indexing, M3 step 5): first index progress, skips and the global shortcut.
@@ -11,6 +12,10 @@ FocusScope {
   property var service: null
   property string chosen: ""
   property bool menuRow: true
+  // Set when Settings reopened setup: the switch then shows the menu as it is, so Save does not
+  // add back a row the user removed. A first setup offers to add it.
+  property bool followMenu: false
+  property bool menuTouched: false
   property bool showList: false
   property bool saving: false
   property string saveError: ""
@@ -22,10 +27,15 @@ FocusScope {
   readonly property var rates: service && service.discover ? service.discover.rates : null
   readonly property var head: Setup.indexHead(progress, rates)
   readonly property var problems: progress && progress.problems ? progress.problems : []
-  // The problem list grows the panel instead of scrolling inside it, up to eight rows.
-  readonly property real extraHeight: showList && problems.length ? list.height + Style.space(8) : 0
+  readonly property var indexError: service ? service.indexError : null
+  readonly property var toolErrors: progress && Array.isArray(progress.tool_errors) ? progress.tool_errors : []
+  // The problem list (up to eight rows) and the error cards grow the panel instead of scrolling inside it.
+  readonly property real extraHeight: (showList && problems.length ? list.height + Style.space(8) : 0)
+    + (cards.visible ? cards.height + Plugin.Tokens.setupGap : 0)
+    + (bindsCard.visible ? bindsCard.height + Plugin.Tokens.setupGap : 0)
+    + (saveCard.visible ? saveCard.height + Plugin.Tokens.setupGap : 0)
   readonly property var bindMap: service ? Keycombo.bindMap(service.binds) : ({})
-  readonly property bool bindsKnown: !!service && (service.bindsReady || service.bindsError !== "")
+  readonly property bool bindsKnown: !!service && (service.bindsReady || !!service.bindsError)
   readonly property var chosenParts: Keycombo.fromHyprland(chosen)
   // The saved chord may be taken by a bind added since; the user must pick another first. A
   // saved chord the recorder cannot spell is shown raw and not checked.
@@ -35,7 +45,14 @@ FocusScope {
   function begin() {
     saveError = ""
     chosen = service ? service.settings.shortcut : "SUPER + E"
+    menuTouched = false
+    syncMenuRow()
     if (service) service.getBinds()
+  }
+
+  function syncMenuRow() {
+    if (menuTouched) return
+    menuRow = !followMenu || !service || typeof service.menuRow !== "boolean" || service.menuRow
   }
 
   function stop() {
@@ -56,6 +73,16 @@ FocusScope {
       if (ok) root.searchRequested()
       else root.saveError = errorLine || ""
     })
+  }
+
+  // Retry on the index card starts the saved roots again.
+  function retryIndex() {
+    if (service) service.startIndexing(service.settings.roots)
+  }
+
+  Connections {
+    target: root.service
+    function onMenuRowChanged() { root.syncMenuRow() }
   }
 
   Column {
@@ -168,10 +195,37 @@ FocusScope {
             required property var modelData
             width: Math.min(implicitWidth, problemColumn.width)
             fontSize: Style.font.bodySmall
-            tokens: [
-              {k: modelData.reason, v: Setup.displayPath(modelData.path, root.service && root.service.discover ? root.service.discover.home : ""), tone: "plain"}
-            ]
+            tokens: Setup.problemTokens(modelData, root.service && root.service.discover ? root.service.discover.home : "")
           }
+        }
+      }
+    }
+
+    Column {
+      id: cards
+      visible: !!root.indexError || root.toolErrors.length > 0
+      width: parent.width
+      spacing: Style.space(8)
+
+      ErrorCard {
+        objectName: "omafindIndexError"
+        width: parent.width
+        error: root.indexError
+        visible: !!error
+        retryHere: true
+        onRetry: root.retryIndex()
+      }
+
+      // A count model keeps each card, and its install polling, alive across progress updates.
+      Repeater {
+        model: root.toolErrors.length
+
+        delegate: ErrorCard {
+          required property int index
+          objectName: "omafindToolError"
+          width: cards.width
+          error: root.toolErrors[index] || null
+          onRetry: if (root.service) root.service.retryFailed("tool-missing")
         }
       }
     }
@@ -212,7 +266,6 @@ FocusScope {
         || (recorder.lost ? "Hyprland left recording mode, so omafind stopped recording. Press Change to try again." : "")
         || (recorder.exposed ? "Hyprland could not enter recording mode. Press Change to try again." : "")
         || root.chosenConflict
-        || (root.service && root.service.bindsError !== "" ? root.service.bindsError + " The shortcut has not been checked for conflicts. Close setup and open it again to retry." : "")
       noteTone: note !== "" ? "warn" : ""
       onChange: {
         recorder.start()
@@ -220,6 +273,20 @@ FocusScope {
       }
       onCancel: recorder.stop()
       onCaptured: (key, modifiers) => recorder.capture(key, modifiers)
+    }
+
+    ErrorCard {
+      id: bindsCard
+      objectName: "omafindBindsError"
+      width: parent.width
+      error: root.service ? root.service.bindsError : null
+      visible: !!error
+      retryHere: true
+      onRetry: {
+        if (!root.service) return
+        if (root.service.bindsError && root.service.bindsError.code === "daemon-offline") root.service.installHelper()
+        else root.service.getBinds()
+      }
     }
 
     ShortcutRecorder {
@@ -235,7 +302,10 @@ FocusScope {
         anchors.verticalCenter: parent.verticalCenter
         checked: root.menuRow
         label: "Add Find files to the Omarchy menu"
-        onToggled: root.menuRow = !root.menuRow
+        onToggled: {
+          root.menuTouched = true
+          root.menuRow = !root.menuRow
+        }
       }
 
       Column {
@@ -266,15 +336,12 @@ FocusScope {
     width: parent.width
     spacing: Plugin.Tokens.setupGap
 
-    Label {
-      visible: root.saveError !== ""
+    ErrorCard {
+      id: saveCard
+      objectName: "omafindSaveError"
       width: parent.width
-      wrapMode: Text.Wrap
-      text: root.saveError
-      textFormat: Text.PlainText
-      color: Color.urgent
-      font.family: Style.font.family
-      font.pixelSize: Style.font.bodySmall
+      error: Errors.wrap(root.saveError)
+      visible: !!error
     }
 
     Rectangle { width: parent.width; height: 1; color: Plugin.Tokens.sep }

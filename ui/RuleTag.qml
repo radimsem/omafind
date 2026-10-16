@@ -2,13 +2,14 @@ import QtQuick
 import qs.Commons
 import ".." as Plugin
 
-// `.tg`: 16 px rule tag. user accent, generated yellow, secrets green with a lock, no-kind dim.
+// `.tg`: 16 px rule tag. repo and user accent, worktree cyan, dataset yellow, secrets green with a lock, other rules dim.
 Rectangle {
   id: root
 
   property string rule: ""
 
-  readonly property color tone: rule === "user" ? Color.accent
+  readonly property color tone: rule === "user" || rule === "repo" ? Color.accent
+    : rule === "worktree" ? Plugin.Palette.cyan
     : (rule === "generated" || rule === "dataset") ? Plugin.Palette.yellow
     : rule === "secrets" ? Plugin.Palette.green
     : Plugin.Tokens.dim
@@ -17,7 +18,8 @@ Rectangle {
   implicitHeight: Style.space(16)
   color: "transparent"
   border.width: 1
-  border.color: rule === "user" ? Util.alpha(Color.accent, 0.5)
+  border.color: rule === "user" || rule === "repo" ? Util.alpha(Color.accent, 0.5)
+    : rule === "worktree" ? Util.alpha(Plugin.Palette.cyan, 0.42)
     : (rule === "generated" || rule === "dataset") ? Util.alpha(Plugin.Palette.yellow, 0.42)
     : rule === "secrets" ? Util.alpha(Plugin.Palette.green, 0.42)
     : Plugin.Tokens.sep
