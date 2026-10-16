@@ -28,6 +28,7 @@ Item {
   property bool timing: false
 
   function open(payload) {
+    Plugin.Installer.end()
     if (setup.item) setup.item.stop()
     if (settingsView.item) settingsView.item.stop()
     var parsed = {}
@@ -151,6 +152,11 @@ Item {
     return screens.length ? screens[0] : null
   }
 
+  Connections {
+    target: Plugin.Installer
+    function onAsideChanged() { if (!Plugin.Installer.aside) Qt.callLater(root.focusView) }
+  }
+
   Timer {
     id: unmap
     interval: 120
@@ -162,7 +168,8 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: root.mapped
+    // Unmapped while a package install terminal is open, so it can take the keyboard.
+    visible: root.mapped && !Plugin.Installer.aside
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "omafind"
