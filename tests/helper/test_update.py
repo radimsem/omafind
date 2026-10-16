@@ -18,6 +18,7 @@ def plugin(tmp_path):
     package.mkdir(parents=True)
     (tmp_path / "helper/uv.lock").write_text("lock 1\n")
     (tmp_path / "helper/pyproject.toml").write_text("[project]\n")
+    (tmp_path / "settings.example.json").write_text('{"maxResults": 40}\n')
     (package / "__init__.py").write_text("")
     (package / "main.py").write_text("x = 1\n")
     return tmp_path
@@ -35,6 +36,7 @@ def test_fingerprint_is_manifest_version_plus_hash(plugin):
     lambda root: (root / "helper/omafindd/new.py").write_text(""),
     lambda root: (root / "helper/omafindd/main.py").rename(root / "helper/omafindd/other.py"),
     lambda root: (root / "manifest.json").write_text(json.dumps({"version": "0.2.1"})),
+    lambda root: (root / "settings.example.json").write_text('{"maxResults": 50}\n'),
 ])
 def test_fingerprint_changes_with_daemon_code_lock_or_version(plugin, change):
     before = build.fingerprint(plugin)
