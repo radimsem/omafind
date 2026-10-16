@@ -32,8 +32,8 @@ FocusScope {
     .map(row => row.path).filter((path, index, all) => all.some(other => other !== path && Tree.isInside(path, other)))
   readonly property var roots: Tree.toRoots(choices.chosen, choices.skipped, volumeOf, mounts)
   readonly property bool ready: !!discover && !!service && !service.scanning
-    && (roots.length > 0 || choices.code.length > 0)
-    && roots.every(r => r.volume !== "" && walkDone(r.path)) && choices.code.every(walkDone)
+    && (roots.length > 0 || chosenCode().length > 0)
+    && roots.every(r => r.volume !== "" && walkDone(r.path)) && chosenCode().every(walkDone)
 
   function focusFirst() {
     if (!tree.focusFirst()) {
@@ -119,9 +119,14 @@ FocusScope {
     else startIndexing()
   }
 
+  // Code is saved only for repos the tree still searches.
+  function chosenCode() {
+    return choices.code.filter(path => Tree.searched(path, choices))
+  }
+
   function startIndexing() {
     if (!ready) return
-    service.startIndexing(roots, choices.code)
+    service.startIndexing(roots, chosenCode())
   }
 
   onDiscoverChanged: seed()

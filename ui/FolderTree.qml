@@ -87,6 +87,11 @@ FocusScope {
     root.choicesEdited(Tree.click(root.choices, path, skipDefaults()))
   }
 
+  // Worktrees take no code button: the main repository's code covers them.
+  function actionOf(info, path) {
+    return info.repo && !info.worktree && Tree.searched(path, root.choices) ? "code" : ""
+  }
+
   function evidenceOf(path) {
     return datasets[path] || (meta[path] && meta[path].evidence) || null
   }
@@ -241,7 +246,7 @@ FocusScope {
       cells: shown ? Setup.KINDS.map(kind => ({n: shown[kind] || 0, cut: false})) : []
       indexText: estimate ? Setup.mb(estimate.bytes) : ""
       timeText: estimate ? Setup.minutes(estimate.seconds) : ""
-      action: info.repo && !info.worktree ? "code" : ""
+      action: root.actionOf(info, path)
       actionActive: root.choices.code.indexOf(path) >= 0
       actionLabel: "Index the code in " + (info.name || path)
       fill: check === "on" ? "on" : ""

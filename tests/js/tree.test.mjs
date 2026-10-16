@@ -139,3 +139,10 @@ test('ticking a worktree row itself still searches it', () => {
   const nested = t.click(state([]), '/h/p/wt', ['/h/p/wt', '/h/p/wt/frames']);
   assert.deepEqual(plain(nested), { chosen: ['/h/p/wt'], skipped: ['/h/p/wt/frames'], code: [] });
 });
+
+test('a click that leaves a repo unsearched drops its code', () => {
+  const s = state(['/h/p'], [], ['/h/p/a', '/h/p/b', '/h/other']);
+  assert.deepEqual(plain(t.click(s, '/h/p').code), ['/h/other']);
+  assert.deepEqual(plain(t.click(s, '/h/p/a').code), ['/h/p/b', '/h/other']);
+  assert.deepEqual(plain(t.click(s, '/h/p/a/docs').code), ['/h/p/a', '/h/p/b', '/h/other']);
+});

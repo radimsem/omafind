@@ -26,12 +26,13 @@ test('drive folders start checked and dataset proposals preserve user edits', ()
 
 test('drive save carries excludes and code choices and preserves other volumes', () => {
   let saved;
-  const ctx = dialog({ choices: { chosen: ['/m/Photos'], skipped: ['/m/Photos/data'], code: ['/m/repo'] },
+  const ctx = dialog({ choices: { chosen: ['/m/Photos'], skipped: ['/m/Photos/data'],
+    code: ['/m/Photos/repo', '/m/Photos/data/repo', '/m/repo'] },
     service: { settings: { roots: [{ path: '/h/Docs', volume: 'u', excludes: [] }], codeRoots: ['/h/code'] },
       startIndexing(...args) { saved = args; return true; } } });
   ctx.startIndexing();
   assert.deepEqual(plain(saved), [[{ path: '/h/Docs', volume: 'u', excludes: [] },
-    { path: '/m/Photos', volume: 'usb', excludes: ['data'] }], ['/h/code', '/m/repo'], 'usb']);
+    { path: '/m/Photos', volume: 'usb', excludes: ['data'] }], ['/h/code', '/m/Photos/repo'], 'usb']);
   assert.equal(ctx.phase, 'run');
 });
 

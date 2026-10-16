@@ -195,3 +195,13 @@ test('a row click leaves the known worktrees and datasets below it out', () => {
   ctx.clickRow('/h/p');
   assert.deepEqual(edits, [{ chosen: ['/h/p'], skipped: ['/h/p/wt', '/h/p/frames'], code: [] }]);
 });
+
+test('the code button shows only on a searched repo', () => {
+  const ctx = tree({ choices: { chosen: ['/h/p'], skipped: ['/h/p/off', '/h/p/mixed/docs'], code: [] } });
+  const repo = { repo: true, worktree: false };
+  assert.equal(ctx.actionOf(repo, '/h/p/on'), 'code');
+  assert.equal(ctx.actionOf(repo, '/h/p/mixed'), 'code');
+  assert.equal(ctx.actionOf(repo, '/h/p/off'), '');
+  assert.equal(ctx.actionOf({ repo: true, worktree: true }, '/h/p/wt'), '');
+  assert.equal(ctx.actionOf({ repo: false }, '/h/p/plain'), '');
+});
