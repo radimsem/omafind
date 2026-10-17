@@ -14,6 +14,34 @@ def test_chunk_size_overlap_and_line_locations():
     assert 0 < offsets[0] + len(result[0].text) - offsets[1] <= 200
 
 
+def test_line_locations_across_long_blank_runs():
+    from omafindd.extractors import chunks
+
+    words = " ".join(f"w{n}" for n in range(900))
+    text = "start\n" + "\n" * 5000 + words + "\n" * 3000 + " \n" * 2000 + words.upper()
+    result = chunks(text)
+    assert len(result) > 2
+    for segment in result:
+        offset = text.find(segment.text)
+        assert segment.loc == text[:offset].count("\n") + 1
+        assert segment.loc_end == text[: offset + len(segment.text)].count("\n") + 1
+
+
+def test_newlines_cost_no_memory_per_line():
+    import tracemalloc
+
+    from omafindd.extractors import chunks
+
+    text = "a\n" * 2_000_000
+    tracemalloc.start()
+    try:
+        chunks(text)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 16 << 20
+
+
 def test_chunk_cap():
     from omafindd.extractors import chunks
 

@@ -1,4 +1,3 @@
-import bisect
 import html
 import io
 import json
@@ -70,7 +69,19 @@ def estimated_tokens(text: str) -> int:
 
 
 def chunks(text: str) -> list[Segment]:
-    newlines = [i for i, character in enumerate(text) if character == "\n"]
+    # Line numbers come from one moving newline count. A list of every newline position
+    # would cost about 36 bytes per line.
+    position = lines = 0
+
+    def line(offset):
+        nonlocal position, lines
+        if offset >= position:
+            lines += text.count("\n", position, offset)
+        else:
+            lines -= text.count("\n", offset, position)
+        position = offset
+        return lines + 1
+
     result = []
     start = 0
     while start < len(text) and len(result) < 5000:
@@ -92,8 +103,8 @@ def chunks(text: str) -> list[Segment]:
                     "chunk",
                     "text",
                     text[left:right],
-                    bisect.bisect_left(newlines, left) + 1,
-                    bisect.bisect_left(newlines, right) + 1,
+                    line(left),
+                    line(right),
                 )
             )
         if end == len(text):
