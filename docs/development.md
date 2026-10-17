@@ -177,7 +177,7 @@ During reindex the daemon serves words-only results with a `degraded` error of c
 
 ### Rules
 
-The shared fd rules exclude hidden files, ignored paths, heavy directories and DigUp's secret-name patterns, including encrypted key stores. Media folders with at least 300 files of one kind and 70% machine names are visible dataset proposals. Checked folders are indexed, including datasets. Text is capped at 16 MiB and PDFs at 512 MiB. HTML and Office line numbers describe extracted text, so their openers omit the line argument.
+The shared fd rules exclude hidden files, ignored paths, heavy directories and DigUp's secret-name patterns, including encrypted key stores. Media folders with at least 300 files of one kind and 70% machine names are visible dataset proposals. Checked folders are indexed, including datasets. Text is capped at 16 MiB and PDFs at 512 MiB. An Office file's XML is streamed, not unpacked: extraction stops after 64 MiB of XML, at a single tag over 2 MiB or at the 16 MiB text cap counted in characters, and fails past 256 levels of nesting, so a small file that decompresses to gigabytes stays small in memory. HTML and Office line numbers describe extracted text, so their openers omit the line argument.
 
 ## Evals
 

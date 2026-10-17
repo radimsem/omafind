@@ -1,4 +1,3 @@
-import bisect
 import html
 import io
 import json
@@ -12,7 +11,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from itertools import islice
 from pathlib import Path
-from xml.etree import ElementTree
+from typing import BinaryIO
+from xml.parsers import expat
 
 import numpy as np
 
@@ -69,7 +69,19 @@ def estimated_tokens(text: str) -> int:
 
 
 def chunks(text: str) -> list[Segment]:
-    newlines = [i for i, character in enumerate(text) if character == "\n"]
+    # Line numbers come from one moving newline count. A list of every newline position
+    # would cost about 36 bytes per line.
+    position = lines = 0
+
+    def line(offset):
+        nonlocal position, lines
+        if offset >= position:
+            lines += text.count("\n", position, offset)
+        else:
+            lines -= text.count("\n", offset, position)
+        position = offset
+        return lines + 1
+
     result = []
     start = 0
     while start < len(text) and len(result) < 5000:
@@ -91,8 +103,8 @@ def chunks(text: str) -> list[Segment]:
                     "chunk",
                     "text",
                     text[left:right],
-                    bisect.bisect_left(newlines, left) + 1,
-                    bisect.bisect_left(newlines, right) + 1,
+                    line(left),
+                    line(right),
                 )
             )
         if end == len(text):
@@ -118,21 +130,87 @@ def plain_text_html(text: str) -> str:
     return re.sub(r"\s*\n\s*", "\n", text).strip()
 
 
+# A small Office file can decompress to gigabytes, so its XML is streamed under these caps.
+# The text cap matches the size cap of a plain text file. Expat keeps memory for every open
+# element, and a finished start tag costs up to 20 times its size in attributes, so nesting
+# and the size of one pending tag are capped too.
+OFFICE_XML_CAP = 64 * 1024 * 1024
+OFFICE_TEXT_CAP = 16 * 1024 * 1024
+OFFICE_TAG_CAP = 2 * 1024 * 1024
+OFFICE_DEPTH_CAP = 256
+
+
+class _TextCapReached(Exception):
+    pass
+
+
+def office_text(stream: BinaryIO) -> str:
+    """The text of each outermost paragraph or heading in an Office XML stream, one per line.
+
+    Reading stops quietly at OFFICE_XML_CAP bytes, OFFICE_TEXT_CAP characters or a tag still
+    open after OFFICE_TAG_CAP bytes. Raises ExtractionError when nesting passes
+    OFFICE_DEPTH_CAP, and expat.ExpatError when the XML is malformed.
+    """
+    text = io.StringIO()
+    size = depth = inside = paragraphs = 0
+
+    def write(data):
+        nonlocal size
+        text.write(data[:OFFICE_TEXT_CAP - size])
+        size += len(data)
+        if size >= OFFICE_TEXT_CAP:
+            raise _TextCapReached
+
+    def start(name, attributes):
+        nonlocal depth, inside, paragraphs
+        depth += 1
+        if depth > OFFICE_DEPTH_CAP:
+            raise ExtractionError("extract-failed", "Office file nests too deeply")
+        if name.rsplit("}", 1)[-1] in ("p", "h"):
+            if not inside:
+                if paragraphs:
+                    write("\n")
+                paragraphs += 1
+            inside += 1
+
+    def end(name):
+        nonlocal depth, inside
+        depth -= 1
+        if name.rsplit("}", 1)[-1] in ("p", "h"):
+            inside -= 1
+
+    def characters(data):
+        if inside:
+            write(data)
+
+    parser = expat.ParserCreate(namespace_separator="}")
+    parser.buffer_text = True
+    parser.StartElementHandler, parser.EndElementHandler = start, end
+    parser.CharacterDataHandler = characters
+    read = 0
+    try:
+        # Expat's byte index stays at the start of a tag, comment or CDATA section until it ends.
+        while read < OFFICE_XML_CAP and read - parser.CurrentByteIndex <= OFFICE_TAG_CAP:
+            block = stream.read(min(1 << 20, OFFICE_XML_CAP - read))
+            if not block:
+                parser.Parse(b"", True)
+                break
+            read += len(block)
+            parser.Parse(block, False)
+    except _TextCapReached:
+        pass
+    return text.getvalue()
+
+
 def extract_text(path: Path) -> Extracted:
     extension = path.suffix.lower()
     if extension in (".docx", ".odt"):
         member = "word/document.xml" if extension == ".docx" else "content.xml"
         try:
-            with zipfile.ZipFile(path) as archive:
-                tree = ElementTree.fromstring(archive.read(member))
-        except (zipfile.BadZipFile, KeyError, ElementTree.ParseError) as error:
+            with zipfile.ZipFile(path) as archive, archive.open(member) as stream:
+                text = office_text(stream)
+        except (zipfile.BadZipFile, KeyError, expat.ExpatError) as error:
             raise ExtractionError("extract-failed", "unreadable Office file") from error
-        paragraphs = [
-            "".join(node.itertext())
-            for node in tree.iter()
-            if node.tag.rsplit("}", 1)[-1] in ("p", "h")
-        ]
-        text = "\n".join(paragraphs)
     else:
         text = path.read_text(encoding="utf-8", errors="replace")
         if extension == ".html":

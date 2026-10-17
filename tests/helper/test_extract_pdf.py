@@ -67,6 +67,79 @@ def test_office_zip_text(tmp_path, name, needle):
     assert result.info["extracted"] is True
 
 
+def docx(path, *parts):
+    import zipfile
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        with archive.open("word/document.xml", "w", force_zip64=True) as member:
+            member.write(b'<w:document xmlns:w="urn:w"><w:body>')
+            for part in parts:
+                member.write(part)
+            member.write(b"</w:body></w:document>")
+    return path
+
+
+def test_office_text_keeps_outer_paragraphs_in_order(tmp_path):
+    from omafindd.extractors import extract_text
+
+    path = docx(tmp_path / "nested.docx",
+                b"<w:p>a<w:p>b</w:p>c</w:p><w:p/><w:h>d</w:h><w:tbl>skipped</w:tbl>")
+    assert [s.text for s in extract_text(path).segments] == ["abc\n\nd"]
+
+
+def test_office_member_that_expands_past_the_xml_cap_stays_small(tmp_path, monkeypatch):
+    import tracemalloc
+
+    from omafindd import extractors
+
+    monkeypatch.setattr(extractors, "OFFICE_XML_CAP", 1 << 20)
+    path = docx(tmp_path / "bomb.docx", b"<w:p>", *[b"a" * (1 << 20)] * 32, b"</w:p>")
+    tracemalloc.start()
+    try:
+        result = extractors.extract_text(path)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 16 << 20
+    assert 0 < sum(len(s.text) for s in result.segments) <= 1 << 20
+
+
+def test_office_text_stops_before_a_tag_with_millions_of_attributes(tmp_path):
+    import tracemalloc
+
+    from omafindd.extractors import extract_text
+
+    flood = b"".join(b' a%d=""' % i for i in range(500_000))
+    path = docx(tmp_path / "attributes.docx", b"<w:p>kept</w:p><w:p", flood, b">lost</w:p>")
+    tracemalloc.start()
+    try:
+        result = extract_text(path)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 32 << 20
+    assert [s.text for s in result.segments] == ["kept"]
+
+
+def test_office_text_stops_at_the_text_cap(tmp_path, monkeypatch):
+    from omafindd import extractors
+
+    monkeypatch.setattr(extractors, "OFFICE_TEXT_CAP", 1000)
+    path = docx(tmp_path / "long.docx", b"<w:p>lunar eclipses</w:p>" * 500)
+    text = "".join(s.text for s in extractors.extract_text(path).segments)
+    assert len(text) == 1000
+    assert text.startswith("lunar eclipses\nlunar eclipses\n")
+
+
+@pytest.mark.parametrize("xml", [b"<a>" * 300 + b"</a>" * 300, b"<w:p>open"],
+                         ids=["too-deep", "unclosed"])
+def test_unreadable_office_xml_fails(tmp_path, xml):
+    from omafindd.extractors import ExtractionError, extract_text
+
+    with pytest.raises(ExtractionError, match="extract-failed"):
+        extract_text(docx(tmp_path / "bad.docx", xml))
+
+
 def test_extreme_image_aspect_ratio_stays_in_budget():
     from omafindd.extractors import target_size
 
