@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds llama.cpp (MIT), the embedding runtime: tag b11461 at its pinned commit plus
+# Builds llama.cpp (MIT), the embedding runtime: tag b12658 at its pinned commit plus
 # scripts/llama.cpp-no-logits.patch, static, with the Vulkan backend and multimodal support. Installs only
 # llama-server, at $OMAFIND_DATA_DIR/runtime/bin/llama-server.
 # Does nothing when that build is already there. Linux port of DigUp scripts/build-llama.sh (MIT, 6faa29e).
@@ -16,7 +16,7 @@ fi
 
 # A tag can be moved after review, so each source is checked out at the full commit its tag named when it was
 # pinned. A moved tag makes that checkout fail instead of building other code.
-TAG=b11461
+TAG=b12658
 SPIRV_HEADERS_TAG=vulkan-sdk-1.4.357.0
 DATA="${OMAFIND_DATA_DIR:-$HOME/.local/share/omafind}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -91,7 +91,8 @@ if ! have_spirv_headers; then
       && cmake --install "$CACHE/spirv-headers-build" > /dev/null \
       || exit 1
   fi
-  # ggml-vulkan finds the package but never links its target, so the include dir is passed by hand.
+  # b12658 find_package()s SPIRV-Headers and links SPIRV-Headers::SPIRV-Headers.
+  # The prefix makes this private install visible. The include dir is still passed for that header-only package.
   EXTRA+=("-DCMAKE_PREFIX_PATH=$CACHE/spirv-headers"
     "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$CACHE/spirv-headers/include")
 fi
@@ -107,7 +108,7 @@ fi
 # Without a full clone the build number and commit cannot be derived, so `--version` would not name the tag.
 # The && chain stops before cmake when the checkout fails, as above.
 git -C "$SOURCE" -c advice.detachedHead=false checkout --quiet --force --detach \
-  4d756bc72bf00a4aacf410ae15a2d315f3db400d \
+  03813c56e47f6cd7a9b9bc2ad8edcebed88ce342 \
   && git -C "$SOURCE" apply "$PATCH" \
   && cmake -S "$SOURCE" -B "$BUILD" -G Ninja "${FLAGS[@]}" "${EXTRA[@]}" "-DLLAMA_BUILD_NUMBER=${TAG#b}" \
     "-DLLAMA_BUILD_COMMIT=$(git -C "$SOURCE" rev-parse --short HEAD)" > /dev/null \

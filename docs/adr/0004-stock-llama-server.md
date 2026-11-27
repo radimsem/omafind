@@ -12,6 +12,8 @@ The decision depended on three open points (spec 5.3): audio through the server,
 
 Run the stock `llama-server` from llama.cpp b11461 (`4d756bc`) as a subprocess, built by `scripts/build-runtime.sh` (Vulkan, static, server and mtmd only). No custom shim.
 
+Update (2026-11-27): the build pin moved from b11461 (`4d756bc`) to b12658 (`03813c56`) so the server includes the llama-grammar integer-overflow fix (CVE-2026-137057, tag b12604). The tables below were measured on the b11461 build and are not re-run here. `GGML_RPC` stays off, so CVE-2026-137567 does not apply to this build.
+
 One local patch: `scripts/llama.cpp-no-logits.patch` (from DigUp). A non-causal embedding context still reserves and clears `n_vocab` floats of logits per token, which is 1 MiB per token with Gemma's 262k vocabulary. The patch skips logits when `embeddings && !causal_attn`. The unpatched build was not measured here; the patch is kept for the reason in its own comment. It touches one line of `src/llama-context.cpp`.
 
 Server flags (`omafindd.embedder.server_argv`): `--embeddings --pooling mean --ctx-size 2048 --batch-size 2048 --ubatch-size 2048 --parallel 16 --kv-unified`, plus `--image-min-tokens 1` in full mode, `--no-mmproj-offload` on CPU and `-ngl 99` or `-ngl 0`. Text mode uses 512 for the three size flags and no mmproj.

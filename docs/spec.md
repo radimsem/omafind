@@ -43,7 +43,7 @@ Hyprland bind / omarchy-menu row
 └──────────────┬───────────────────────────┘
                │ HTTP POST /v1/embeddings on loopback, random API key per spawn
 ┌──────────────▼───────────────────────────┐
-│ llama-server, pinned llama.cpp tag ≥ b11461, Vulkan build, spawned on demand
+│ llama-server, pinned llama.cpp b12658, Vulkan build, spawned on demand
 │  text mode: model only (~0.3 GB), for queries
 │  full mode: model + mmproj (~0.9 GB), for indexing
 └──────────────────────────────────────────┘
@@ -133,7 +133,7 @@ Omarchy installs all of them except `poppler`, which arrives only as a dependenc
 
 ## 3. Runtime and model
 
-- **Runtime**: stock `llama-server` from a pinned llama.cpp tag, at least b11461 (b11452 is the first tag with `gemma-embedding2`). `scripts/build-runtime.sh` builds it with `-DGGML_VULKAN=ON -DLLAMA_BUILD_SERVER=ON`, Release, everything else off, into `runtime/`. It needs `vulkan-headers` and `shaderc`. Arch `extra/llama-cpp` (0.6.0) is too old and is not used.
+- **Runtime**: stock `llama-server` from pinned llama.cpp b12658 (`03813c56`). b11452 is the first tag with `gemma-embedding2`. `scripts/build-runtime.sh` builds it with `-DGGML_VULKAN=ON -DLLAMA_BUILD_SERVER=ON -DGGML_RPC=OFF`, Release, everything else off, into `runtime/`. It needs `vulkan-headers` and `shaderc`. Arch `extra/llama-cpp` (0.6.0) is too old and is not used.
 - **Model**: `ggml-org/embeddinggemma-2-GGUF` at revision `bfcd298762cc34d0357ece5ebdd31791a3a374d8`.
 
   | File | Bytes | sha256 |
