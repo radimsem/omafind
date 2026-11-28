@@ -63,7 +63,7 @@ class RuntimeJob:
             "build": {
                 "state": "wait",
                 "seconds": None,
-                "tag": "b11461",
+                "tag": "b12658",
                 "backend": "Vulkan",
                 "gpu": None,
             },

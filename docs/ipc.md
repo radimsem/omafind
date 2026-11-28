@@ -285,7 +285,7 @@ plugin: {"t":"runtime_pause"}
 daemon: {"t":"runtime_progress","state":"idle|running|paused|failed|done",
          "step":"build|download|null","file":"model|mmproj|null","done":512,"total":865,"unit":"MB",
          "left_seconds":60|null,"error":null|{error},
-         "build":{"state":"wait|run|ok|failed","seconds":192|null,"tag":"b11461","backend":"Vulkan","gpu":"RTX 3060 12 GB"|null},
+         "build":{"state":"wait|run|ok|failed","seconds":192|null,"tag":"b12658","backend":"Vulkan","gpu":"RTX 3060 12 GB"|null},
          "files":{"model":{"name":"embeddinggemma-2-Q8_0.gguf","state":"wait|run|verify|ok","done":310,"total":310},
                   "mmproj":{"name":"mmproj-embeddinggemma-2-Q8_0.gguf","state":"wait|run|verify|ok","done":202,"total":555}}}
 ```

@@ -10,7 +10,7 @@ from . import failures
 from .models import REVISION
 from .search_text import normalized
 
-RUNTIME_TAG = "b11461"
+RUNTIME_TAG = "b12658"
 SCHEMA = """
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE files(id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, kind TEXT NOT NULL,
